@@ -1,0 +1,1301 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Single Sign-On API
+  description: >-
+    Enterprise SSO federation service supporting SAML 2.0, OpenID Connect, and WS-Federation protocols. Manages
+    Identity Provider configurations, SAML metadata exchange, attribute mapping, and just-in-time (JIT) user
+    provisioning. Implements SP-initiated and IdP-initiated SSO flows with configurable assertion validation,
+    NameID format handling, and Single Logout (SLO). Supports multi-IdP configurations for organizations with
+    multiple identity sources.
+  version: 2.6.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-identity-sso
+  x-acme-domain: identity
+servers:
+  - url: https://af-identity-sso.api.acmefin.com/v1
+    description: Production
+  - url: https://af-identity-sso.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: SSO Flows
+    description: SSO initiation, callback processing, and session establishment
+  - name: Identity Providers
+    description: IdP configuration, metadata, and lifecycle management
+  - name: Attribute Mapping
+    description: IdP-to-local attribute mapping and transformation rules
+  - name: Provisioning
+    description: Just-in-time user provisioning configuration
+paths:
+  /sso/initiate:
+    post:
+      operationId: initiateSso
+      summary: Initiate SSO login
+      description: >-
+        Start an SP-initiated SSO flow. Generates a SAML AuthnRequest or OIDC authorization redirect based
+        on the IdP's configured protocol. Returns the redirect URL for the client.
+      tags:
+        - SSO Flows
+      requestBody:
+        required: true
+        description: Initiate SSO login request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    idp_id:
+                      type: string
+                      description: Identity Provider to authenticate with
+                      example: "idp_a1b2c3d4"
+                    relay_state:
+                      type: string
+                      description: URL to redirect to after authentication
+                      example: "https://app.acmefin.com/dashboard"
+                    force_authn:
+                      type: boolean
+                      description: Force re-authentication even if IdP session exists
+                      example: false
+              required:
+                - idp_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redirect_url:
+                    type: string
+                    description: IdP redirect URL (send user here)
+                    example: "https://idp.acmefin.com/saml/sso?SAMLRequest=..."
+                  request_id:
+                    type: string
+                    description: SAML request ID for correlation
+                    example: "_a1b2c3d4e5f6"
+                  protocol:
+                    type: string
+                    description: Protocol used
+                    example: "saml2"
+                required:
+                  - redirect_url
+                  - request_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sso/callback:
+    post:
+      operationId: processSsoCallback
+      summary: Process SSO callback
+      description: >-
+        Process the IdP's authentication response (SAML Response or OIDC authorization code). Validates the
+        assertion/token, extracts mapped attributes, provisions the user if JIT is enabled, and establishes
+        a local session.
+      tags:
+        - SSO Flows
+      requestBody:
+        required: true
+        description: Process SSO callback request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    saml_response:
+                      type: string
+                      description: Base64-encoded SAML Response (for SAML)
+                      example: "PHNhbWxwOlJlc3BvbnNl..."
+                    relay_state:
+                      type: string
+                      description: RelayState from the SSO flow
+                      example: "https://app.acmefin.com/dashboard"
+                    code:
+                      type: string
+                      description: Authorization code (for OIDC)
+                      example: "authz_x1y2z3"
+                    state:
+                      type: string
+                      description: State parameter (for OIDC)
+                      example: "state_abc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Unique session identifier
+                    example: "sess_x1y2z3"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Authenticated user ID
+                    example: "usr_4e5f6a7b"
+                  idp_id:
+                    type: string
+                    description: IdP that authenticated
+                    example: "idp_a1b2c3d4"
+                  provisioned:
+                    type: boolean
+                    description: Whether user was JIT-provisioned
+                    example: false
+                  attributes:
+                    type: object
+                    description: Mapped user attributes
+                  redirect_to:
+                    type: string
+                    description: Final redirect URL
+                    example: "https://app.acmefin.com/dashboard"
+                required:
+                  - session_id
+                  - user_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sso/logout:
+    post:
+      operationId: initiateSingleLogout
+      summary: Initiate Single Logout
+      description: >-
+        Start a Single Logout (SLO) flow to terminate sessions at both the SP and IdP. For SAML, generates a
+        LogoutRequest. For OIDC, redirects to the end_session_endpoint.
+      tags:
+        - SSO Flows
+      requestBody:
+        required: true
+        description: Initiate Single Logout request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    session_id:
+                      type: string
+                      description: Session to terminate
+                      example: "sess_x1y2z3"
+                    idp_id:
+                      type: string
+                      description: IdP to send logout to
+                      example: "idp_a1b2c3d4"
+              required:
+                - session_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logout_redirect_url:
+                    type: string
+                    description: IdP logout redirect URL
+                    example: "https://idp.acmefin.com/saml/slo?SAMLRequest=..."
+                  local_session_terminated:
+                    type: boolean
+                    description: Whether local session was invalidated
+                    example: true
+                required:
+                  - logout_redirect_url
+                  - local_session_terminated
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sso/metadata:
+    get:
+      operationId: getSpMetadata
+      summary: Get SP SAML metadata
+      description: >-
+        Returns the Acme Finance Service Provider SAML metadata XML document. Contains the SP entity ID,
+        assertion consumer service URLs, signing certificate, and supported NameID formats.
+      tags:
+        - SSO Flows
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entity_id:
+                    type: string
+                    description: SP entity ID
+                    example: "https://auth.acmefin.com/saml/metadata"
+                  acs_url:
+                    type: string
+                    description: Assertion Consumer Service URL
+                    example: "https://auth.acmefin.com/sso/callback"
+                  slo_url:
+                    type: string
+                    description: SLO endpoint URL
+                    example: "https://auth.acmefin.com/sso/logout"
+                  name_id_formats:
+                    type: array
+                    description: Supported NameID formats
+                    items:
+                      type: string
+                      example: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+                  signing_certificate:
+                    type: string
+                    description: SP signing certificate (PEM)
+                    example: "-----BEGIN CERTIFICATE----- MIID..."
+                required:
+                  - entity_id
+                  - acs_url
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /sso/identity-providers:
+    get:
+      operationId: listIdentityProviders
+      summary: List Identity Providers
+      description: >-
+        Retrieve all configured Identity Providers with their protocol, status, and JIT provisioning
+        settings.
+      tags:
+        - Identity Providers
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: protocol
+          in: query
+          required: false
+          description: Filter by federation protocol
+          schema:
+            type: "string"
+            enum:
+              - saml2
+              - oidc
+              - ws-federation
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        idp_id:
+                          type: string
+                          description: Unique IdP identifier
+                          example: "idp_a1b2c3d4"
+                          readOnly: true
+                        name:
+                          type: string
+                          description: Identity Provider display name
+                          example: "Corporate Okta"
+                        protocol:
+                          type: string
+                          description: Federation protocol
+                          example: "saml2"
+                          enum:
+                            - saml2
+                            - oidc
+                            - ws-federation
+                        entity_id:
+                          type: string
+                          description: SAML Entity ID or OIDC Issuer
+                          example: "https://idp.acmefin.com/saml/metadata"
+                        sso_url:
+                          type: string
+                          description: SSO login endpoint URL
+                          example: "https://idp.acmefin.com/saml/sso"
+                        slo_url:
+                          type: string
+                          description: Single Logout endpoint URL
+                          example: "https://idp.acmefin.com/saml/slo"
+                        certificate_fingerprint:
+                          type: string
+                          description: IdP signing certificate SHA-256 fingerprint
+                          example: "B4:DE:20:C4:61:8A:..."
+                        status:
+                          type: string
+                          description: IdP status
+                          example: "active"
+                          enum:
+                            - active
+                            - inactive
+                            - pending_configuration
+                        jit_provisioning_enabled:
+                          type: boolean
+                          description: Whether JIT user provisioning is enabled
+                          example: true
+                        created_at:
+                          type: string
+                          description: IdP registration timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        updated_at:
+                          type: string
+                          description: Last configuration update
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - idp_id
+                        - name
+                        - protocol
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createIdentityProvider
+      summary: Register Identity Provider
+      description: >-
+        Register a new Identity Provider by providing metadata URL or manual configuration. For SAML, the
+        IdP metadata XML is parsed to extract SSO URL, SLO URL, and signing certificate.
+      tags:
+        - Identity Providers
+      requestBody:
+        required: true
+        description: Register Identity Provider request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: IdP display name
+                      example: "Corporate Okta"
+                    protocol:
+                      type: string
+                      description: Federation protocol
+                      example: "saml2"
+                      enum:
+                        - saml2
+                        - oidc
+                        - ws-federation
+                    metadata_url:
+                      type: string
+                      description: IdP metadata URL (auto-parsed for SAML)
+                      example: "https://idp.acmefin.com/saml/metadata"
+                    entity_id:
+                      type: string
+                      description: SAML Entity ID or OIDC Issuer
+                      example: "https://idp.acmefin.com"
+                    sso_url:
+                      type: string
+                      description: SSO endpoint (if not using metadata URL)
+                      example: "https://idp.acmefin.com/saml/sso"
+                    certificate_pem:
+                      type: string
+                      description: IdP signing certificate PEM (if not using metadata URL)
+                    jit_provisioning_enabled:
+                      type: boolean
+                      description: Enable JIT user provisioning
+                      example: true
+              required:
+                - name
+                - protocol
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idp_id:
+                    type: string
+                    description: Unique IdP identifier
+                    example: "idp_a1b2c3d4"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Identity Provider display name
+                    example: "Corporate Okta"
+                  protocol:
+                    type: string
+                    description: Federation protocol
+                    example: "saml2"
+                    enum:
+                      - saml2
+                      - oidc
+                      - ws-federation
+                  entity_id:
+                    type: string
+                    description: SAML Entity ID or OIDC Issuer
+                    example: "https://idp.acmefin.com/saml/metadata"
+                  sso_url:
+                    type: string
+                    description: SSO login endpoint URL
+                    example: "https://idp.acmefin.com/saml/sso"
+                  slo_url:
+                    type: string
+                    description: Single Logout endpoint URL
+                    example: "https://idp.acmefin.com/saml/slo"
+                  certificate_fingerprint:
+                    type: string
+                    description: IdP signing certificate SHA-256 fingerprint
+                    example: "B4:DE:20:C4:61:8A:..."
+                  status:
+                    type: string
+                    description: IdP status
+                    example: "active"
+                    enum:
+                      - active
+                      - inactive
+                      - pending_configuration
+                  jit_provisioning_enabled:
+                    type: boolean
+                    description: Whether JIT user provisioning is enabled
+                    example: true
+                  created_at:
+                    type: string
+                    description: IdP registration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last configuration update
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - idp_id
+                  - name
+                  - protocol
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sso/identity-providers/{idp_id}:
+    get:
+      operationId: getIdentityProvider
+      summary: Get IdP details
+      description: >-
+        Retrieve full configuration for an Identity Provider including certificate details and JIT
+        provisioning settings.
+      tags:
+        - Identity Providers
+      parameters:
+        - name: idp_id
+          in: path
+          required: true
+          description: Unique idp id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idp_id:
+                    type: string
+                    description: Unique IdP identifier
+                    example: "idp_a1b2c3d4"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Identity Provider display name
+                    example: "Corporate Okta"
+                  protocol:
+                    type: string
+                    description: Federation protocol
+                    example: "saml2"
+                    enum:
+                      - saml2
+                      - oidc
+                      - ws-federation
+                  entity_id:
+                    type: string
+                    description: SAML Entity ID or OIDC Issuer
+                    example: "https://idp.acmefin.com/saml/metadata"
+                  sso_url:
+                    type: string
+                    description: SSO login endpoint URL
+                    example: "https://idp.acmefin.com/saml/sso"
+                  slo_url:
+                    type: string
+                    description: Single Logout endpoint URL
+                    example: "https://idp.acmefin.com/saml/slo"
+                  certificate_fingerprint:
+                    type: string
+                    description: IdP signing certificate SHA-256 fingerprint
+                    example: "B4:DE:20:C4:61:8A:..."
+                  status:
+                    type: string
+                    description: IdP status
+                    example: "active"
+                    enum:
+                      - active
+                      - inactive
+                      - pending_configuration
+                  jit_provisioning_enabled:
+                    type: boolean
+                    description: Whether JIT user provisioning is enabled
+                    example: true
+                  created_at:
+                    type: string
+                    description: IdP registration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last configuration update
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - idp_id
+                  - name
+                  - protocol
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateIdentityProvider
+      summary: Update IdP configuration
+      description: >-
+        Update Identity Provider settings. Certificate rotation can be performed by updating the certificate
+        PEM.
+      tags:
+        - Identity Providers
+      parameters:
+        - name: idp_id
+          in: path
+          required: true
+          description: Unique idp id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update IdP configuration request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: Updated display name
+                    sso_url:
+                      type: string
+                      description: Updated SSO URL
+                    slo_url:
+                      type: string
+                      description: Updated SLO URL
+                    certificate_pem:
+                      type: string
+                      description: Updated signing certificate
+                    jit_provisioning_enabled:
+                      type: boolean
+                      description: Toggle JIT provisioning
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idp_id:
+                    type: string
+                    description: Unique IdP identifier
+                    example: "idp_a1b2c3d4"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Identity Provider display name
+                    example: "Corporate Okta"
+                  protocol:
+                    type: string
+                    description: Federation protocol
+                    example: "saml2"
+                    enum:
+                      - saml2
+                      - oidc
+                      - ws-federation
+                  entity_id:
+                    type: string
+                    description: SAML Entity ID or OIDC Issuer
+                    example: "https://idp.acmefin.com/saml/metadata"
+                  sso_url:
+                    type: string
+                    description: SSO login endpoint URL
+                    example: "https://idp.acmefin.com/saml/sso"
+                  slo_url:
+                    type: string
+                    description: Single Logout endpoint URL
+                    example: "https://idp.acmefin.com/saml/slo"
+                  certificate_fingerprint:
+                    type: string
+                    description: IdP signing certificate SHA-256 fingerprint
+                    example: "B4:DE:20:C4:61:8A:..."
+                  status:
+                    type: string
+                    description: IdP status
+                    example: "active"
+                    enum:
+                      - active
+                      - inactive
+                      - pending_configuration
+                  jit_provisioning_enabled:
+                    type: boolean
+                    description: Whether JIT user provisioning is enabled
+                    example: true
+                  created_at:
+                    type: string
+                    description: IdP registration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last configuration update
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteIdentityProvider
+      summary: Delete Identity Provider
+      description: >-
+        Remove an IdP configuration. Active SSO sessions through this IdP are not affected but new logins
+        are prevented.
+      tags:
+        - Identity Providers
+      parameters:
+        - name: idp_id
+          in: path
+          required: true
+          description: Unique idp id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /sso/identity-providers/{idp_id}/attribute-mappings:
+    get:
+      operationId: listAttributeMappings
+      summary: List attribute mappings
+      description: >-
+        Retrieve all attribute mappings configured for an IdP. Mappings define how IdP assertion attributes
+        (SAML) or claims (OIDC) are mapped to local user profile fields.
+      tags:
+        - Attribute Mapping
+      parameters:
+        - name: idp_id
+          in: path
+          required: true
+          description: Identity Provider identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        mapping_id:
+                          type: string
+                          description: Unique mapping identifier
+                          example: "map_a1b2c3d4"
+                          readOnly: true
+                        idp_id:
+                          type: string
+                          description: Associated IdP
+                          example: "idp_a1b2c3d4"
+                        source_attribute:
+                          type: string
+                          description: IdP attribute name (SAML assertion or OIDC claim)
+                          example: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
+                        target_attribute:
+                          type: string
+                          description: Local user profile field
+                          example: "email"
+                        transform:
+                          type: string
+                          description: Optional transformation function
+                          example: "lowercase"
+                          enum:
+                            - none
+                            - lowercase
+                            - uppercase
+                            - trim
+                            - regex_extract
+                        required:
+                          type: boolean
+                          description: Whether this attribute is required for SSO login
+                          example: true
+                      required:
+                        - mapping_id
+                        - source_attribute
+                        - target_attribute
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: setAttributeMappings
+      summary: Set attribute mappings
+      description: >-
+        Replace all attribute mappings for an IdP. This is an idempotent full replacement of the mapping
+        set. Required attributes must include at least an email or username mapping.
+      tags:
+        - Attribute Mapping
+      parameters:
+        - name: idp_id
+          in: path
+          required: true
+          description: Identity Provider identifier
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Set attribute mappings request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    mappings:
+                      type: array
+                      description: Attribute mapping definitions
+                      items:
+                        type: object
+              required:
+                - mappings
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idp_id:
+                    type: string
+                    description: Unique IdP identifier
+                    example: "idp_a1b2c3d4"
+                    readOnly: true
+                  mappings_set:
+                    type: integer
+                    description: Number of mappings configured
+                    example: 6
+                required:
+                  - idp_id
+                  - mappings_set
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sso/identity-providers/{idp_id}/jit-provisioning:
+    patch:
+      operationId: configureJitProvisioning
+      summary: Configure JIT provisioning
+      description: >-
+        Configure just-in-time provisioning rules for an IdP. JIT provisioning automatically creates user
+        accounts on first SSO login with mapped attributes and default role assignments.
+      tags:
+        - Provisioning
+      parameters:
+        - name: idp_id
+          in: path
+          required: true
+          description: Unique idp id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Configure JIT provisioning request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    enabled:
+                      type: boolean
+                      description: Enable/disable JIT provisioning
+                      example: true
+                    default_roles:
+                      type: array
+                      description: Roles to assign to JIT-provisioned users
+                      items:
+                        type: string
+                        example: "viewer"
+                    auto_activate:
+                      type: boolean
+                      description: Activate accounts immediately (vs. pending review)
+                      example: true
+                    allowed_domains:
+                      type: array
+                      description: Email domains allowed for JIT provisioning
+                      items:
+                        type: string
+                        example: "acmefin.com"
+              required:
+                - enabled
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idp_id:
+                    type: string
+                    description: Unique IdP identifier
+                    example: "idp_a1b2c3d4"
+                    readOnly: true
+                  jit_enabled:
+                    type: boolean
+                    description: JIT provisioning status
+                    example: true
+                  default_roles:
+                    type: array
+                    description: Default roles
+                    items:
+                      type: string
+                  auto_activate:
+                    type: boolean
+                    description: Auto-activation status
+                    example: true
+                  users_provisioned:
+                    type: integer
+                    description: Total users provisioned via JIT
+                    example: 234
+                    readOnly: true
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

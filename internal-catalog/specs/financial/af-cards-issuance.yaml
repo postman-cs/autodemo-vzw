@@ -1,0 +1,2419 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Card Issuance API
+  description: End-to-end card issuance pipeline from application submission through production, embossing, and physical fulfillment.
+    Manages card applications with credit decisioning, multi-product card programs (credit, debit, prepaid, charge), BIN assignment,
+    and network provisioning. Supports batch embossing with quality control workflows, carrier integration for fulfillment
+    tracking, and card credential retrieval for instant digital issuance. Handles card reissuance for expired, damaged, or
+    compromised cards with configurable PAN retention policies.
+  version: 3.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-cards-issuance
+  x-acme-domain: cards
+servers:
+- url: https://af-cards-issuance.api.acmefin.com/v1
+  description: Production
+- url: https://af-cards-issuance.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Applications
+  description: Card application submission, review, and decisioning
+- name: Card Issuance
+  description: Card creation, credential management, and reissuance
+- name: Embossing
+  description: Physical card embossing and production batch management
+- name: Fulfillment
+  description: Card shipping, tracking, and delivery confirmation
+paths:
+  /applications:
+    post:
+      operationId: submitApplication
+      summary: Submit a card application
+      description: Submits a new card application for processing. The application enters the review queue for identity verification
+        and credit assessment (for credit products). Applications are typically decisioned within 60 seconds for pre-qualified
+        applicants. The response includes the application ID for status polling.
+      tags:
+      - Applications
+      requestBody:
+        required: true
+        description: Submit a card application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                applicant_name:
+                  type: string
+                  description: Full name of the cardholder as embossed on the card
+                  example: Jane A. Doe
+                applicant_email:
+                  type: string
+                  description: Applicant email address
+                  format: email
+                  example: jane.doe@email.com
+                card_type:
+                  type: string
+                  description: Card product type
+                  example: CREDIT
+                  enum:
+                  - DEBIT
+                  - CREDIT
+                  - PREPAID
+                  - CHARGE
+                card_program:
+                  type: string
+                  description: Card program or product identifier
+                  example: platinum-rewards
+                ssn_last_four:
+                  type: string
+                  description: Last four digits of SSN for identity verification
+                  example: '4321'
+                  minLength: 4
+                  maxLength: 4
+                annual_income:
+                  type: number
+                  description: Applicant's annual gross income
+                  format: double
+                  example: 85000.0
+                shipping_address:
+                  type: object
+                  description: Address for card delivery
+                  properties:
+                    line1:
+                      type: string
+                    city:
+                      type: string
+                    state:
+                      type: string
+                    postal_code:
+                      type: string
+                    country:
+                      type: string
+              required:
+              - applicant_name
+              - applicant_email
+              - card_type
+              - card_program
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Unique card application identifier
+                    example: app-3f8a21c9
+                  applicant_name:
+                    type: string
+                    description: Full name of the cardholder as embossed on the card
+                    example: Jane A. Doe
+                  applicant_email:
+                    type: string
+                    description: Applicant email address
+                    format: email
+                    example: jane.doe@email.com
+                  card_type:
+                    type: string
+                    description: Card product type
+                    example: CREDIT
+                    enum:
+                    - DEBIT
+                    - CREDIT
+                    - PREPAID
+                    - CHARGE
+                  card_program:
+                    type: string
+                    description: Card program or product identifier
+                    example: platinum-rewards
+                  status:
+                    type: string
+                    description: Application processing status
+                    example: SUBMITTED
+                    enum:
+                    - SUBMITTED
+                    - UNDER_REVIEW
+                    - APPROVED
+                    - REJECTED
+                    - CANCELLED
+                    - EXPIRED
+                  credit_limit:
+                    type: number
+                    description: Approved credit limit (credit cards only)
+                    format: double
+                    example: 15000.0
+                    nullable: true
+                  rejection_reason:
+                    type: string
+                    description: Reason for application rejection, if applicable
+                    example: Insufficient credit history
+                    nullable: true
+                  submitted_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  decided_at:
+                    type: string
+                    description: Timestamp of approval or rejection decision
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                    nullable: true
+                required:
+                - application_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+    get:
+      operationId: listApplications
+      summary: List card applications
+      description: Returns a paginated list of card applications with their processing status. Supports filtering by status,
+        card type, program, and submission date. Use for application pipeline management and reporting.
+      tags:
+      - Applications
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by application status
+        schema:
+          type: string
+          enum:
+          - SUBMITTED
+          - UNDER_REVIEW
+          - APPROVED
+          - REJECTED
+      - name: card_type
+        in: query
+        required: false
+        description: Filter by card type
+        schema:
+          type: string
+          enum:
+          - DEBIT
+          - CREDIT
+          - PREPAID
+          - CHARGE
+      - name: from_date
+        in: query
+        required: false
+        description: Applications submitted on or after this date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        application_id:
+                          type: string
+                          description: Unique card application identifier
+                          example: app-3f8a21c9
+                        applicant_name:
+                          type: string
+                          description: Full name of the cardholder as embossed on the card
+                          example: Jane A. Doe
+                        applicant_email:
+                          type: string
+                          description: Applicant email address
+                          format: email
+                          example: jane.doe@email.com
+                        card_type:
+                          type: string
+                          description: Card product type
+                          example: CREDIT
+                          enum:
+                          - DEBIT
+                          - CREDIT
+                          - PREPAID
+                          - CHARGE
+                        card_program:
+                          type: string
+                          description: Card program or product identifier
+                          example: platinum-rewards
+                        status:
+                          type: string
+                          description: Application processing status
+                          example: SUBMITTED
+                          enum:
+                          - SUBMITTED
+                          - UNDER_REVIEW
+                          - APPROVED
+                          - REJECTED
+                          - CANCELLED
+                          - EXPIRED
+                        credit_limit:
+                          type: number
+                          description: Approved credit limit (credit cards only)
+                          format: double
+                          example: 15000.0
+                          nullable: true
+                        rejection_reason:
+                          type: string
+                          description: Reason for application rejection, if applicable
+                          example: Insufficient credit history
+                          nullable: true
+                        submitted_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                        decided_at:
+                          type: string
+                          description: Timestamp of approval or rejection decision
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                          nullable: true
+                      required:
+                      - application_id
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /applications/{application_id}:
+    get:
+      operationId: getApplication
+      summary: Get application details
+      description: Retrieves the full details of a card application including applicant information, requested product, processing
+        status, and decision details. For approved applications, includes the assigned credit limit. For rejected applications,
+        includes the rejection reason.
+      tags:
+      - Applications
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Unique card application identifier
+                    example: app-3f8a21c9
+                  applicant_name:
+                    type: string
+                    description: Full name of the cardholder as embossed on the card
+                    example: Jane A. Doe
+                  applicant_email:
+                    type: string
+                    description: Applicant email address
+                    format: email
+                    example: jane.doe@email.com
+                  card_type:
+                    type: string
+                    description: Card product type
+                    example: CREDIT
+                    enum:
+                    - DEBIT
+                    - CREDIT
+                    - PREPAID
+                    - CHARGE
+                  card_program:
+                    type: string
+                    description: Card program or product identifier
+                    example: platinum-rewards
+                  status:
+                    type: string
+                    description: Application processing status
+                    example: SUBMITTED
+                    enum:
+                    - SUBMITTED
+                    - UNDER_REVIEW
+                    - APPROVED
+                    - REJECTED
+                    - CANCELLED
+                    - EXPIRED
+                  credit_limit:
+                    type: number
+                    description: Approved credit limit (credit cards only)
+                    format: double
+                    example: 15000.0
+                    nullable: true
+                  rejection_reason:
+                    type: string
+                    description: Reason for application rejection, if applicable
+                    example: Insufficient credit history
+                    nullable: true
+                  submitted_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  decided_at:
+                    type: string
+                    description: Timestamp of approval or rejection decision
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                    nullable: true
+                required:
+                - application_id
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /applications/{application_id}/approve:
+    post:
+      operationId: approveApplication
+      summary: Approve a card application
+      description: Approves a card application and initiates card issuance. The credit limit must be specified for credit
+        products. Upon approval, a card record is created and queued for embossing. The applicant is notified via email. Only
+        applications in SUBMITTED or UNDER_REVIEW status can be approved.
+      tags:
+      - Applications
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Approve a card application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                credit_limit:
+                  type: number
+                  description: Approved credit limit for credit cards
+                  format: double
+                  example: 250.0
+                card_program:
+                  type: string
+                  description: Card program or product identifier
+                  example: platinum-rewards
+                notes:
+                  type: string
+                  description: Internal approval notes
+                  example: Strong credit profile, pre-qualified
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Unique card application identifier
+                    example: app-3f8a21c9
+                  applicant_name:
+                    type: string
+                    description: Full name of the cardholder as embossed on the card
+                    example: Jane A. Doe
+                  applicant_email:
+                    type: string
+                    description: Applicant email address
+                    format: email
+                    example: jane.doe@email.com
+                  card_type:
+                    type: string
+                    description: Card product type
+                    example: CREDIT
+                    enum:
+                    - DEBIT
+                    - CREDIT
+                    - PREPAID
+                    - CHARGE
+                  card_program:
+                    type: string
+                    description: Card program or product identifier
+                    example: platinum-rewards
+                  status:
+                    type: string
+                    description: Application processing status
+                    example: SUBMITTED
+                    enum:
+                    - SUBMITTED
+                    - UNDER_REVIEW
+                    - APPROVED
+                    - REJECTED
+                    - CANCELLED
+                    - EXPIRED
+                  credit_limit:
+                    type: number
+                    description: Approved credit limit (credit cards only)
+                    format: double
+                    example: 15000.0
+                    nullable: true
+                  rejection_reason:
+                    type: string
+                    description: Reason for application rejection, if applicable
+                    example: Insufficient credit history
+                    nullable: true
+                  submitted_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  decided_at:
+                    type: string
+                    description: Timestamp of approval or rejection decision
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                    nullable: true
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                required:
+                - application_id
+                - status
+                - card_id
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /applications/{application_id}/reject:
+    post:
+      operationId: rejectApplication
+      summary: Reject a card application
+      description: Rejects a card application with a reason code. The applicant is notified via email with an adverse action
+        notice per ECOA requirements. Rejection reasons are recorded for regulatory reporting. Only applications in SUBMITTED
+        or UNDER_REVIEW status can be rejected.
+      tags:
+      - Applications
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Reject a card application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejection_reason:
+                  type: string
+                  description: Reason for rejection
+                  example: Insufficient credit history
+                reason_code:
+                  type: string
+                  description: Standardized rejection reason code
+                  example: CREDIT_SCORE
+                  enum:
+                  - CREDIT_SCORE
+                  - INCOME
+                  - IDENTITY
+                  - FRAUD_RISK
+                  - EXISTING_RELATIONSHIP
+                  - OTHER
+              required:
+              - rejection_reason
+              - reason_code
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Unique card application identifier
+                    example: app-3f8a21c9
+                  applicant_name:
+                    type: string
+                    description: Full name of the cardholder as embossed on the card
+                    example: Jane A. Doe
+                  applicant_email:
+                    type: string
+                    description: Applicant email address
+                    format: email
+                    example: jane.doe@email.com
+                  card_type:
+                    type: string
+                    description: Card product type
+                    example: CREDIT
+                    enum:
+                    - DEBIT
+                    - CREDIT
+                    - PREPAID
+                    - CHARGE
+                  card_program:
+                    type: string
+                    description: Card program or product identifier
+                    example: platinum-rewards
+                  status:
+                    type: string
+                    description: Application processing status
+                    example: SUBMITTED
+                    enum:
+                    - SUBMITTED
+                    - UNDER_REVIEW
+                    - APPROVED
+                    - REJECTED
+                    - CANCELLED
+                    - EXPIRED
+                  credit_limit:
+                    type: number
+                    description: Approved credit limit (credit cards only)
+                    format: double
+                    example: 15000.0
+                    nullable: true
+                  rejection_reason:
+                    type: string
+                    description: Reason for application rejection, if applicable
+                    example: Insufficient credit history
+                    nullable: true
+                  submitted_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  decided_at:
+                    type: string
+                    description: Timestamp of approval or rejection decision
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                    nullable: true
+                required:
+                - application_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /cards:
+    post:
+      operationId: issueCard
+      summary: Issue a new card
+      description: Directly issues a new card without requiring a separate application (for pre-approved or internal issuance).
+        Assigns a PAN from the configured BIN range, generates expiry date and CVV, and queues the card for embossing. The
+        card is created in INACTIVE status and must be activated by the cardholder.
+      tags:
+      - Card Issuance
+      requestBody:
+        required: true
+        description: Issue a new card request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cardholder_name:
+                  type: string
+                  description: Full name of the cardholder as embossed on the card
+                  example: Jane A. Doe
+                card_type:
+                  type: string
+                  description: Card product type
+                  example: CREDIT
+                  enum:
+                  - DEBIT
+                  - CREDIT
+                  - PREPAID
+                  - CHARGE
+                card_program:
+                  type: string
+                  description: Card program or product identifier
+                  example: platinum-rewards
+                network:
+                  type: string
+                  description: Preferred card network
+                  example: VISA
+                  enum:
+                  - VISA
+                  - MASTERCARD
+                  - AMEX
+                shipping_address:
+                  type: object
+                  description: Card delivery address
+                  properties:
+                    line1:
+                      type: string
+                    city:
+                      type: string
+                    state:
+                      type: string
+                    postal_code:
+                      type: string
+                    country:
+                      type: string
+              required:
+              - cardholder_name
+              - card_type
+              - card_program
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  application_id:
+                    type: string
+                    description: Unique card application identifier
+                    example: app-3f8a21c9
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: '****-****-****-4532'
+                  cardholder_name:
+                    type: string
+                    description: Full name of the cardholder as embossed on the card
+                    example: Jane A. Doe
+                  card_type:
+                    type: string
+                    description: Card product type
+                    example: CREDIT
+                    enum:
+                    - DEBIT
+                    - CREDIT
+                    - PREPAID
+                    - CHARGE
+                  card_program:
+                    type: string
+                    description: Card program or product identifier
+                    example: platinum-rewards
+                  expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: 12/27
+                    pattern: ^(0[1-9]|1[0-2])/[0-9]{2}$
+                  status:
+                    type: string
+                    description: Current card status
+                    example: ACTIVE
+                    enum:
+                    - ACTIVE
+                    - INACTIVE
+                    - BLOCKED
+                    - CLOSED
+                    - EXPIRED
+                    - LOST
+                    - STOLEN
+                  embossing_status:
+                    type: string
+                    description: Physical card embossing status
+                    example: COMPLETED
+                    enum:
+                    - PENDING
+                    - IN_PRODUCTION
+                    - COMPLETED
+                    - SHIPPED
+                  bin:
+                    type: string
+                    description: Bank Identification Number (first 6 digits)
+                    example: '453201'
+                  network:
+                    type: string
+                    description: Card network
+                    example: VISA
+                    enum:
+                    - VISA
+                    - MASTERCARD
+                    - AMEX
+                  issued_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - card_id
+                - masked_pan
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+    get:
+      operationId: listIssuedCards
+      summary: List issued cards
+      description: Returns a paginated list of issued cards with their status, cardholder information, and embossing status.
+        Supports filtering by card type, program, network, status, and issuance date range.
+      tags:
+      - Card Issuance
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: card_type
+        in: query
+        required: false
+        description: Filter by card type
+        schema:
+          type: string
+          enum:
+          - DEBIT
+          - CREDIT
+          - PREPAID
+          - CHARGE
+      - name: status
+        in: query
+        required: false
+        description: Filter by card status
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+          - BLOCKED
+          - CLOSED
+          - EXPIRED
+      - name: network
+        in: query
+        required: false
+        description: Filter by card network
+        schema:
+          type: string
+          enum:
+          - VISA
+          - MASTERCARD
+          - AMEX
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        card_id:
+                          type: string
+                          description: Unique card identifier
+                          example: card-8a2f4b91
+                        application_id:
+                          type: string
+                          description: Unique card application identifier
+                          example: app-3f8a21c9
+                        masked_pan:
+                          type: string
+                          description: Masked primary account number
+                          example: '****-****-****-4532'
+                        cardholder_name:
+                          type: string
+                          description: Full name of the cardholder as embossed on the card
+                          example: Jane A. Doe
+                        card_type:
+                          type: string
+                          description: Card product type
+                          example: CREDIT
+                          enum:
+                          - DEBIT
+                          - CREDIT
+                          - PREPAID
+                          - CHARGE
+                        card_program:
+                          type: string
+                          description: Card program or product identifier
+                          example: platinum-rewards
+                        expiry_date:
+                          type: string
+                          description: Card expiration date in MM/YY format
+                          example: 12/27
+                          pattern: ^(0[1-9]|1[0-2])/[0-9]{2}$
+                        status:
+                          type: string
+                          description: Current card status
+                          example: ACTIVE
+                          enum:
+                          - ACTIVE
+                          - INACTIVE
+                          - BLOCKED
+                          - CLOSED
+                          - EXPIRED
+                          - LOST
+                          - STOLEN
+                        embossing_status:
+                          type: string
+                          description: Physical card embossing status
+                          example: COMPLETED
+                          enum:
+                          - PENDING
+                          - IN_PRODUCTION
+                          - COMPLETED
+                          - SHIPPED
+                        bin:
+                          type: string
+                          description: Bank Identification Number (first 6 digits)
+                          example: '453201'
+                        network:
+                          type: string
+                          description: Card network
+                          example: VISA
+                          enum:
+                          - VISA
+                          - MASTERCARD
+                          - AMEX
+                        issued_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - card_id
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /cards/{card_id}:
+    get:
+      operationId: getIssuedCard
+      summary: Get issued card details
+      description: Retrieves the full details of an issued card including cardholder information, card program, network, BIN,
+        masked PAN, embossing status, and issuance timestamp. Does not return the full PAN or CVV; use the credentials endpoint
+        for secure credential retrieval.
+      tags:
+      - Card Issuance
+      parameters:
+      - name: card_id
+        in: path
+        required: true
+        description: Unique card id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  application_id:
+                    type: string
+                    description: Unique card application identifier
+                    example: app-3f8a21c9
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: '****-****-****-4532'
+                  cardholder_name:
+                    type: string
+                    description: Full name of the cardholder as embossed on the card
+                    example: Jane A. Doe
+                  card_type:
+                    type: string
+                    description: Card product type
+                    example: CREDIT
+                    enum:
+                    - DEBIT
+                    - CREDIT
+                    - PREPAID
+                    - CHARGE
+                  card_program:
+                    type: string
+                    description: Card program or product identifier
+                    example: platinum-rewards
+                  expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: 12/27
+                    pattern: ^(0[1-9]|1[0-2])/[0-9]{2}$
+                  status:
+                    type: string
+                    description: Current card status
+                    example: ACTIVE
+                    enum:
+                    - ACTIVE
+                    - INACTIVE
+                    - BLOCKED
+                    - CLOSED
+                    - EXPIRED
+                    - LOST
+                    - STOLEN
+                  embossing_status:
+                    type: string
+                    description: Physical card embossing status
+                    example: COMPLETED
+                    enum:
+                    - PENDING
+                    - IN_PRODUCTION
+                    - COMPLETED
+                    - SHIPPED
+                  bin:
+                    type: string
+                    description: Bank Identification Number (first 6 digits)
+                    example: '453201'
+                  network:
+                    type: string
+                    description: Card network
+                    example: VISA
+                    enum:
+                    - VISA
+                    - MASTERCARD
+                    - AMEX
+                  issued_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - card_id
+                - masked_pan
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /cards/{card_id}/reissue:
+    post:
+      operationId: reissueCard
+      summary: Reissue a card
+      description: Initiates reissuance of a card with a new PAN, expiry date, and CVV. The original card is deactivated.
+        Common reasons include card damage, upcoming expiry, or compromise. A new embossing job is created and the reissued
+        card is shipped to the cardholder's address on file. Active recurring payments are migrated via the card network's
+        Account Updater service.
+      tags:
+      - Card Issuance
+      parameters:
+      - name: card_id
+        in: path
+        required: true
+        description: Unique card id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Reissue a card request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason for reissuance
+                  example: DAMAGED
+                  enum:
+                  - DAMAGED
+                  - EXPIRING
+                  - COMPROMISED
+                  - NAME_CHANGE
+                  - PRODUCT_UPGRADE
+                retain_pan:
+                  type: boolean
+                  description: Whether to retain the current PAN (same number, new expiry/CVV)
+                  example: false
+                expedited_shipping:
+                  type: boolean
+                  description: Whether to use expedited shipping
+                  example: false
+              required:
+              - reason
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  new_card_id:
+                    type: string
+                    description: Identifier of the newly issued replacement card
+                    example: card-9b3f5c82
+                  old_card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  status:
+                    type: string
+                    example: INACTIVE
+                  estimated_delivery:
+                    type: string
+                    format: date
+                    example: '2025-06-22'
+                required:
+                - new_card_id
+                - old_card_id
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /cards/{card_id}/renew:
+    post:
+      operationId: renewCard
+      summary: Renew an expiring card
+      description: Initiates renewal of a card that is approaching its expiry date. A new card is issued with an extended
+        expiry date and a new CVV. The PAN is retained by default for continuity of recurring payments. Renewal cards are
+        automatically sent 30 days before expiry, but this endpoint allows manual triggering.
+      tags:
+      - Card Issuance
+      parameters:
+      - name: card_id
+        in: path
+        required: true
+        description: Unique card id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Renew an expiring card request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                extend_years:
+                  type: integer
+                  description: Number of years to extend the expiry
+                  example: 3
+                  minimum: 1
+                  maximum: 5
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  new_card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-9b3f5c82
+                  new_expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: 12/27
+                    pattern: ^(0[1-9]|1[0-2])/[0-9]{2}$
+                  status:
+                    type: string
+                    example: INACTIVE
+                required:
+                - new_card_id
+                - new_expiry_date
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /embossing/jobs:
+    get:
+      operationId: listEmbossingJobs
+      summary: List embossing jobs
+      description: Returns a paginated list of embossing jobs with their status, card count, facility, and estimated completion
+        time. Use for production management and quality control tracking.
+      tags:
+      - Embossing
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by job status
+        schema:
+          type: string
+          enum:
+          - QUEUED
+          - IN_PRODUCTION
+          - QUALITY_CHECK
+          - COMPLETED
+          - FAILED
+      - name: facility
+        in: query
+        required: false
+        description: Filter by embossing facility
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        job_id:
+                          type: string
+                          description: Embossing job identifier
+                          example: emb-7d4f92
+                        card_ids:
+                          type: array
+                          description: Cards included in this embossing batch
+                          items:
+                            type: string
+                            example: card-8a2f4b91
+                        status:
+                          type: string
+                          description: Embossing job status
+                          example: QUEUED
+                          enum:
+                          - QUEUED
+                          - IN_PRODUCTION
+                          - QUALITY_CHECK
+                          - COMPLETED
+                          - FAILED
+                        card_count:
+                          type: integer
+                          description: Number of cards in the batch
+                          example: 250
+                        facility:
+                          type: string
+                          description: Embossing facility location
+                          example: US-EAST-1
+                        created_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                        estimated_completion:
+                          type: string
+                          description: Estimated completion timestamp for the embossing job
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - job_id
+                      - status
+                      - card_count
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createEmbossingJob
+      summary: Create an embossing job
+      description: Creates a new embossing batch job for one or more cards. Cards are grouped by card program and network
+        for efficient production. The job enters the QUEUED status and is picked up by the embossing facility. Estimated completion
+        depends on the queue depth and card count.
+      tags:
+      - Embossing
+      requestBody:
+        required: true
+        description: Create an embossing job request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                card_ids:
+                  type: array
+                  description: Cards included in this embossing batch
+                  items:
+                    type: string
+                    example: card-8a2f4b91
+                facility:
+                  type: string
+                  description: Embossing facility location
+                  example: US-EAST-1
+                priority:
+                  type: string
+                  description: Production priority
+                  example: STANDARD
+                  enum:
+                  - STANDARD
+                  - EXPEDITED
+              required:
+              - card_ids
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    description: Embossing job identifier
+                    example: emb-7d4f92
+                  card_ids:
+                    type: array
+                    description: Cards included in this embossing batch
+                    items:
+                      type: string
+                      example: card-8a2f4b91
+                  status:
+                    type: string
+                    description: Embossing job status
+                    example: QUEUED
+                    enum:
+                    - QUEUED
+                    - IN_PRODUCTION
+                    - QUALITY_CHECK
+                    - COMPLETED
+                    - FAILED
+                  card_count:
+                    type: integer
+                    description: Number of cards in the batch
+                    example: 250
+                  facility:
+                    type: string
+                    description: Embossing facility location
+                    example: US-EAST-1
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  estimated_completion:
+                    type: string
+                    description: Estimated completion timestamp for the embossing job
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - job_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /embossing/jobs/{job_id}:
+    get:
+      operationId: getEmbossingJob
+      summary: Get embossing job status
+      description: Retrieves the full details of an embossing job including its production status, card count, facility, creation
+        time, and estimated completion. For completed jobs, includes quality control results and any cards that failed embossing.
+      tags:
+      - Embossing
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        description: Unique job id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    description: Embossing job identifier
+                    example: emb-7d4f92
+                  card_ids:
+                    type: array
+                    description: Cards included in this embossing batch
+                    items:
+                      type: string
+                      example: card-8a2f4b91
+                  status:
+                    type: string
+                    description: Embossing job status
+                    example: QUEUED
+                    enum:
+                    - QUEUED
+                    - IN_PRODUCTION
+                    - QUALITY_CHECK
+                    - COMPLETED
+                    - FAILED
+                  card_count:
+                    type: integer
+                    description: Number of cards in the batch
+                    example: 250
+                  facility:
+                    type: string
+                    description: Embossing facility location
+                    example: US-EAST-1
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  estimated_completion:
+                    type: string
+                    description: Estimated completion timestamp for the embossing job
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - job_id
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /fulfillment/orders:
+    get:
+      operationId: listFulfillmentOrders
+      summary: List fulfillment orders
+      description: Returns a paginated list of card fulfillment (shipping) orders with tracking information. Supports filtering
+        by shipping status, method, and date range. Each order includes the carrier, tracking number, and estimated delivery
+        date.
+      tags:
+      - Fulfillment
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by shipping status
+        schema:
+          type: string
+          enum:
+          - PENDING
+          - PROCESSING
+          - SHIPPED
+          - IN_TRANSIT
+          - DELIVERED
+      - name: shipping_method
+        in: query
+        required: false
+        description: Filter by shipping method
+        schema:
+          type: string
+          enum:
+          - STANDARD
+          - EXPRESS
+          - OVERNIGHT
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        order_id:
+                          type: string
+                          description: Fulfillment order identifier
+                          example: ord-8c3f21
+                        card_id:
+                          type: string
+                          description: Unique card identifier
+                          example: card-8a2f4b91
+                        status:
+                          type: string
+                          description: Shipping status
+                          example: SHIPPED
+                          enum:
+                          - PENDING
+                          - PROCESSING
+                          - SHIPPED
+                          - IN_TRANSIT
+                          - DELIVERED
+                          - RETURNED
+                          - FAILED
+                        shipping_method:
+                          type: string
+                          description: Shipping method
+                          example: STANDARD
+                          enum:
+                          - STANDARD
+                          - EXPRESS
+                          - OVERNIGHT
+                          - REGISTERED
+                        tracking_number:
+                          type: string
+                          description: Carrier tracking number
+                          example: 1Z999AA10123456784
+                        carrier:
+                          type: string
+                          description: Shipping carrier name
+                          example: UPS
+                        ship_to:
+                          type: object
+                          description: Delivery address
+                          properties:
+                            name:
+                              type: string
+                              example: Jane A. Doe
+                            line1:
+                              type: string
+                              example: 123 Main Street
+                            city:
+                              type: string
+                              example: New York
+                            state:
+                              type: string
+                              example: NY
+                            postal_code:
+                              type: string
+                              example: '10001'
+                            country:
+                              type: string
+                              example: US
+                        shipped_at:
+                          type: string
+                          description: Timestamp when the card was shipped
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                          nullable: true
+                        estimated_delivery:
+                          type: string
+                          description: Estimated delivery date
+                          format: date
+                          example: '2025-06-22'
+                        created_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - order_id
+                      - card_id
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /fulfillment/orders/{order_id}:
+    get:
+      operationId: getFulfillmentOrder
+      summary: Get fulfillment order details
+      description: Retrieves the full details of a fulfillment order including the delivery address, carrier, tracking number,
+        shipping method, and current transit status. For delivered orders, includes the delivery confirmation timestamp.
+      tags:
+      - Fulfillment
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        description: Unique order id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    description: Fulfillment order identifier
+                    example: ord-8c3f21
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  status:
+                    type: string
+                    description: Shipping status
+                    example: SHIPPED
+                    enum:
+                    - PENDING
+                    - PROCESSING
+                    - SHIPPED
+                    - IN_TRANSIT
+                    - DELIVERED
+                    - RETURNED
+                    - FAILED
+                  shipping_method:
+                    type: string
+                    description: Shipping method
+                    example: STANDARD
+                    enum:
+                    - STANDARD
+                    - EXPRESS
+                    - OVERNIGHT
+                    - REGISTERED
+                  tracking_number:
+                    type: string
+                    description: Carrier tracking number
+                    example: 1Z999AA10123456784
+                  carrier:
+                    type: string
+                    description: Shipping carrier name
+                    example: UPS
+                  ship_to:
+                    type: object
+                    description: Delivery address
+                    properties:
+                      name:
+                        type: string
+                        example: Jane A. Doe
+                      line1:
+                        type: string
+                        example: 123 Main Street
+                      city:
+                        type: string
+                        example: New York
+                      state:
+                        type: string
+                        example: NY
+                      postal_code:
+                        type: string
+                        example: '10001'
+                      country:
+                        type: string
+                        example: US
+                  shipped_at:
+                    type: string
+                    description: Timestamp when the card was shipped
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                    nullable: true
+                  estimated_delivery:
+                    type: string
+                    description: Estimated delivery date
+                    format: date
+                    example: '2025-06-22'
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - order_id
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /fulfillment/orders/{order_id}/ship:
+    post:
+      operationId: markAsShipped
+      summary: Mark order as shipped
+      description: Updates a fulfillment order with shipping details after the card has been dispatched from the embossing
+        facility. Records the carrier, tracking number, and estimated delivery date. Triggers a shipment notification to the
+        cardholder via email and push notification.
+      tags:
+      - Fulfillment
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        description: Unique order id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Mark order as shipped request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tracking_number:
+                  type: string
+                  description: Carrier tracking number
+                  example: 1Z999AA10123456784
+                carrier:
+                  type: string
+                  description: Shipping carrier name
+                  example: UPS
+                estimated_delivery:
+                  type: string
+                  description: Estimated delivery date
+                  format: date
+                  example: '2025-06-22'
+              required:
+              - tracking_number
+              - carrier
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    description: Fulfillment order identifier
+                    example: ord-8c3f21
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  status:
+                    type: string
+                    description: Shipping status
+                    example: SHIPPED
+                    enum:
+                    - PENDING
+                    - PROCESSING
+                    - SHIPPED
+                    - IN_TRANSIT
+                    - DELIVERED
+                    - RETURNED
+                    - FAILED
+                  shipping_method:
+                    type: string
+                    description: Shipping method
+                    example: STANDARD
+                    enum:
+                    - STANDARD
+                    - EXPRESS
+                    - OVERNIGHT
+                    - REGISTERED
+                  tracking_number:
+                    type: string
+                    description: Carrier tracking number
+                    example: 1Z999AA10123456784
+                  carrier:
+                    type: string
+                    description: Shipping carrier name
+                    example: UPS
+                  ship_to:
+                    type: object
+                    description: Delivery address
+                    properties:
+                      name:
+                        type: string
+                        example: Jane A. Doe
+                      line1:
+                        type: string
+                        example: 123 Main Street
+                      city:
+                        type: string
+                        example: New York
+                      state:
+                        type: string
+                        example: NY
+                      postal_code:
+                        type: string
+                        example: '10001'
+                      country:
+                        type: string
+                        example: US
+                  shipped_at:
+                    type: string
+                    description: Timestamp when the card was shipped
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                    nullable: true
+                  estimated_delivery:
+                    type: string
+                    description: Estimated delivery date
+                    format: date
+                    example: '2025-06-22'
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - order_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /cards/{card_id}/credentials:
+    get:
+      operationId: getCardCredentials
+      summary: Get card credentials
+      description: Retrieves the full card credentials (PAN, expiry, CVV) for secure display to the cardholder in the mobile
+        app or web portal. This is a PCI-sensitive endpoint that requires step-up authentication. The credentials are encrypted
+        with the session key and must be decrypted client-side. Access is logged for PCI compliance audit trails.
+      tags:
+      - Card Issuance
+      parameters:
+      - name: card_id
+        in: path
+        required: true
+        description: Unique card id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  pan:
+                    type: string
+                    description: Full primary account number (encrypted)
+                    example: enc:4532019876453291
+                  expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: 12/27
+                    pattern: ^(0[1-9]|1[0-2])/[0-9]{2}$
+                  cvv:
+                    type: string
+                    description: Card verification value (encrypted)
+                    example: enc:847
+                  cardholder_name:
+                    type: string
+                    description: Full name of the cardholder as embossed on the card
+                    example: Jane A. Doe
+                  encryption_key_id:
+                    type: string
+                    description: Key ID used for credential encryption
+                    example: sess-key-2025-06
+                required:
+                - card_id
+                - pan
+                - expiry_date
+                - cvv
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /cards/bulk-issue:
+    post:
+      operationId: bulkIssueCards
+      summary: Bulk issue cards
+      description: Issues multiple cards in a single batch request. Accepts an array of card specifications and returns the
+        created card records. All cards in the batch must belong to the same card program. Failed cards are reported individually
+        without affecting the rest of the batch. Maximum batch size is 500 cards.
+      tags:
+      - Card Issuance
+      requestBody:
+        required: true
+        description: Bulk issue cards request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                card_program:
+                  type: string
+                  description: Card program or product identifier
+                  example: platinum-rewards
+                network:
+                  type: string
+                  example: VISA
+                  enum:
+                  - VISA
+                  - MASTERCARD
+                  - AMEX
+                cards:
+                  type: array
+                  description: Array of card specifications to issue
+                  items:
+                    type: string
+                    example: '{cardholder_name, card_type, shipping_address}'
+                auto_emboss:
+                  type: boolean
+                  description: Whether to automatically create an embossing job
+                  example: true
+              required:
+              - card_program
+              - cards
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: Batch issuance identifier
+                    example: batch-4f8a21
+                  total_requested:
+                    type: integer
+                    description: Number of cards requested
+                    example: 250
+                  total_issued:
+                    type: integer
+                    description: Number of cards successfully issued
+                    example: 248
+                  total_failed:
+                    type: integer
+                    description: Number of cards that failed issuance
+                    example: 2
+                  embossing_job_id:
+                    type: string
+                    description: Embossing job identifier
+                    example: emb-7d4f92
+                required:
+                - batch_id
+                - total_requested
+                - total_issued
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

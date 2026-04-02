@@ -1,0 +1,1318 @@
+openapi: 3.0.3
+info:
+  title: VZW Slice Orchestrator API
+  description: >-
+    Creates and lifecycle-manages enterprise network slices for private 5G campus deployments.
+    The API provisions 3GPP-aligned slice characteristics (SST and SD), applies radio and core
+    policy packs, controls device or site membership, and enforces QoS policy through 5QI, GBR,
+    and AMBR parameters. It is designed for tenant-isolated workloads that require deterministic
+    performance and auditable operational controls.
+  version: 1.0.0
+  contact:
+    name: Verizon Network API Platform
+    email: api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/about/our-company/terms-conditions
+  x-verizon-catalog-id: vzw-slice-orchestrator-api
+  x-verizon-domain: slicing
+servers:
+  - url: https://vzw-slice-orchestrator-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-slice-orchestrator-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Slices
+    description: Create, inspect, update, and suspend private 5G slices
+  - name: Memberships
+    description: Manage device and site membership assignments on slices
+  - name: QoS Profiles
+    description: Attach and tune 5QI and GBR-based QoS profiles for slices
+paths:
+  /slices:
+    post:
+      operationId: createSlice
+      summary: Create a network slice
+      description: >-
+        Provisions a new enterprise slice for a target campus and tenant with explicit S-NSSAI
+        values (SST and SD), latency budget, and availability target. On success, orchestration
+        starts policy-pack compilation, RAN placement checks, and admission controller bootstrap.
+      tags:
+        - Slices
+      requestBody:
+        required: true
+        description: Slice creation payload with S-NSSAI and SLO inputs
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSliceRequest"
+            examples:
+              lowLatencyCampusManufacturing:
+                summary: URLLC-like profile for robotics control workloads
+                value:
+                  name: "campus-a-robotics-slice"
+                  campus_id: "campus-austin-01"
+                  tenant_id: "tenant-manufacturing-north"
+                  sst: 1
+                  sd: "00A1F3"
+                  latency_budget_ms: 15
+                  availability_target: 99.99
+                  admission_control:
+                    max_devices: 3000
+                    max_sites: 5
+                    overbooking_ratio: 1.05
+                  policy_pack_id: "policypack-industrial-v4"
+      responses:
+        "201":
+          description: Slice created and admitted for orchestration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Slice"
+              example:
+                slice_id: "slice-5f4d6dcf"
+                name: "campus-a-robotics-slice"
+                status: "PROVISIONING"
+                campus_id: "campus-austin-01"
+                tenant_id: "tenant-manufacturing-north"
+                snssai:
+                  sst: 1
+                  sd: "00A1F3"
+                slo:
+                  latency_budget_ms: 15
+                  availability_target: 99.99
+                policy_pack_id: "policypack-industrial-v4"
+                topology:
+                  region: "us-central"
+                  edge_zone: "aus-edge-2"
+                  assigned_cells:
+                    - "cell-aus-0021"
+                    - "cell-aus-0022"
+                admission_control:
+                  max_devices: 3000
+                  max_sites: 5
+                  overbooking_ratio: 1.05
+                qos_profiles: []
+                created_at: "2026-03-27T10:02:44Z"
+                updated_at: "2026-03-27T10:02:44Z"
+                trace_id: "e8c7f82c-76fc-43d4-b3ad-7ec8f6e89791"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listSlices
+      summary: List slices for a campus or tenant
+      description: >-
+        Returns a paginated list of slices filtered by campus, tenant, and lifecycle status.
+        Results include S-NSSAI references, current SLO envelope, and operational status for
+        fleet-level control plane dashboards.
+      tags:
+        - Slices
+      parameters:
+        - $ref: "#/components/parameters/CampusId"
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/SliceStatus"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Paginated slice list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListSlicesResponse"
+              example:
+                data:
+                  - slice_id: "slice-5f4d6dcf"
+                    name: "campus-a-robotics-slice"
+                    status: "ACTIVE"
+                    campus_id: "campus-austin-01"
+                    tenant_id: "tenant-manufacturing-north"
+                    snssai:
+                      sst: 1
+                      sd: "00A1F3"
+                    slo:
+                      latency_budget_ms: 15
+                      availability_target: 99.99
+                    policy_pack_id: "policypack-industrial-v4"
+                    created_at: "2026-03-26T18:11:19Z"
+                    updated_at: "2026-03-27T09:44:08Z"
+                  - slice_id: "slice-cc5e2289"
+                    name: "campus-a-video-analytics"
+                    status: "PROVISIONING"
+                    campus_id: "campus-austin-01"
+                    tenant_id: "tenant-manufacturing-north"
+                    snssai:
+                      sst: 2
+                      sd: "1BCD22"
+                    slo:
+                      latency_budget_ms: 40
+                      availability_target: 99.95
+                    policy_pack_id: "policypack-vision-v2"
+                    created_at: "2026-03-27T09:55:02Z"
+                    updated_at: "2026-03-27T09:55:02Z"
+                meta:
+                  page: 1
+                  per_page: 20
+                  total_items: 2
+                  total_pages: 1
+                trace_id: "d71b5e31-d0ce-4688-ac95-f087ad8dcb8d"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /slices/{sliceId}:
+    get:
+      operationId: getSlice
+      summary: Get slice topology and policy details
+      description: >-
+        Retrieves full slice state including topology placement, assigned radio cells,
+        policy pack metadata, admission thresholds, and attached QoS profiles.
+      tags:
+        - Slices
+      parameters:
+        - $ref: "#/components/parameters/SliceId"
+      responses:
+        "200":
+          description: Slice detail returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Slice"
+              example:
+                slice_id: "slice-5f4d6dcf"
+                name: "campus-a-robotics-slice"
+                status: "ACTIVE"
+                campus_id: "campus-austin-01"
+                tenant_id: "tenant-manufacturing-north"
+                snssai:
+                  sst: 1
+                  sd: "00A1F3"
+                slo:
+                  latency_budget_ms: 15
+                  availability_target: 99.99
+                policy_pack_id: "policypack-industrial-v4"
+                topology:
+                  region: "us-central"
+                  edge_zone: "aus-edge-2"
+                  assigned_cells:
+                    - "cell-aus-0021"
+                    - "cell-aus-0022"
+                    - "cell-aus-0025"
+                admission_control:
+                  max_devices: 3000
+                  max_sites: 5
+                  overbooking_ratio: 1.05
+                qos_profiles:
+                  - qos_profile_id: "qos-93a4"
+                    profile_name: "robotics-gbr"
+                    five_qi: 82
+                    gbr:
+                      uplink_kbps: 25000
+                      downlink_kbps: 25000
+                    ambr:
+                      uplink_kbps: 80000
+                      downlink_kbps: 80000
+                    arp_priority_level: 2
+                    reflective_qos: false
+                    status: "ATTACHED"
+                created_at: "2026-03-26T18:11:19Z"
+                updated_at: "2026-03-27T09:44:08Z"
+                trace_id: "12675f0d-9d56-47ac-9303-d68ba355ad0a"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateSlice
+      summary: Update slice SLO and admission controls
+      description: >-
+        Applies partial updates to active or provisioning slices. Supports SLO tuning
+        (latency budget and availability target) and admission control updates used by
+        orchestration to enforce tenant quotas and anti-congestion guardrails.
+      tags:
+        - Slices
+      parameters:
+        - $ref: "#/components/parameters/SliceId"
+      requestBody:
+        required: true
+        description: Partial update payload for SLO and admission controls
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSliceRequest"
+            example:
+              slo:
+                latency_budget_ms: 18
+                availability_target: 99.97
+              admission_control:
+                max_devices: 3200
+                max_sites: 6
+                overbooking_ratio: 1.08
+      responses:
+        "200":
+          description: Slice updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Slice"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /slices/{sliceId}/memberships:
+    post:
+      operationId: createMembership
+      summary: Add a device or site membership to a slice
+      description: >-
+        Admits a device or a site binding into the specified slice. Membership controls
+        determine which traffic sources can attach to the slice and are validated against
+        configured admission limits and tenant isolation rules.
+      tags:
+        - Memberships
+      parameters:
+        - $ref: "#/components/parameters/SliceId"
+      requestBody:
+        required: true
+        description: Membership assignment payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMembershipRequest"
+            examples:
+              addDevice:
+                summary: Device membership by IMEI and enterprise asset id
+                value:
+                  member_type: "DEVICE"
+                  member_ref: "imei:356938035643809"
+                  display_name: "robot-arm-17"
+                  metadata:
+                    asset_id: "asset-robot-17"
+                    site_id: "site-assembly-2"
+              addSite:
+                summary: Site-level admission for aggregate endpoints
+                value:
+                  member_type: "SITE"
+                  member_ref: "site-assembly-2"
+                  display_name: "Assembly Hall 2"
+                  metadata:
+                    geo_fence_id: "gf-88910"
+      responses:
+        "201":
+          description: Membership created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+              example:
+                membership_id: "mship-7bc08"
+                slice_id: "slice-5f4d6dcf"
+                member_type: "DEVICE"
+                member_ref: "imei:356938035643809"
+                display_name: "robot-arm-17"
+                status: "ACTIVE"
+                metadata:
+                  asset_id: "asset-robot-17"
+                  site_id: "site-assembly-2"
+                created_at: "2026-03-27T10:15:06Z"
+                updated_at: "2026-03-27T10:15:06Z"
+                trace_id: "775e0ad5-1e4c-41f1-a7d2-bc1f303347cc"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /slices/{sliceId}/memberships/{membershipId}:
+    delete:
+      operationId: deleteMembership
+      summary: Remove membership from slice
+      description: >-
+        Revokes an existing membership binding from the slice. Device sessions are drained
+        according to policy-pack behavior and any subsequent attach attempts are rejected
+        unless a new membership is created.
+      tags:
+        - Memberships
+      parameters:
+        - $ref: "#/components/parameters/SliceId"
+        - $ref: "#/components/parameters/MembershipId"
+      responses:
+        "204":
+          description: Membership removed successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /slices/{sliceId}/qos-profiles:
+    post:
+      operationId: createQosProfile
+      summary: Attach 5QI and GBR-based QoS profile
+      description: >-
+        Creates and attaches a QoS profile to a slice. The profile defines 5QI behavior,
+        optional GBR floor, session AMBR caps, and ARP priority for admission and scheduling.
+        The orchestrator validates profile compatibility with the slice's SLO envelope.
+      tags:
+        - QoS Profiles
+      parameters:
+        - $ref: "#/components/parameters/SliceId"
+      requestBody:
+        required: true
+        description: QoS profile attachment payload with 5QI, GBR, and AMBR fields
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQosProfileRequest"
+            example:
+              profile_name: "robotics-gbr"
+              five_qi: 82
+              gbr:
+                uplink_kbps: 25000
+                downlink_kbps: 25000
+              ambr:
+                uplink_kbps: 80000
+                downlink_kbps: 80000
+              arp_priority_level: 2
+              reflective_qos: false
+      responses:
+        "201":
+          description: QoS profile created and attached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QosProfile"
+              example:
+                qos_profile_id: "qos-93a4"
+                profile_name: "robotics-gbr"
+                five_qi: 82
+                gbr:
+                  uplink_kbps: 25000
+                  downlink_kbps: 25000
+                ambr:
+                  uplink_kbps: 80000
+                  downlink_kbps: 80000
+                arp_priority_level: 2
+                reflective_qos: false
+                status: "ATTACHED"
+                created_at: "2026-03-27T10:17:21Z"
+                updated_at: "2026-03-27T10:17:21Z"
+                trace_id: "678b9d8d-13da-48e3-ab52-c07cf8f32a50"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /slices/{sliceId}:suspend:
+    post:
+      operationId: suspendSlice
+      summary: Suspend slice traffic acceptance
+      description: >-
+        Temporarily suspends traffic acceptance for the target slice while preserving
+        configuration state. Existing sessions are handled according to suspension mode,
+        either drain-first or immediate block. Resume occurs through internal operator
+        workflows outside this endpoint.
+      tags:
+        - Slices
+      parameters:
+        - $ref: "#/components/parameters/SliceId"
+      requestBody:
+        required: true
+        description: Suspension control payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuspendSliceRequest"
+            example:
+              reason: "planned-campus-maintenance"
+              mode: "DRAIN"
+              requested_by: "ops-user-43"
+      responses:
+        "202":
+          description: Suspension accepted and in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuspendSliceResponse"
+              example:
+                slice_id: "slice-5f4d6dcf"
+                status: "SUSPENDING"
+                mode: "DRAIN"
+                reason: "planned-campus-maintenance"
+                requested_by: "ops-user-43"
+                requested_at: "2026-03-27T10:25:11Z"
+                trace_id: "3ff35476-9db6-49db-802c-6f55f93fecad"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    SliceId:
+      name: sliceId
+      in: path
+      required: true
+      description: Unique slice identifier
+      schema:
+        type: string
+        pattern: "^slice-[a-z0-9]{6,20}$"
+      example: "slice-5f4d6dcf"
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      description: Membership identifier associated with a slice
+      schema:
+        type: string
+        pattern: "^mship-[a-z0-9]{4,20}$"
+      example: "mship-7bc08"
+    CampusId:
+      name: campus_id
+      in: query
+      required: false
+      description: Campus identifier filter
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 64
+      example: "campus-austin-01"
+    TenantId:
+      name: tenant_id
+      in: query
+      required: false
+      description: Tenant identifier filter
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 64
+      example: "tenant-manufacturing-north"
+    SliceStatus:
+      name: status
+      in: query
+      required: false
+      description: Slice lifecycle status filter
+      schema:
+        $ref: "#/components/schemas/SliceStatus"
+      example: "ACTIVE"
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Current page number
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      example: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Number of records per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      example: 20
+  schemas:
+    SliceStatus:
+      type: string
+      description: Slice lifecycle state
+      enum:
+        - PROVISIONING
+        - ACTIVE
+        - SUSPENDING
+        - SUSPENDED
+        - FAILED
+        - DECOMMISSIONED
+      example: ACTIVE
+    Snssai:
+      type: object
+      description: 3GPP S-NSSAI attributes representing SST and SD values
+      properties:
+        sst:
+          type: integer
+          description: Slice/Service Type as defined by 3GPP TS 23.501
+          minimum: 0
+          maximum: 255
+          example: 1
+        sd:
+          type: string
+          description: Slice Differentiator represented as a six-character hexadecimal value
+          pattern: "^[A-Fa-f0-9]{6}$"
+          example: "00A1F3"
+      required:
+        - sst
+        - sd
+    SliceSlo:
+      type: object
+      description: Service-level objectives for slice performance and availability
+      properties:
+        latency_budget_ms:
+          type: integer
+          description: End-to-end latency budget in milliseconds
+          minimum: 1
+          maximum: 500
+          example: 15
+        availability_target:
+          type: number
+          format: double
+          description: Target service availability percentage
+          minimum: 95
+          maximum: 99.999
+          example: 99.99
+      required:
+        - latency_budget_ms
+        - availability_target
+    AdmissionControl:
+      type: object
+      description: Admission and quota controls for memberships attaching to the slice
+      properties:
+        max_devices:
+          type: integer
+          description: Maximum number of device memberships allowed
+          minimum: 1
+          maximum: 100000
+          example: 3000
+        max_sites:
+          type: integer
+          description: Maximum number of site memberships allowed
+          minimum: 1
+          maximum: 2000
+          example: 5
+        overbooking_ratio:
+          type: number
+          format: double
+          description: Allowed overbooking ratio for admission decisions
+          minimum: 1
+          maximum: 3
+          example: 1.05
+      required:
+        - max_devices
+        - max_sites
+        - overbooking_ratio
+    SliceTopology:
+      type: object
+      description: Placement and assigned cell topology for a slice
+      properties:
+        region:
+          type: string
+          description: Regional orchestration area
+          example: "us-central"
+        edge_zone:
+          type: string
+          description: Edge zone where user-plane functions are anchored
+          example: "aus-edge-2"
+        assigned_cells:
+          type: array
+          description: Radio cells assigned to this slice
+          items:
+            type: string
+            example: "cell-aus-0021"
+      required:
+        - region
+        - edge_zone
+        - assigned_cells
+    BitRate:
+      type: object
+      description: Bitrate envelope in kilobits per second
+      properties:
+        uplink_kbps:
+          type: integer
+          minimum: 1
+          maximum: 10000000
+          description: Uplink throughput cap or guarantee
+          example: 25000
+        downlink_kbps:
+          type: integer
+          minimum: 1
+          maximum: 10000000
+          description: Downlink throughput cap or guarantee
+          example: 25000
+      required:
+        - uplink_kbps
+        - downlink_kbps
+    QosProfile:
+      type: object
+      description: 5G QoS profile with 5QI semantics and optional GBR constraints
+      properties:
+        qos_profile_id:
+          type: string
+          description: Unique QoS profile identifier
+          example: "qos-93a4"
+        profile_name:
+          type: string
+          description: Human-readable profile name
+          maxLength: 100
+          example: "robotics-gbr"
+        five_qi:
+          type: integer
+          description: 5G QoS Identifier (5QI)
+          minimum: 1
+          maximum: 255
+          example: 82
+        gbr:
+          $ref: "#/components/schemas/BitRate"
+        ambr:
+          $ref: "#/components/schemas/BitRate"
+        arp_priority_level:
+          type: integer
+          description: Allocation and Retention Priority level
+          minimum: 1
+          maximum: 15
+          example: 2
+        reflective_qos:
+          type: boolean
+          description: Whether Reflective QoS is enabled
+          example: false
+        status:
+          type: string
+          description: QoS profile attachment status
+          enum:
+            - ATTACHED
+            - DETACHED
+            - ERROR
+          example: ATTACHED
+        created_at:
+          type: string
+          format: date-time
+          description: Resource creation timestamp
+          example: "2026-03-27T10:17:21Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Resource update timestamp
+          example: "2026-03-27T10:17:21Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier
+          example: "678b9d8d-13da-48e3-ab52-c07cf8f32a50"
+      required:
+        - qos_profile_id
+        - profile_name
+        - five_qi
+        - ambr
+        - arp_priority_level
+        - reflective_qos
+        - status
+    Slice:
+      type: object
+      description: Enterprise slice resource
+      properties:
+        slice_id:
+          type: string
+          description: Unique slice identifier
+          example: "slice-5f4d6dcf"
+        name:
+          type: string
+          description: Display name for the slice
+          minLength: 3
+          maxLength: 120
+          example: "campus-a-robotics-slice"
+        status:
+          $ref: "#/components/schemas/SliceStatus"
+        campus_id:
+          type: string
+          description: Campus identifier
+          example: "campus-austin-01"
+        tenant_id:
+          type: string
+          description: Tenant identifier
+          example: "tenant-manufacturing-north"
+        snssai:
+          $ref: "#/components/schemas/Snssai"
+        slo:
+          $ref: "#/components/schemas/SliceSlo"
+        policy_pack_id:
+          type: string
+          description: Policy pack controlling routing and enforcement behavior
+          example: "policypack-industrial-v4"
+        topology:
+          $ref: "#/components/schemas/SliceTopology"
+        admission_control:
+          $ref: "#/components/schemas/AdmissionControl"
+        qos_profiles:
+          type: array
+          description: QoS profiles attached to the slice
+          items:
+            $ref: "#/components/schemas/QosProfile"
+        created_at:
+          type: string
+          format: date-time
+          description: Resource creation timestamp
+          example: "2026-03-26T18:11:19Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Resource last update timestamp
+          example: "2026-03-27T09:44:08Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier
+          example: "12675f0d-9d56-47ac-9303-d68ba355ad0a"
+      required:
+        - slice_id
+        - name
+        - status
+        - campus_id
+        - tenant_id
+        - snssai
+        - slo
+        - policy_pack_id
+        - topology
+        - admission_control
+        - qos_profiles
+        - created_at
+        - updated_at
+    SliceSummary:
+      type: object
+      description: Compact slice representation for list responses
+      properties:
+        slice_id:
+          type: string
+          example: "slice-5f4d6dcf"
+        name:
+          type: string
+          example: "campus-a-robotics-slice"
+        status:
+          $ref: "#/components/schemas/SliceStatus"
+        campus_id:
+          type: string
+          example: "campus-austin-01"
+        tenant_id:
+          type: string
+          example: "tenant-manufacturing-north"
+        snssai:
+          $ref: "#/components/schemas/Snssai"
+        slo:
+          $ref: "#/components/schemas/SliceSlo"
+        policy_pack_id:
+          type: string
+          example: "policypack-industrial-v4"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-26T18:11:19Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T09:44:08Z"
+      required:
+        - slice_id
+        - name
+        - status
+        - campus_id
+        - tenant_id
+        - snssai
+        - slo
+        - policy_pack_id
+    MembershipType:
+      type: string
+      description: Type of entity admitted to the slice
+      enum:
+        - DEVICE
+        - SITE
+      example: DEVICE
+    Membership:
+      type: object
+      description: Membership assignment for a device or site
+      properties:
+        membership_id:
+          type: string
+          example: "mship-7bc08"
+        slice_id:
+          type: string
+          example: "slice-5f4d6dcf"
+        member_type:
+          $ref: "#/components/schemas/MembershipType"
+        member_ref:
+          type: string
+          description: External identifier of the member
+          example: "imei:356938035643809"
+        display_name:
+          type: string
+          description: Friendly name for operational views
+          example: "robot-arm-17"
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - PENDING
+            - REMOVED
+          example: ACTIVE
+        metadata:
+          type: object
+          description: Opaque tenant-defined metadata
+          additionalProperties:
+            type: string
+          example:
+            asset_id: "asset-robot-17"
+            site_id: "site-assembly-2"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:15:06Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:15:06Z"
+        trace_id:
+          type: string
+          format: uuid
+          example: "775e0ad5-1e4c-41f1-a7d2-bc1f303347cc"
+      required:
+        - membership_id
+        - slice_id
+        - member_type
+        - member_ref
+        - status
+    CreateSliceRequest:
+      type: object
+      description: Payload to create a network slice
+      properties:
+        name:
+          type: string
+          description: Display name for the slice
+          minLength: 3
+          maxLength: 120
+          example: "campus-a-robotics-slice"
+        campus_id:
+          type: string
+          description: Campus identifier where the slice will be provisioned
+          example: "campus-austin-01"
+        tenant_id:
+          type: string
+          description: Enterprise tenant identifier
+          example: "tenant-manufacturing-north"
+        sst:
+          type: integer
+          description: Slice/Service Type from 3GPP S-NSSAI
+          minimum: 0
+          maximum: 255
+          example: 1
+        sd:
+          type: string
+          description: Slice Differentiator represented in hexadecimal
+          pattern: "^[A-Fa-f0-9]{6}$"
+          example: "00A1F3"
+        latency_budget_ms:
+          type: integer
+          description: Requested latency budget in milliseconds
+          minimum: 1
+          maximum: 500
+          example: 15
+        availability_target:
+          type: number
+          format: double
+          description: Target availability percentage
+          minimum: 95
+          maximum: 99.999
+          example: 99.99
+        admission_control:
+          $ref: "#/components/schemas/AdmissionControl"
+        policy_pack_id:
+          type: string
+          description: Policy pack identifier to apply at orchestration time
+          example: "policypack-industrial-v4"
+      required:
+        - name
+        - campus_id
+        - tenant_id
+        - sst
+        - sd
+        - latency_budget_ms
+        - availability_target
+        - admission_control
+        - policy_pack_id
+    UpdateSliceRequest:
+      type: object
+      description: Partial update request for slice tunable fields
+      properties:
+        slo:
+          $ref: "#/components/schemas/SliceSlo"
+        admission_control:
+          $ref: "#/components/schemas/AdmissionControl"
+      minProperties: 1
+    CreateMembershipRequest:
+      type: object
+      description: Payload to add a member to a slice
+      properties:
+        member_type:
+          $ref: "#/components/schemas/MembershipType"
+        member_ref:
+          type: string
+          description: External identifier for a device or site
+          minLength: 3
+          maxLength: 128
+          example: "imei:356938035643809"
+        display_name:
+          type: string
+          description: Human-readable alias used in operational consoles
+          minLength: 1
+          maxLength: 120
+          example: "robot-arm-17"
+        metadata:
+          type: object
+          description: Tenant-defined key-value metadata
+          additionalProperties:
+            type: string
+      required:
+        - member_type
+        - member_ref
+    CreateQosProfileRequest:
+      type: object
+      description: Payload to create and attach a QoS profile
+      properties:
+        profile_name:
+          type: string
+          description: Friendly QoS profile name
+          minLength: 3
+          maxLength: 100
+          example: "robotics-gbr"
+        five_qi:
+          type: integer
+          description: 5G QoS Identifier value
+          minimum: 1
+          maximum: 255
+          example: 82
+        gbr:
+          $ref: "#/components/schemas/BitRate"
+        ambr:
+          $ref: "#/components/schemas/BitRate"
+        arp_priority_level:
+          type: integer
+          description: ARP priority level, lower values indicate higher priority
+          minimum: 1
+          maximum: 15
+          example: 2
+        reflective_qos:
+          type: boolean
+          description: Enables Reflective QoS behavior when true
+          example: false
+      required:
+        - profile_name
+        - five_qi
+        - ambr
+        - arp_priority_level
+        - reflective_qos
+    SuspendMode:
+      type: string
+      description: Suspension mode for traffic handling
+      enum:
+        - DRAIN
+        - IMMEDIATE
+      example: DRAIN
+    SuspendSliceRequest:
+      type: object
+      description: Request body to suspend a slice
+      properties:
+        reason:
+          type: string
+          description: Human-readable reason for suspension
+          minLength: 3
+          maxLength: 256
+          example: "planned-campus-maintenance"
+        mode:
+          $ref: "#/components/schemas/SuspendMode"
+        requested_by:
+          type: string
+          description: User or automation identity requesting suspension
+          minLength: 3
+          maxLength: 80
+          example: "ops-user-43"
+      required:
+        - reason
+        - mode
+        - requested_by
+    SuspendSliceResponse:
+      type: object
+      description: Suspension operation acknowledgment
+      properties:
+        slice_id:
+          type: string
+          example: "slice-5f4d6dcf"
+        status:
+          $ref: "#/components/schemas/SliceStatus"
+        mode:
+          $ref: "#/components/schemas/SuspendMode"
+        reason:
+          type: string
+          example: "planned-campus-maintenance"
+        requested_by:
+          type: string
+          example: "ops-user-43"
+        requested_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:25:11Z"
+        trace_id:
+          type: string
+          format: uuid
+          example: "3ff35476-9db6-49db-802c-6f55f93fecad"
+      required:
+        - slice_id
+        - status
+        - mode
+        - reason
+        - requested_by
+        - requested_at
+        - trace_id
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list endpoints
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total records across all pages
+          example: 2
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 1
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    ListSlicesResponse:
+      type: object
+      description: Paginated list of slice summaries
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SliceSummary"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier for request correlation
+          example: "d71b5e31-d0ce-4688-ac95-f087ad8dcb8d"
+      required:
+        - data
+        - meta
+    Error:
+      type: object
+      description: Standardized error envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error description
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Field-level validation or business-rule details
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    example: latency_budget_ms
+                  reason:
+                    type: string
+                    example: Must be less than or equal to 500.
+            request_id:
+              type: string
+              format: uuid
+              description: Unique request identifier for support and tracing
+              example: "5fed5f7b-f5df-4dd6-bb7c-675391f74f15"
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by Verizon enterprise identity services
+  responses:
+    "400":
+      description: Bad Request — Request is malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: latency_budget_ms
+                  reason: Must be less than or equal to 500.
+              request_id: "5fed5f7b-f5df-4dd6-bb7c-675391f74f15"
+    "401":
+      description: Unauthorized — Authentication credentials are missing, invalid, or expired.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: "be867ef2-5700-4e08-9101-ff902fca9e5d"
+    "403":
+      description: Forbidden — Caller is authenticated but lacks permission for this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required slice management scope.
+              request_id: "f76cbe57-9ec8-46ef-884c-bec12aebec7e"
+    "404":
+      description: Not Found — Target resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested slice was not found.
+              request_id: "90feec9f-472f-42f6-ae60-086b54d5ab5a"
+    "409":
+      description: Conflict — Request conflicts with current lifecycle state or uniqueness constraints.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: Slice is in SUSPENDING state and cannot be modified.
+              request_id: "0d0e67ea-6e50-4d7a-8fbe-4f419ec40c69"
+    "422":
+      description: Unprocessable Entity — Semantic validation failed for business constraints.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Requested 5QI is incompatible with the current slice SLO target.
+              request_id: "92812710-e7cc-4bc8-8b59-44ed6ec28662"
+    "429":
+      description: Too Many Requests — Caller exceeded API rate limits.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests. Retry after 30 seconds.
+              request_id: "98ae281c-726f-4538-ac90-448504cee93d"
+    "500":
+      description: Internal Server Error — Unexpected orchestration or platform failure.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: "33f810de-caf8-419f-ae57-d4cc17414d2c"

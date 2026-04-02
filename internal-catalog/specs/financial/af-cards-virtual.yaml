@@ -1,0 +1,1126 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Virtual Cards API
+  description: >-
+    Creates and manages virtual card numbers for online and subscription purchases. Virtual cards can be single-
+    use or multi-use with configurable spending limits, merchant locks, and expiry dates. Each virtual card is
+    linked to a parent card account and transactions are reflected on the parent statement. Ideal for controlling
+    subscription spend and reducing card-not-present fraud exposure.
+  version: 2.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-cards-virtual
+  x-acme-domain: cards
+servers:
+  - url: https://af-cards-virtual.api.acmefin.com/v1
+    description: Production
+  - url: https://af-cards-virtual.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Virtual Cards
+    description: Create, manage, and control virtual card numbers for online purchases
+paths:
+  /virtual-cards:
+    get:
+      operationId: listVirtualCards
+      summary: List virtual cards
+      description: >-
+        Returns a paginated list of virtual cards. Supports filtering by parent card, status, and whether
+        the card is single-use. Each entry includes the masked PAN, spending limit, amount spent, and
+        current status. Does not return full card credentials.
+      tags:
+        - Virtual Cards
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: card_id
+          in: query
+          required: false
+          description: Filter by parent card identifier
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by virtual card status
+          schema:
+            type: "string"
+            enum:
+              - ACTIVE
+              - FROZEN
+              - EXPIRED
+              - CANCELLED
+        - name: single_use
+          in: query
+          required: false
+          description: Filter by single-use flag
+          schema:
+            type: "boolean"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        virtual_card_id:
+                          type: string
+                          description: Unique virtual card identifier
+                          example: "vc-3f8a92b1"
+                        card_id:
+                          type: string
+                          description: Parent physical or primary card identifier this virtual card is linked to
+                          example: "card-8a2f4b91"
+                        masked_pan:
+                          type: string
+                          description: Masked primary account number
+                          example: "****-****-****-4532"
+                        expiry_date:
+                          type: string
+                          description: Card expiration date in MM/YY format
+                          example: "12/27"
+                          pattern: '^(0[1-9]|1[0-2])/[0-9]{2}$'
+                        cvv_status:
+                          type: string
+                          description: Current CVV status
+                          example: "SET"
+                          enum:
+                            - SET
+                            - REVEALED
+                            - REGENERATED
+                        status:
+                          type: string
+                          description: Virtual card status
+                          example: "ACTIVE"
+                          enum:
+                            - ACTIVE
+                            - FROZEN
+                            - EXPIRED
+                            - CANCELLED
+                        spending_limit:
+                          type: number
+                          description: Maximum cumulative spend allowed on this virtual card
+                          format: double
+                          example: 500.0
+                        amount_spent:
+                          type: number
+                          description: Amount already spent on this virtual card
+                          format: double
+                          example: 123.45
+                          readOnly: true
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        merchant_lock:
+                          type: string
+                          description: If set, restricts the card to a single merchant name or MCC
+                          example: "5411"
+                        label:
+                          type: string
+                          description: User-defined label for the virtual card
+                          example: "Monthly subscriptions"
+                        single_use:
+                          type: boolean
+                          description: Whether the card is cancelled after a single successful transaction
+                          example: false
+                        expires_at:
+                          type: string
+                          description: Timestamp when the virtual card automatically expires
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        created_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - virtual_card_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createVirtualCard
+      summary: Create a virtual card
+      description: >-
+        Creates a new virtual card linked to a parent card account. Configure the spending limit, expiry,
+        merchant lock, and single-use behavior. The card number, expiry, and CVV are generated immediately
+        and returned in the response. For PCI compliance, the full card number is only returned in the
+        creation response.
+      tags:
+        - Virtual Cards
+      requestBody:
+        required: true
+        description: Create a virtual card request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    card_id:
+                      type: string
+                      description: Unique card identifier
+                      example: "card-8a2f4b91"
+                    spending_limit:
+                      type: number
+                      description: Maximum cumulative spend allowed on this virtual card
+                      format: double
+                      example: 500.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    merchant_lock:
+                      type: string
+                      description: If set, restricts the card to a single merchant name or MCC
+                      example: "5411"
+                    label:
+                      type: string
+                      description: User-defined label for the virtual card
+                      example: "Monthly subscriptions"
+                    single_use:
+                      type: boolean
+                      description: Whether the card is cancelled after a single successful transaction
+                      example: false
+                    expires_at:
+                      type: string
+                      description: Timestamp when the virtual card automatically expires
+                      format: date-time
+                      example: "2025-06-15T14:30:00Z"
+              required:
+                - card_id
+                - spending_limit
+                - currency
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  virtual_card_id:
+                    type: string
+                    description: Unique virtual card identifier
+                    example: "vc-3f8a92b1"
+                  card_id:
+                    type: string
+                    description: Parent physical or primary card identifier this virtual card is linked to
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: "12/27"
+                    pattern: '^(0[1-9]|1[0-2])/[0-9]{2}$'
+                  cvv_status:
+                    type: string
+                    description: Current CVV status
+                    example: "SET"
+                    enum:
+                      - SET
+                      - REVEALED
+                      - REGENERATED
+                  status:
+                    type: string
+                    description: Virtual card status
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - EXPIRED
+                      - CANCELLED
+                  spending_limit:
+                    type: number
+                    description: Maximum cumulative spend allowed on this virtual card
+                    format: double
+                    example: 500.0
+                  amount_spent:
+                    type: number
+                    description: Amount already spent on this virtual card
+                    format: double
+                    example: 123.45
+                    readOnly: true
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  merchant_lock:
+                    type: string
+                    description: If set, restricts the card to a single merchant name or MCC
+                    example: "5411"
+                  label:
+                    type: string
+                    description: User-defined label for the virtual card
+                    example: "Monthly subscriptions"
+                  single_use:
+                    type: boolean
+                    description: Whether the card is cancelled after a single successful transaction
+                    example: false
+                  expires_at:
+                    type: string
+                    description: Timestamp when the virtual card automatically expires
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  full_pan:
+                    type: string
+                    description: Full virtual card number (only returned on creation)
+                    example: "4532-0198-7645-3291"
+                required:
+                  - virtual_card_id
+                  - full_pan
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /virtual-cards/{virtual_card_id}:
+    get:
+      operationId: getVirtualCard
+      summary: Get virtual card details
+      description: >-
+        Retrieves the details of a virtual card including its masked PAN, status, spending limit, amount
+        spent, and merchant lock configuration. The full PAN and CVV are not returned by this endpoint. Use
+        the reveal endpoint to securely display credentials to the cardholder.
+      tags:
+        - Virtual Cards
+      parameters:
+        - name: virtual_card_id
+          in: path
+          required: true
+          description: Unique virtual card id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  virtual_card_id:
+                    type: string
+                    description: Unique virtual card identifier
+                    example: "vc-3f8a92b1"
+                  card_id:
+                    type: string
+                    description: Parent physical or primary card identifier this virtual card is linked to
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: "12/27"
+                    pattern: '^(0[1-9]|1[0-2])/[0-9]{2}$'
+                  cvv_status:
+                    type: string
+                    description: Current CVV status
+                    example: "SET"
+                    enum:
+                      - SET
+                      - REVEALED
+                      - REGENERATED
+                  status:
+                    type: string
+                    description: Virtual card status
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - EXPIRED
+                      - CANCELLED
+                  spending_limit:
+                    type: number
+                    description: Maximum cumulative spend allowed on this virtual card
+                    format: double
+                    example: 500.0
+                  amount_spent:
+                    type: number
+                    description: Amount already spent on this virtual card
+                    format: double
+                    example: 123.45
+                    readOnly: true
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  merchant_lock:
+                    type: string
+                    description: If set, restricts the card to a single merchant name or MCC
+                    example: "5411"
+                  label:
+                    type: string
+                    description: User-defined label for the virtual card
+                    example: "Monthly subscriptions"
+                  single_use:
+                    type: boolean
+                    description: Whether the card is cancelled after a single successful transaction
+                    example: false
+                  expires_at:
+                    type: string
+                    description: Timestamp when the virtual card automatically expires
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - virtual_card_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateVirtualCard
+      summary: Update virtual card settings
+      description: >-
+        Updates the configurable settings of a virtual card. You can change the spending limit, merchant
+        lock, label, and expiry date. The card number and CVV cannot be changed; use the regenerate endpoint
+        to get a new number. Only ACTIVE or FROZEN cards can be updated.
+      tags:
+        - Virtual Cards
+      parameters:
+        - name: virtual_card_id
+          in: path
+          required: true
+          description: Unique virtual card id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update virtual card settings request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    spending_limit:
+                      type: number
+                      description: Maximum cumulative spend allowed on this virtual card
+                      format: double
+                      example: 500.0
+                    merchant_lock:
+                      type: string
+                      description: If set, restricts the card to a single merchant name or MCC
+                      example: "5411"
+                    label:
+                      type: string
+                      description: User-defined label for the virtual card
+                      example: "Monthly subscriptions"
+                    expires_at:
+                      type: string
+                      description: Timestamp when the virtual card automatically expires
+                      format: date-time
+                      example: "2025-06-15T14:30:00Z"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  virtual_card_id:
+                    type: string
+                    description: Unique virtual card identifier
+                    example: "vc-3f8a92b1"
+                  card_id:
+                    type: string
+                    description: Parent physical or primary card identifier this virtual card is linked to
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: "12/27"
+                    pattern: '^(0[1-9]|1[0-2])/[0-9]{2}$'
+                  cvv_status:
+                    type: string
+                    description: Current CVV status
+                    example: "SET"
+                    enum:
+                      - SET
+                      - REVEALED
+                      - REGENERATED
+                  status:
+                    type: string
+                    description: Virtual card status
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - EXPIRED
+                      - CANCELLED
+                  spending_limit:
+                    type: number
+                    description: Maximum cumulative spend allowed on this virtual card
+                    format: double
+                    example: 500.0
+                  amount_spent:
+                    type: number
+                    description: Amount already spent on this virtual card
+                    format: double
+                    example: 123.45
+                    readOnly: true
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  merchant_lock:
+                    type: string
+                    description: If set, restricts the card to a single merchant name or MCC
+                    example: "5411"
+                  label:
+                    type: string
+                    description: User-defined label for the virtual card
+                    example: "Monthly subscriptions"
+                  single_use:
+                    type: boolean
+                    description: Whether the card is cancelled after a single successful transaction
+                    example: false
+                  expires_at:
+                    type: string
+                    description: Timestamp when the virtual card automatically expires
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: cancelVirtualCard
+      summary: Cancel a virtual card
+      description: >-
+        Permanently cancels a virtual card. The card number is immediately deactivated and any future
+        authorization attempts will be declined. This action cannot be undone. Pending transactions at the
+        time of cancellation will still settle normally.
+      tags:
+        - Virtual Cards
+      parameters:
+        - name: virtual_card_id
+          in: path
+          required: true
+          description: Unique virtual card id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /virtual-cards/{virtual_card_id}/freeze:
+    post:
+      operationId: freezeVirtualCard
+      summary: Freeze a virtual card
+      description: >-
+        Temporarily freezes a virtual card, preventing new transactions while keeping the card number
+        active. Existing pre-authorized transactions may still settle. The card can be unfrozen at any time
+        using the unfreeze endpoint. Use this when the cardholder wants to pause a subscription temporarily.
+      tags:
+        - Virtual Cards
+      parameters:
+        - name: virtual_card_id
+          in: path
+          required: true
+          description: Unique virtual card id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  virtual_card_id:
+                    type: string
+                    description: Unique virtual card identifier
+                    example: "vc-3f8a92b1"
+                  card_id:
+                    type: string
+                    description: Parent physical or primary card identifier this virtual card is linked to
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: "12/27"
+                    pattern: '^(0[1-9]|1[0-2])/[0-9]{2}$'
+                  cvv_status:
+                    type: string
+                    description: Current CVV status
+                    example: "SET"
+                    enum:
+                      - SET
+                      - REVEALED
+                      - REGENERATED
+                  status:
+                    type: string
+                    description: Virtual card status
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - EXPIRED
+                      - CANCELLED
+                  spending_limit:
+                    type: number
+                    description: Maximum cumulative spend allowed on this virtual card
+                    format: double
+                    example: 500.0
+                  amount_spent:
+                    type: number
+                    description: Amount already spent on this virtual card
+                    format: double
+                    example: 123.45
+                    readOnly: true
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  merchant_lock:
+                    type: string
+                    description: If set, restricts the card to a single merchant name or MCC
+                    example: "5411"
+                  label:
+                    type: string
+                    description: User-defined label for the virtual card
+                    example: "Monthly subscriptions"
+                  single_use:
+                    type: boolean
+                    description: Whether the card is cancelled after a single successful transaction
+                    example: false
+                  expires_at:
+                    type: string
+                    description: Timestamp when the virtual card automatically expires
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - virtual_card_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /virtual-cards/{virtual_card_id}/unfreeze:
+    post:
+      operationId: unfreezeVirtualCard
+      summary: Unfreeze a virtual card
+      description: >-
+        Restores a frozen virtual card to ACTIVE status, allowing new transactions. The card retains its
+        original number, spending limit, and merchant lock settings. This endpoint has no effect if the card
+        is already active.
+      tags:
+        - Virtual Cards
+      parameters:
+        - name: virtual_card_id
+          in: path
+          required: true
+          description: Unique virtual card id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  virtual_card_id:
+                    type: string
+                    description: Unique virtual card identifier
+                    example: "vc-3f8a92b1"
+                  card_id:
+                    type: string
+                    description: Parent physical or primary card identifier this virtual card is linked to
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  expiry_date:
+                    type: string
+                    description: Card expiration date in MM/YY format
+                    example: "12/27"
+                    pattern: '^(0[1-9]|1[0-2])/[0-9]{2}$'
+                  cvv_status:
+                    type: string
+                    description: Current CVV status
+                    example: "SET"
+                    enum:
+                      - SET
+                      - REVEALED
+                      - REGENERATED
+                  status:
+                    type: string
+                    description: Virtual card status
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - EXPIRED
+                      - CANCELLED
+                  spending_limit:
+                    type: number
+                    description: Maximum cumulative spend allowed on this virtual card
+                    format: double
+                    example: 500.0
+                  amount_spent:
+                    type: number
+                    description: Amount already spent on this virtual card
+                    format: double
+                    example: 123.45
+                    readOnly: true
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  merchant_lock:
+                    type: string
+                    description: If set, restricts the card to a single merchant name or MCC
+                    example: "5411"
+                  label:
+                    type: string
+                    description: User-defined label for the virtual card
+                    example: "Monthly subscriptions"
+                  single_use:
+                    type: boolean
+                    description: Whether the card is cancelled after a single successful transaction
+                    example: false
+                  expires_at:
+                    type: string
+                    description: Timestamp when the virtual card automatically expires
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - virtual_card_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

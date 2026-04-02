@@ -1,0 +1,65 @@
+name: Unified Fern Publish
+
+on:
+  repository_dispatch:
+    types: [provision_success, publish_fern]
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'fern/**'
+      - 'internal-catalog/specs/**'
+      - 'internal-catalog/src/lib/docs-manifest.ts'
+
+concurrency:
+  group: fern-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install internal-catalog dependencies
+        working-directory: ./internal-catalog
+        run: npm install
+
+      - name: Install fern dependencies
+        working-directory: ./fern
+        run: npm install
+
+      - name: Generate unified docs artifacts
+        run: node fern/scripts/generate-unified-docs-artifacts.mjs
+        env:
+          NODE_ENV: production
+
+      - name: Validate generated outputs
+        run: |
+          if [ ! -f "fern/docs.yml" ]; then
+            echo "::error::fern/docs.yml was not generated."
+            exit 1
+          fi
+          echo "Artifacts generated successfully."
+          git status
+
+      - name: Publish Fern site
+        working-directory: ./fern
+        run: npx fern generate --docs
+        env:
+          FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
+
+      - name: Handle Publish Failure
+        if: failure()
+        run: |
+          echo "::error title=Fern Publish Failed::The unified Fern site failed to publish. Check the logs for details."
+          echo "This does not affect infrastructure provisioning, but docs may be out of date."
+          echo "To retry, manually re-run this workflow from the Actions tab."
+          # The concurrency group will automatically unlock when the job finishes (even on failure)

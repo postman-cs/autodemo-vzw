@@ -1,0 +1,1361 @@
+openapi: 3.0.3
+info:
+  title: VZW Outage Correlation API
+  description: >-
+    Correlates meter, substation, feeder, and network telemetry alarms into outage hypotheses for utility operations.
+    Supports evidence ingestion, hypothesis recomputation, impact analysis, and outage closure workflows used by
+    network operations centers and automated dispatch systems.
+  version: 1.0.0
+  contact:
+    name: Verizon Utility API Team
+    email: utility-api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/
+  x-verizon-catalog-id: vzw-outage-correlation-api
+  x-verizon-domain: outage
+servers:
+  - url: https://vzw-outage-correlation-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-outage-correlation-api.staging.api.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Outages
+    description: Outage hypothesis lifecycle and state transition endpoints
+  - name: Evidence
+    description: Endpoints for submitting and managing supporting alarm evidence
+  - name: Impact Analysis
+    description: Endpoints for feeder, meter, and zone impact projections
+paths:
+  /v1/outages/hypotheses:
+    post:
+      operationId: createOutageHypothesis
+      summary: Create outage hypothesis from alarm correlation
+      description: >-
+        Correlates incoming alarm evidence from smart meters, SCADA systems, and edge telemetry into a new outage
+        hypothesis. Correlation logic uses topology and temporal proximity windows to estimate probable root cause,
+        initial impacted feeders, and restoration ETA.
+      tags:
+        - Outages
+      requestBody:
+        required: true
+        description: Alarm evidence and correlation options for creating a hypothesis
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOutageHypothesisRequest'
+            example:
+              source_event_batch_id: "batch-20260327-001"
+              utility_region: "mid-atlantic-north"
+              correlation_window_minutes: 20
+              topology_version: "topology-2026-03-20"
+              alarms:
+                - alarm_id: "alr-meter-10019"
+                  alarm_type: "METER_LAST_GASP"
+                  severity: "HIGH"
+                  occurred_at: "2026-03-27T14:02:31Z"
+                  device_id: "meter-0010091291"
+                  feeder_id: "fdr-4812"
+                  zone_id: "zone-77"
+                  confidence_weight: 0.83
+                - alarm_id: "alr-scada-22091"
+                  alarm_type: "BREAKER_OPEN"
+                  severity: "CRITICAL"
+                  occurred_at: "2026-03-27T14:02:40Z"
+                  device_id: "sub-17-breaker-4"
+                  feeder_id: "fdr-4812"
+                  zone_id: "zone-77"
+                  confidence_weight: 0.95
+              notes: "Storm front crossing district 7"
+      responses:
+        "201":
+          description: Outage hypothesis created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutageHypothesis'
+              example:
+                outage_id: "out-7f3abaf1"
+                status: "OPEN"
+                confidence_score: 0.91
+                probable_root_cause: "Feeder breaker trip at Substation 17"
+                probable_root_cause_code: "BREAKER_TRIP"
+                impacted_feeders:
+                  - "fdr-4812"
+                  - "fdr-4813"
+                impacted_zones:
+                  - "zone-77"
+                  - "zone-78"
+                customer_meter_count: 1843
+                restoration_eta: "2026-03-27T16:30:00Z"
+                created_at: "2026-03-27T14:03:11Z"
+                updated_at: "2026-03-27T14:03:11Z"
+                trace_id: "34f6b35f-3f8e-4775-b2cf-34fbe4b9a62e"
+        "400":
+          $ref: '#/components/responses/400'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "409":
+          $ref: '#/components/responses/409'
+        "422":
+          $ref: '#/components/responses/422'
+        "429":
+          $ref: '#/components/responses/429'
+        "500":
+          $ref: '#/components/responses/500'
+  /v1/outages:
+    get:
+      operationId: listOutages
+      summary: List outage hypotheses
+      description: >-
+        Returns paginated outage hypotheses with optional filtering by status, utility region, feeder, zone, and
+        creation time window. Results are sorted by last update descending unless otherwise specified.
+      tags:
+        - Outages
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/UtilityRegion'
+        - $ref: '#/components/parameters/FeederId'
+        - $ref: '#/components/parameters/ZoneId'
+        - $ref: '#/components/parameters/CreatedAfter'
+        - $ref: '#/components/parameters/CreatedBefore'
+      responses:
+        "200":
+          description: Paginated outage list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutageListResponse'
+              example:
+                data:
+                  - outage_id: "out-7f3abaf1"
+                    status: "OPEN"
+                    confidence_score: 0.91
+                    probable_root_cause: "Feeder breaker trip at Substation 17"
+                    probable_root_cause_code: "BREAKER_TRIP"
+                    impacted_feeders:
+                      - "fdr-4812"
+                      - "fdr-4813"
+                    impacted_zones:
+                      - "zone-77"
+                      - "zone-78"
+                    customer_meter_count: 1843
+                    restoration_eta: "2026-03-27T16:30:00Z"
+                    created_at: "2026-03-27T14:03:11Z"
+                    updated_at: "2026-03-27T14:11:54Z"
+                    trace_id: "34f6b35f-3f8e-4775-b2cf-34fbe4b9a62e"
+                  - outage_id: "out-840dcf2e"
+                    status: "INVESTIGATING"
+                    confidence_score: 0.74
+                    probable_root_cause: "Unknown transient voltage collapse"
+                    probable_root_cause_code: "UNKNOWN"
+                    impacted_feeders:
+                      - "fdr-3291"
+                    impacted_zones:
+                      - "zone-15"
+                    customer_meter_count: 327
+                    restoration_eta: "2026-03-27T17:10:00Z"
+                    created_at: "2026-03-27T13:50:06Z"
+                    updated_at: "2026-03-27T14:09:20Z"
+                    trace_id: "2aa0fd47-9f11-4be2-bf7f-f7874df9b2d1"
+                meta:
+                  page: 1
+                  per_page: 20
+                  total_items: 142
+                  total_pages: 8
+        "400":
+          $ref: '#/components/responses/400'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "429":
+          $ref: '#/components/responses/429'
+        "500":
+          $ref: '#/components/responses/500'
+  /v1/outages/{outageId}:
+    get:
+      operationId: getOutage
+      summary: Get outage hypothesis by ID
+      description: >-
+        Retrieves full outage hypothesis details including confidence, root cause estimate, feeder and zone impact,
+        and recent evidence summary for operator investigation.
+      tags:
+        - Outages
+      parameters:
+        - $ref: '#/components/parameters/OutageId'
+      responses:
+        "200":
+          description: Outage details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutageHypothesisDetail'
+              example:
+                outage_id: "out-7f3abaf1"
+                status: "INVESTIGATING"
+                utility_region: "mid-atlantic-north"
+                confidence_score: 0.91
+                probable_root_cause: "Feeder breaker trip at Substation 17"
+                probable_root_cause_code: "BREAKER_TRIP"
+                impacted_feeders:
+                  - "fdr-4812"
+                  - "fdr-4813"
+                impacted_zones:
+                  - "zone-77"
+                  - "zone-78"
+                customer_meter_count: 1843
+                restoration_eta: "2026-03-27T16:30:00Z"
+                evidence_summary:
+                  total_evidence_items: 128
+                  by_type:
+                    METER_LAST_GASP: 96
+                    BREAKER_OPEN: 4
+                    VOLTAGE_SAG: 28
+                  last_evidence_at: "2026-03-27T14:10:57Z"
+                created_at: "2026-03-27T14:03:11Z"
+                updated_at: "2026-03-27T14:11:54Z"
+                trace_id: "34f6b35f-3f8e-4775-b2cf-34fbe4b9a62e"
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "429":
+          $ref: '#/components/responses/429'
+        "500":
+          $ref: '#/components/responses/500'
+  /v1/outages/{outageId}/evidence:
+    post:
+      operationId: appendOutageEvidence
+      summary: Append evidence to outage hypothesis
+      description: >-
+        Adds new alarm evidence to an existing outage hypothesis. Evidence is deduplicated by evidence_id and may
+        trigger a confidence update when configured to auto-recompute.
+      tags:
+        - Evidence
+      parameters:
+        - $ref: '#/components/parameters/OutageId'
+      requestBody:
+        required: true
+        description: One or more evidence records associated with the outage
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppendEvidenceRequest'
+            example:
+              auto_recompute: true
+              evidence_items:
+                - evidence_id: "evi-280119"
+                  alarm_type: "VOLTAGE_SAG"
+                  severity: "MEDIUM"
+                  occurred_at: "2026-03-27T14:12:05Z"
+                  source_system: "AMI"
+                  source_device_id: "meter-0010091904"
+                  feeder_id: "fdr-4812"
+                  zone_id: "zone-77"
+                  confidence_weight: 0.66
+                - evidence_id: "evi-280120"
+                  alarm_type: "BREAKER_OPEN"
+                  severity: "CRITICAL"
+                  occurred_at: "2026-03-27T14:12:09Z"
+                  source_system: "SCADA"
+                  source_device_id: "sub-17-breaker-4"
+                  feeder_id: "fdr-4812"
+                  zone_id: "zone-77"
+                  confidence_weight: 0.97
+      responses:
+        "202":
+          description: Evidence accepted and processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppendEvidenceResponse'
+              example:
+                outage_id: "out-7f3abaf1"
+                accepted_evidence_count: 2
+                duplicate_evidence_count: 0
+                auto_recompute_triggered: true
+                confidence_score: 0.93
+                probable_root_cause: "Feeder breaker trip at Substation 17"
+                impacted_feeders:
+                  - "fdr-4812"
+                  - "fdr-4813"
+                customer_meter_count: 1897
+                restoration_eta: "2026-03-27T16:20:00Z"
+                updated_at: "2026-03-27T14:12:20Z"
+                trace_id: "8f64365a-1fd4-4712-8dfa-f66a54d9efa1"
+        "400":
+          $ref: '#/components/responses/400'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "409":
+          $ref: '#/components/responses/409'
+        "422":
+          $ref: '#/components/responses/422'
+        "429":
+          $ref: '#/components/responses/429'
+        "500":
+          $ref: '#/components/responses/500'
+  /v1/outages/{outageId}:recompute:
+    post:
+      operationId: recomputeOutageHypothesis
+      summary: Recompute outage correlation model output
+      description: >-
+        Forces recomputation of outage correlation for an existing hypothesis using current evidence, topology model,
+        and optional override parameters. Useful after topology corrections or operator-initiated investigation.
+      tags:
+        - Outages
+      parameters:
+        - $ref: '#/components/parameters/OutageId'
+      requestBody:
+        required: true
+        description: Recompute options and optional model overrides
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecomputeOutageRequest'
+            example:
+              reason: "Topology update after breaker maintenance"
+              topology_version: "topology-2026-03-27-hotfix"
+              include_recent_minutes: 45
+              model_overrides:
+                minimum_cluster_size: 5
+                temporal_decay_factor: 0.82
+      responses:
+        "202":
+          description: Recompute job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecomputeOutageResponse'
+              example:
+                outage_id: "out-7f3abaf1"
+                recompute_job_id: "job-9bbf1418"
+                status: "QUEUED"
+                submitted_at: "2026-03-27T14:14:04Z"
+                trace_id: "f6f38dda-d742-47a0-8be1-fe39be3dca03"
+        "400":
+          $ref: '#/components/responses/400'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "409":
+          $ref: '#/components/responses/409'
+        "422":
+          $ref: '#/components/responses/422'
+        "429":
+          $ref: '#/components/responses/429'
+        "500":
+          $ref: '#/components/responses/500'
+  /v1/outages/{outageId}/impact:
+    get:
+      operationId: getOutageImpact
+      summary: Get impacted zones and feeder impact analysis
+      description: >-
+        Returns detailed impact analysis for the outage including impacted feeders, zones, meter count estimates,
+        critical infrastructure overlays, and confidence bands used for dispatch prioritization.
+      tags:
+        - Impact Analysis
+      parameters:
+        - $ref: '#/components/parameters/OutageId'
+      responses:
+        "200":
+          description: Impact analysis details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutageImpactResponse'
+              example:
+                outage_id: "out-7f3abaf1"
+                confidence_score: 0.93
+                impacted_feeders:
+                  - feeder_id: "fdr-4812"
+                    feeder_name: "North River 12"
+                    meter_count: 1249
+                    critical_sites:
+                      - "hospital-44"
+                      - "water-plant-2"
+                  - feeder_id: "fdr-4813"
+                    feeder_name: "North River 13"
+                    meter_count: 648
+                    critical_sites:
+                      - "fire-station-19"
+                impacted_zones:
+                  - zone_id: "zone-77"
+                    zone_name: "North River Industrial"
+                    meter_count: 1392
+                    confidence_band: "HIGH"
+                  - zone_id: "zone-78"
+                    zone_name: "North River Residential East"
+                    meter_count: 505
+                    confidence_band: "MEDIUM"
+                customer_meter_count: 1897
+                restoration_eta: "2026-03-27T16:20:00Z"
+                computed_at: "2026-03-27T14:12:20Z"
+                trace_id: "8f64365a-1fd4-4712-8dfa-f66a54d9efa1"
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "429":
+          $ref: '#/components/responses/429'
+        "500":
+          $ref: '#/components/responses/500'
+  /v1/outages/{outageId}:close:
+    post:
+      operationId: closeOutage
+      summary: Close outage hypothesis
+      description: >-
+        Closes an outage hypothesis when field operations confirm restoration. Closure captures final root cause,
+        restoration timestamp, and post-incident notes for audit and model training feedback.
+      tags:
+        - Outages
+      parameters:
+        - $ref: '#/components/parameters/OutageId'
+      requestBody:
+        required: true
+        description: Closure details and restoration confirmation
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloseOutageRequest'
+            example:
+              resolution_code: "BREAKER_RESET"
+              resolved_root_cause: "Breaker relay reset after vegetation contact"
+              restored_at: "2026-03-27T15:58:00Z"
+              operator_notes: "Field crew cleared branch contact and reclosed breaker"
+              postmortem_required: true
+      responses:
+        "200":
+          description: Outage closed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloseOutageResponse'
+              example:
+                outage_id: "out-7f3abaf1"
+                status: "CLOSED"
+                confidence_score: 0.93
+                probable_root_cause: "Feeder breaker trip at Substation 17"
+                impacted_feeders:
+                  - "fdr-4812"
+                  - "fdr-4813"
+                customer_meter_count: 1897
+                restoration_eta: "2026-03-27T16:20:00Z"
+                restored_at: "2026-03-27T15:58:00Z"
+                closed_at: "2026-03-27T16:02:11Z"
+                trace_id: "17c6fa30-6f0d-479d-b940-4f7a2fa5484c"
+        "400":
+          $ref: '#/components/responses/400'
+        "401":
+          $ref: '#/components/responses/401'
+        "403":
+          $ref: '#/components/responses/403'
+        "404":
+          $ref: '#/components/responses/404'
+        "409":
+          $ref: '#/components/responses/409'
+        "422":
+          $ref: '#/components/responses/422'
+        "429":
+          $ref: '#/components/responses/429'
+        "500":
+          $ref: '#/components/responses/500'
+components:
+  parameters:
+    OutageId:
+      name: outageId
+      in: path
+      required: true
+      description: Unique outage hypothesis identifier
+      schema:
+        type: string
+      example: "out-7f3abaf1"
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number for pagination
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      example: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Number of records per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+      example: 20
+    Status:
+      name: status
+      in: query
+      required: false
+      description: Filter outages by lifecycle status
+      schema:
+        type: string
+        enum:
+          - OPEN
+          - INVESTIGATING
+          - MITIGATING
+          - RESOLVED
+          - CLOSED
+      example: "OPEN"
+    UtilityRegion:
+      name: utility_region
+      in: query
+      required: false
+      description: Utility operating region key
+      schema:
+        type: string
+      example: "mid-atlantic-north"
+    FeederId:
+      name: feeder_id
+      in: query
+      required: false
+      description: Filter outages affecting a specific feeder
+      schema:
+        type: string
+      example: "fdr-4812"
+    ZoneId:
+      name: zone_id
+      in: query
+      required: false
+      description: Filter outages affecting a specific zone
+      schema:
+        type: string
+      example: "zone-77"
+    CreatedAfter:
+      name: created_after
+      in: query
+      required: false
+      description: Include outages created at or after this timestamp
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-27T00:00:00Z"
+    CreatedBefore:
+      name: created_before
+      in: query
+      required: false
+      description: Include outages created at or before this timestamp
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-27T23:59:59Z"
+  schemas:
+    AlarmSeverity:
+      type: string
+      description: Severity level for source alarm telemetry
+      enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+        - CRITICAL
+    OutageStatus:
+      type: string
+      description: Outage hypothesis lifecycle status
+      enum:
+        - OPEN
+        - INVESTIGATING
+        - MITIGATING
+        - RESOLVED
+        - CLOSED
+    RootCauseCode:
+      type: string
+      description: Normalized probable root cause classification
+      enum:
+        - BREAKER_TRIP
+        - TRANSFORMER_FAILURE
+        - LINE_FAULT
+        - VEGETATION_CONTACT
+        - WEATHER_EVENT
+        - PROTECTION_MISOPERATION
+        - UNKNOWN
+    ConfidenceBand:
+      type: string
+      description: Confidence bucket for impacted zone inference
+      enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of records returned per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of matching records
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages available
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    AlarmEvidence:
+      type: object
+      description: Alarm evidence item used for outage correlation
+      properties:
+        alarm_id:
+          type: string
+          description: Unique source alarm identifier
+          example: "alr-meter-10019"
+        alarm_type:
+          type: string
+          description: Source alarm type code
+          example: "METER_LAST_GASP"
+        severity:
+          $ref: '#/components/schemas/AlarmSeverity'
+        occurred_at:
+          type: string
+          format: date-time
+          description: Timestamp when alarm was observed
+          example: "2026-03-27T14:02:31Z"
+        device_id:
+          type: string
+          description: Source device identifier
+          example: "meter-0010091291"
+        feeder_id:
+          type: string
+          description: Associated feeder identifier
+          example: "fdr-4812"
+        zone_id:
+          type: string
+          description: Associated utility zone identifier
+          example: "zone-77"
+        confidence_weight:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Model contribution weight from this evidence
+          example: 0.83
+      required:
+        - alarm_id
+        - alarm_type
+        - severity
+        - occurred_at
+        - device_id
+        - confidence_weight
+    EvidenceItem:
+      type: object
+      description: Detailed evidence record for existing outages
+      properties:
+        evidence_id:
+          type: string
+          description: Unique evidence identifier
+          example: "evi-280119"
+        alarm_type:
+          type: string
+          description: Alarm type code associated with evidence
+          example: "VOLTAGE_SAG"
+        severity:
+          $ref: '#/components/schemas/AlarmSeverity'
+        occurred_at:
+          type: string
+          format: date-time
+          description: Timestamp when event occurred
+          example: "2026-03-27T14:12:05Z"
+        source_system:
+          type: string
+          description: Upstream telemetry source system
+          example: "AMI"
+        source_device_id:
+          type: string
+          description: Source device identifier in upstream system
+          example: "meter-0010091904"
+        feeder_id:
+          type: string
+          description: Feeder associated with this evidence
+          example: "fdr-4812"
+        zone_id:
+          type: string
+          description: Zone associated with this evidence
+          example: "zone-77"
+        confidence_weight:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Model contribution weight from this evidence
+          example: 0.66
+      required:
+        - evidence_id
+        - alarm_type
+        - severity
+        - occurred_at
+        - source_system
+        - source_device_id
+        - confidence_weight
+    EvidenceSummary:
+      type: object
+      description: Aggregated evidence statistics for an outage hypothesis
+      properties:
+        total_evidence_items:
+          type: integer
+          description: Total evidence records associated with outage
+          example: 128
+        by_type:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Count of evidence records by alarm type
+          example:
+            METER_LAST_GASP: 96
+            BREAKER_OPEN: 4
+            VOLTAGE_SAG: 28
+        last_evidence_at:
+          type: string
+          format: date-time
+          description: Timestamp of most recent evidence ingestion
+          example: "2026-03-27T14:10:57Z"
+      required:
+        - total_evidence_items
+        - by_type
+        - last_evidence_at
+    OutageHypothesis:
+      type: object
+      description: Core outage hypothesis model
+      properties:
+        outage_id:
+          type: string
+          description: Unique outage hypothesis identifier
+          example: "out-7f3abaf1"
+        status:
+          $ref: '#/components/schemas/OutageStatus'
+        confidence_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Correlation model confidence score
+          example: 0.91
+        probable_root_cause:
+          type: string
+          description: Human-readable probable outage root cause
+          example: "Feeder breaker trip at Substation 17"
+        probable_root_cause_code:
+          $ref: '#/components/schemas/RootCauseCode'
+        impacted_feeders:
+          type: array
+          description: Feeder identifiers currently inferred as impacted
+          items:
+            type: string
+          example:
+            - "fdr-4812"
+            - "fdr-4813"
+        impacted_zones:
+          type: array
+          description: Utility zone identifiers currently inferred as impacted
+          items:
+            type: string
+          example:
+            - "zone-77"
+            - "zone-78"
+        customer_meter_count:
+          type: integer
+          minimum: 0
+          description: Estimated number of customer meters impacted
+          example: 1843
+        restoration_eta:
+          type: string
+          format: date-time
+          description: Projected service restoration timestamp
+          example: "2026-03-27T16:30:00Z"
+        created_at:
+          type: string
+          format: date-time
+          description: Outage creation timestamp
+          example: "2026-03-27T14:03:11Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-03-27T14:11:54Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace identifier for cross-service observability
+          example: "34f6b35f-3f8e-4775-b2cf-34fbe4b9a62e"
+      required:
+        - outage_id
+        - status
+        - confidence_score
+        - probable_root_cause
+        - probable_root_cause_code
+        - impacted_feeders
+        - customer_meter_count
+        - restoration_eta
+        - created_at
+        - updated_at
+        - trace_id
+    OutageHypothesisDetail:
+      allOf:
+        - $ref: '#/components/schemas/OutageHypothesis'
+        - type: object
+          properties:
+            utility_region:
+              type: string
+              description: Utility operating region key
+              example: "mid-atlantic-north"
+            evidence_summary:
+              $ref: '#/components/schemas/EvidenceSummary'
+          required:
+            - utility_region
+            - evidence_summary
+    OutageListResponse:
+      type: object
+      description: Paginated list of outage hypotheses
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutageHypothesis'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+        - data
+        - meta
+    CreateOutageHypothesisRequest:
+      type: object
+      description: Request payload to create outage hypothesis from new alarms
+      properties:
+        source_event_batch_id:
+          type: string
+          description: Upstream batch identifier for traceability
+          example: "batch-20260327-001"
+        utility_region:
+          type: string
+          description: Utility region where correlation should be applied
+          example: "mid-atlantic-north"
+        correlation_window_minutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+          description: Temporal window used to cluster events for correlation
+          example: 20
+        topology_version:
+          type: string
+          description: Network topology model version used for inference
+          example: "topology-2026-03-20"
+        alarms:
+          type: array
+          minItems: 1
+          description: Alarm evidence records to correlate
+          items:
+            $ref: '#/components/schemas/AlarmEvidence'
+        notes:
+          type: string
+          description: Optional operational notes for investigators
+          maxLength: 2000
+          example: "Storm front crossing district 7"
+      required:
+        - source_event_batch_id
+        - utility_region
+        - correlation_window_minutes
+        - alarms
+    AppendEvidenceRequest:
+      type: object
+      description: Request payload for appending evidence to outage
+      properties:
+        auto_recompute:
+          type: boolean
+          description: Trigger recompute automatically after successful ingestion
+          default: true
+          example: true
+        evidence_items:
+          type: array
+          minItems: 1
+          description: Evidence records to attach to outage
+          items:
+            $ref: '#/components/schemas/EvidenceItem'
+      required:
+        - evidence_items
+    AppendEvidenceResponse:
+      type: object
+      description: Result of evidence append operation
+      properties:
+        outage_id:
+          type: string
+          description: Outage hypothesis identifier
+          example: "out-7f3abaf1"
+        accepted_evidence_count:
+          type: integer
+          minimum: 0
+          description: Number of evidence records accepted
+          example: 2
+        duplicate_evidence_count:
+          type: integer
+          minimum: 0
+          description: Number of deduplicated evidence records
+          example: 0
+        auto_recompute_triggered:
+          type: boolean
+          description: Whether recompute was triggered automatically
+          example: true
+        confidence_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Updated confidence score after evidence processing
+          example: 0.93
+        probable_root_cause:
+          type: string
+          description: Updated probable root cause summary
+          example: "Feeder breaker trip at Substation 17"
+        impacted_feeders:
+          type: array
+          items:
+            type: string
+          description: Updated impacted feeder list
+          example:
+            - "fdr-4812"
+            - "fdr-4813"
+        customer_meter_count:
+          type: integer
+          minimum: 0
+          description: Updated estimated impacted meter count
+          example: 1897
+        restoration_eta:
+          type: string
+          format: date-time
+          description: Updated restoration ETA
+          example: "2026-03-27T16:20:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when outage was updated
+          example: "2026-03-27T14:12:20Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace identifier for this operation
+          example: "8f64365a-1fd4-4712-8dfa-f66a54d9efa1"
+      required:
+        - outage_id
+        - accepted_evidence_count
+        - duplicate_evidence_count
+        - auto_recompute_triggered
+        - confidence_score
+        - probable_root_cause
+        - impacted_feeders
+        - customer_meter_count
+        - restoration_eta
+        - updated_at
+        - trace_id
+    RecomputeModelOverrides:
+      type: object
+      description: Optional model override parameters for recompute runs
+      properties:
+        minimum_cluster_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Minimum correlated event cluster size for outage inference
+          example: 5
+        temporal_decay_factor:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Temporal event weighting factor used in correlation
+          example: 0.82
+    RecomputeOutageRequest:
+      type: object
+      description: Request payload for recompute operation
+      properties:
+        reason:
+          type: string
+          description: Operator-provided reason for recompute
+          maxLength: 2000
+          example: "Topology update after breaker maintenance"
+        topology_version:
+          type: string
+          description: Topology version to use for recompute
+          example: "topology-2026-03-27-hotfix"
+        include_recent_minutes:
+          type: integer
+          minimum: 5
+          maximum: 180
+          description: Minutes of recent evidence to prioritize in recompute
+          example: 45
+        model_overrides:
+          $ref: '#/components/schemas/RecomputeModelOverrides'
+      required:
+        - reason
+    RecomputeOutageResponse:
+      type: object
+      description: Accepted recompute job details
+      properties:
+        outage_id:
+          type: string
+          description: Outage hypothesis identifier
+          example: "out-7f3abaf1"
+        recompute_job_id:
+          type: string
+          description: Recompute job identifier
+          example: "job-9bbf1418"
+        status:
+          type: string
+          description: Recompute job status
+          enum:
+            - QUEUED
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+          example: "QUEUED"
+        submitted_at:
+          type: string
+          format: date-time
+          description: Timestamp when recompute was submitted
+          example: "2026-03-27T14:14:04Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace identifier for this operation
+          example: "f6f38dda-d742-47a0-8be1-fe39be3dca03"
+      required:
+        - outage_id
+        - recompute_job_id
+        - status
+        - submitted_at
+        - trace_id
+    ImpactedFeeder:
+      type: object
+      description: Feeder-level impact projection
+      properties:
+        feeder_id:
+          type: string
+          description: Feeder identifier
+          example: "fdr-4812"
+        feeder_name:
+          type: string
+          description: Human-readable feeder name
+          example: "North River 12"
+        meter_count:
+          type: integer
+          minimum: 0
+          description: Estimated impacted meters on feeder
+          example: 1249
+        critical_sites:
+          type: array
+          description: Critical site identifiers served by feeder
+          items:
+            type: string
+          example:
+            - "hospital-44"
+            - "water-plant-2"
+      required:
+        - feeder_id
+        - feeder_name
+        - meter_count
+        - critical_sites
+    ImpactedZone:
+      type: object
+      description: Zone-level impact projection
+      properties:
+        zone_id:
+          type: string
+          description: Utility zone identifier
+          example: "zone-77"
+        zone_name:
+          type: string
+          description: Human-readable zone name
+          example: "North River Industrial"
+        meter_count:
+          type: integer
+          minimum: 0
+          description: Estimated impacted meters in zone
+          example: 1392
+        confidence_band:
+          $ref: '#/components/schemas/ConfidenceBand'
+      required:
+        - zone_id
+        - zone_name
+        - meter_count
+        - confidence_band
+    OutageImpactResponse:
+      type: object
+      description: Impact analysis result for outage hypothesis
+      properties:
+        outage_id:
+          type: string
+          description: Outage hypothesis identifier
+          example: "out-7f3abaf1"
+        confidence_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Current model confidence score
+          example: 0.93
+        impacted_feeders:
+          type: array
+          description: Feeder-level impact breakdown
+          items:
+            $ref: '#/components/schemas/ImpactedFeeder'
+        impacted_zones:
+          type: array
+          description: Zone-level impact breakdown
+          items:
+            $ref: '#/components/schemas/ImpactedZone'
+        customer_meter_count:
+          type: integer
+          minimum: 0
+          description: Total estimated impacted customer meters
+          example: 1897
+        restoration_eta:
+          type: string
+          format: date-time
+          description: Projected restoration timestamp
+          example: "2026-03-27T16:20:00Z"
+        computed_at:
+          type: string
+          format: date-time
+          description: Timestamp when impact analysis was computed
+          example: "2026-03-27T14:12:20Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace identifier for this operation
+          example: "8f64365a-1fd4-4712-8dfa-f66a54d9efa1"
+      required:
+        - outage_id
+        - confidence_score
+        - impacted_feeders
+        - impacted_zones
+        - customer_meter_count
+        - restoration_eta
+        - computed_at
+        - trace_id
+    CloseOutageRequest:
+      type: object
+      description: Request payload to close outage hypothesis
+      properties:
+        resolution_code:
+          type: string
+          description: Resolution classification used for reporting
+          enum:
+            - BREAKER_RESET
+            - EQUIPMENT_REPLACED
+            - LINE_REPAIRED
+            - VEGETATION_CLEARED
+            - WEATHER_RECOVERY
+            - OTHER
+          example: "BREAKER_RESET"
+        resolved_root_cause:
+          type: string
+          description: Confirmed root cause after field validation
+          maxLength: 2000
+          example: "Breaker relay reset after vegetation contact"
+        restored_at:
+          type: string
+          format: date-time
+          description: Actual restoration timestamp confirmed by operations
+          example: "2026-03-27T15:58:00Z"
+        operator_notes:
+          type: string
+          description: Optional closure notes for incident records
+          maxLength: 4000
+          example: "Field crew cleared branch contact and reclosed breaker"
+        postmortem_required:
+          type: boolean
+          description: Indicates whether formal postmortem is required
+          default: false
+          example: true
+      required:
+        - resolution_code
+        - resolved_root_cause
+        - restored_at
+    CloseOutageResponse:
+      allOf:
+        - $ref: '#/components/schemas/OutageHypothesis'
+        - type: object
+          properties:
+            restored_at:
+              type: string
+              format: date-time
+              description: Confirmed restoration timestamp
+              example: "2026-03-27T15:58:00Z"
+            closed_at:
+              type: string
+              format: date-time
+              description: Timestamp when outage was moved to CLOSED
+              example: "2026-03-27T16:02:11Z"
+          required:
+            - restored_at
+            - closed_at
+    Error:
+      type: object
+      description: Standard error envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Optional detailed validation or business rule violations
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: Request field that caused the issue
+                    example: alarms[0].occurred_at
+                  reason:
+                    type: string
+                    description: Why validation failed
+                    example: Must be a valid RFC3339 timestamp.
+            request_id:
+              type: string
+              format: uuid
+              description: Request identifier for support and tracing
+              example: 4ddde762-8e7a-4d76-8396-91f3541942f9
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by Verizon identity platform
+  responses:
+    "400":
+      description: Bad Request - The request was malformed or contained invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: alarms[0].occurred_at
+                  reason: Must be a valid RFC3339 timestamp.
+              request_id: 27a6382f-f227-468f-82a2-7f20f58f768f
+    "401":
+      description: Unauthorized - Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: 264c6ec4-cbe4-4ccd-b515-2ceb0f614d8f
+    "403":
+      description: Forbidden - The authenticated principal lacks required permissions.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: 0c8b6f52-8f32-4ce2-b946-b0d362f2dbf2
+    "404":
+      description: Not Found - The requested outage resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested outage was not found.
+              request_id: 6d4f06ab-56ea-4679-87c7-0545c69255e3
+    "409":
+      description: Conflict - The request conflicts with the current outage state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: Outage is already closed and cannot be recomputed.
+              request_id: a3036d84-12f5-4d04-b4a0-23f6ce7af23a
+    "422":
+      description: Unprocessable Entity - Request semantics violated business rules.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: restored_at must be greater than outage created_at.
+              request_id: 45eb8252-f5e3-4f53-ba7e-6cfb97b17c0f
+    "429":
+      description: Too Many Requests - Rate limit exceeded for this client.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Rate limit exceeded. Retry in 30 seconds.
+              request_id: 73ba6a98-9fdb-4ae7-b9e8-d16f4f2ea707
+    "500":
+      description: Internal Server Error - An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: 5cf56d3e-dd31-44a9-a994-06ced42d6bc2

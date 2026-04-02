@@ -1,0 +1,1905 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Card Fraud Detection API
+  description: Real-time fraud detection and prevention for card transactions. Combines machine learning risk scoring, configurable
+    rule-based detection, device fingerprinting, and velocity analysis to identify and respond to fraudulent activity. Supports
+    multiple response actions from soft alerts to hard transaction declines. Integrates with 3DS authentication and card management
+    for end-to-end fraud prevention across card-present and card-not-present channels.
+  version: 3.4.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-cards-fraud-detection
+  x-acme-domain: cards
+servers:
+- url: https://af-cards-fraud-detection.api.acmefin.com/v1
+  description: Production
+- url: https://af-cards-fraud-detection.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Fraud Alerts
+  description: Fraud alert management and investigation workflow
+- name: Detection Rules
+  description: Configurable fraud detection rules and thresholds
+- name: Risk Scoring
+  description: Real-time ML-based risk scoring for transactions
+- name: Device Intelligence
+  description: Device fingerprinting and trust scoring
+paths:
+  /alerts:
+    get:
+      operationId: listFraudAlerts
+      summary: List fraud alerts
+      description: Returns a paginated list of fraud alerts. Supports filtering by card, alert type, status, risk score range,
+        and date. Results are sorted by risk score descending by default. Use this to manage the fraud investigation queue.
+      tags:
+      - Fraud Alerts
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: card_id
+        in: query
+        required: false
+        description: Filter by card identifier
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        description: Filter by alert status
+        schema:
+          type: string
+          enum:
+          - NEW
+          - INVESTIGATING
+          - CONFIRMED_FRAUD
+          - FALSE_POSITIVE
+      - name: alert_type
+        in: query
+        required: false
+        description: Filter by alert type
+        schema:
+          type: string
+          enum:
+          - TRANSACTION_ANOMALY
+          - VELOCITY_BREACH
+          - GEO_ANOMALY
+          - DEVICE_ANOMALY
+      - name: min_risk_score
+        in: query
+        required: false
+        description: Minimum risk score filter
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alert_id:
+                          type: string
+                          description: Unique fraud alert identifier
+                          example: frd-9c2f4a81
+                        card_id:
+                          type: string
+                          description: Unique card identifier
+                          example: card-8a2f4b91
+                        transaction_id:
+                          type: string
+                          description: Flagged transaction identifier
+                          example: txn-3f8c91
+                        alert_type:
+                          type: string
+                          description: Classification of the fraud alert
+                          example: TRANSACTION_ANOMALY
+                          enum:
+                          - TRANSACTION_ANOMALY
+                          - VELOCITY_BREACH
+                          - GEO_ANOMALY
+                          - DEVICE_ANOMALY
+                          - PATTERN_MATCH
+                          - ACCOUNT_TAKEOVER
+                        risk_score:
+                          type: integer
+                          description: Calculated risk score from 0-100
+                          example: 87
+                          minimum: 0
+                          maximum: 100
+                        status:
+                          type: string
+                          description: Alert investigation status
+                          example: NEW
+                          enum:
+                          - NEW
+                          - INVESTIGATING
+                          - CONFIRMED_FRAUD
+                          - FALSE_POSITIVE
+                          - ESCALATED
+                          - RESOLVED
+                        amount:
+                          type: number
+                          description: Monetary amount
+                          format: double
+                          example: 250.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: USD
+                          minLength: 3
+                          maxLength: 3
+                        merchant_name:
+                          type: string
+                          description: Merchant name as registered with the acquirer
+                          example: ACME Electronics Store
+                        merchant_country:
+                          type: string
+                          description: Merchant country code
+                          example: US
+                        triggered_rules:
+                          type: array
+                          description: Fraud rules that triggered this alert
+                          items:
+                            type: string
+                            example: rule-high-value-foreign
+                        created_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - alert_id
+                      - card_id
+                      - status
+                      - risk_score
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /alerts/{alert_id}:
+    get:
+      operationId: getFraudAlert
+      summary: Get fraud alert details
+      description: Retrieves the full details of a fraud alert including the flagged transaction, risk score, triggered rules,
+        merchant information, and investigation status. Includes device and geolocation data if available. Use this to review
+        an alert before taking action.
+      tags:
+      - Fraud Alerts
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        description: Unique alert id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_id:
+                    type: string
+                    description: Unique fraud alert identifier
+                    example: frd-9c2f4a81
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  transaction_id:
+                    type: string
+                    description: Flagged transaction identifier
+                    example: txn-3f8c91
+                  alert_type:
+                    type: string
+                    description: Classification of the fraud alert
+                    example: TRANSACTION_ANOMALY
+                    enum:
+                    - TRANSACTION_ANOMALY
+                    - VELOCITY_BREACH
+                    - GEO_ANOMALY
+                    - DEVICE_ANOMALY
+                    - PATTERN_MATCH
+                    - ACCOUNT_TAKEOVER
+                  risk_score:
+                    type: integer
+                    description: Calculated risk score from 0-100
+                    example: 87
+                    minimum: 0
+                    maximum: 100
+                  status:
+                    type: string
+                    description: Alert investigation status
+                    example: NEW
+                    enum:
+                    - NEW
+                    - INVESTIGATING
+                    - CONFIRMED_FRAUD
+                    - FALSE_POSITIVE
+                    - ESCALATED
+                    - RESOLVED
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: USD
+                    minLength: 3
+                    maxLength: 3
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: ACME Electronics Store
+                  merchant_country:
+                    type: string
+                    description: Merchant country code
+                    example: US
+                  triggered_rules:
+                    type: array
+                    description: Fraud rules that triggered this alert
+                    items:
+                      type: string
+                      example: rule-high-value-foreign
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - alert_id
+                - status
+                - risk_score
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateFraudAlert
+      summary: Update fraud alert status
+      description: Updates the investigation status of a fraud alert. Analysts use this to transition alerts through the investigation
+        workflow (NEW → INVESTIGATING → CONFIRMED_FRAUD or FALSE_POSITIVE). Status changes are logged for audit purposes.
+      tags:
+      - Fraud Alerts
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        description: Unique alert id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update fraud alert status request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: Alert investigation status
+                  example: NEW
+                  enum:
+                  - NEW
+                  - INVESTIGATING
+                  - CONFIRMED_FRAUD
+                  - FALSE_POSITIVE
+                  - ESCALATED
+                  - RESOLVED
+                analyst_notes:
+                  type: string
+                  description: Investigation notes from the fraud analyst
+                  example: Verified with cardholder - legitimate travel purchase
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_id:
+                    type: string
+                    description: Unique fraud alert identifier
+                    example: frd-9c2f4a81
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  transaction_id:
+                    type: string
+                    description: Flagged transaction identifier
+                    example: txn-3f8c91
+                  alert_type:
+                    type: string
+                    description: Classification of the fraud alert
+                    example: TRANSACTION_ANOMALY
+                    enum:
+                    - TRANSACTION_ANOMALY
+                    - VELOCITY_BREACH
+                    - GEO_ANOMALY
+                    - DEVICE_ANOMALY
+                    - PATTERN_MATCH
+                    - ACCOUNT_TAKEOVER
+                  risk_score:
+                    type: integer
+                    description: Calculated risk score from 0-100
+                    example: 87
+                    minimum: 0
+                    maximum: 100
+                  status:
+                    type: string
+                    description: Alert investigation status
+                    example: NEW
+                    enum:
+                    - NEW
+                    - INVESTIGATING
+                    - CONFIRMED_FRAUD
+                    - FALSE_POSITIVE
+                    - ESCALATED
+                    - RESOLVED
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: USD
+                    minLength: 3
+                    maxLength: 3
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: ACME Electronics Store
+                  merchant_country:
+                    type: string
+                    description: Merchant country code
+                    example: US
+                  triggered_rules:
+                    type: array
+                    description: Fraud rules that triggered this alert
+                    items:
+                      type: string
+                      example: rule-high-value-foreign
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /alerts/{alert_id}/confirm:
+    post:
+      operationId: confirmFraud
+      summary: Confirm fraudulent activity
+      description: Confirms that the alerted transaction is fraudulent. This triggers automatic card blocking, initiates a
+        dispute case for the cardholder, and feeds the outcome back to the ML model for improved detection. A replacement
+        card is offered to the cardholder. Use this only after thorough investigation confirms fraud.
+      tags:
+      - Fraud Alerts
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        description: Unique alert id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Confirm fraudulent activity request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                block_card:
+                  type: boolean
+                  description: Whether to immediately block the card
+                  example: true
+                  default: true
+                initiate_dispute:
+                  type: boolean
+                  description: Whether to auto-file a dispute for the flagged transaction
+                  example: true
+                analyst_notes:
+                  type: string
+                  description: Fraud confirmation notes
+                  example: Cardholder confirmed they did not make this purchase. Card was skimmed at ATM.
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_id:
+                    type: string
+                    description: Unique fraud alert identifier
+                    example: frd-9c2f4a81
+                  status:
+                    type: string
+                    example: CONFIRMED_FRAUD
+                  card_blocked:
+                    type: boolean
+                    description: Whether the card was blocked
+                    example: true
+                  dispute_id:
+                    type: string
+                    description: Created dispute case identifier, if applicable
+                    example: dsp-7a2f9c01
+                required:
+                - alert_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /alerts/{alert_id}/dismiss:
+    post:
+      operationId: dismissAlert
+      summary: Dismiss alert as false positive
+      description: Marks a fraud alert as a false positive after investigation. The dismissal reason and analyst notes are
+        recorded. The outcome is fed back to the ML model to reduce future false positives. The card remains in its current
+        status and no dispute is initiated.
+      tags:
+      - Fraud Alerts
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        description: Unique alert id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Dismiss alert as false positive request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason for dismissing the alert
+                  example: Verified legitimate purchase with cardholder
+                analyst_notes:
+                  type: string
+                  description: Additional investigation notes
+              required:
+              - reason
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_id:
+                    type: string
+                    description: Unique fraud alert identifier
+                    example: frd-9c2f4a81
+                  status:
+                    type: string
+                    example: FALSE_POSITIVE
+                required:
+                - alert_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /rules:
+    get:
+      operationId: listFraudRules
+      summary: List fraud detection rules
+      description: Returns all configured fraud detection rules with their conditions, severity levels, and current enabled/disabled
+        status. Rules are evaluated in priority order during transaction processing. Use this to review and audit the current
+        fraud detection configuration.
+      tags:
+      - Detection Rules
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: category
+        in: query
+        required: false
+        description: Filter by rule category
+        schema:
+          type: string
+          enum:
+          - VELOCITY
+          - GEOLOCATION
+          - AMOUNT
+          - PATTERN
+          - DEVICE
+          - BEHAVIORAL
+      - name: enabled
+        in: query
+        required: false
+        description: Filter by enabled status
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rule_id:
+                          type: string
+                          description: Unique fraud detection rule identifier
+                          example: rule-high-value-foreign
+                        name:
+                          type: string
+                          description: Rule display name
+                          example: High-Value Foreign Transaction
+                        description:
+                          type: string
+                          description: Detailed rule description and trigger conditions
+                          example: Flags transactions over $500 in a country different from the cardholder's home country
+                        category:
+                          type: string
+                          description: Rule category
+                          example: GEOLOCATION
+                          enum:
+                          - VELOCITY
+                          - GEOLOCATION
+                          - AMOUNT
+                          - PATTERN
+                          - DEVICE
+                          - BEHAVIORAL
+                        severity:
+                          type: string
+                          description: Alert severity when rule triggers
+                          example: HIGH
+                          enum:
+                          - LOW
+                          - MEDIUM
+                          - HIGH
+                          - CRITICAL
+                        enabled:
+                          type: boolean
+                          description: Whether the rule is currently active
+                          example: true
+                        conditions:
+                          type: object
+                          description: Rule trigger conditions as a JSON expression
+                          properties:
+                            field:
+                              type: string
+                              description: Data field to evaluate
+                            operator:
+                              type: string
+                              description: Comparison operator
+                            value:
+                              type: string
+                              description: Threshold value
+                        action:
+                          type: string
+                          description: Action to take when rule triggers
+                          example: ALERT_ONLY
+                          enum:
+                          - ALERT_ONLY
+                          - BLOCK_AND_ALERT
+                          - DECLINE_TRANSACTION
+                          - STEP_UP_AUTH
+                        updated_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - rule_id
+                      - name
+                      - enabled
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createFraudRule
+      summary: Create a fraud detection rule
+      description: Creates a new fraud detection rule with specified trigger conditions and response action. Rules are evaluated
+        in real-time during transaction authorization. New rules are created in disabled state by default and must be explicitly
+        enabled after testing. Use the risk scoring endpoint to validate rule effectiveness before enabling.
+      tags:
+      - Detection Rules
+      requestBody:
+        required: true
+        description: Create a fraud detection rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Rule display name
+                  example: High-Value Foreign Transaction
+                description:
+                  type: string
+                  description: Detailed rule description and trigger conditions
+                  example: Flags transactions over $500 in a country different from the cardholder's home country
+                category:
+                  type: string
+                  description: Rule category
+                  example: GEOLOCATION
+                  enum:
+                  - VELOCITY
+                  - GEOLOCATION
+                  - AMOUNT
+                  - PATTERN
+                  - DEVICE
+                  - BEHAVIORAL
+                severity:
+                  type: string
+                  description: Alert severity when rule triggers
+                  example: HIGH
+                  enum:
+                  - LOW
+                  - MEDIUM
+                  - HIGH
+                  - CRITICAL
+                conditions:
+                  type: object
+                  description: Rule trigger conditions as a JSON expression
+                  properties:
+                    field:
+                      type: string
+                      description: Data field to evaluate
+                    operator:
+                      type: string
+                      description: Comparison operator
+                    value:
+                      type: string
+                      description: Threshold value
+                action:
+                  type: string
+                  description: Action to take when rule triggers
+                  example: ALERT_ONLY
+                  enum:
+                  - ALERT_ONLY
+                  - BLOCK_AND_ALERT
+                  - DECLINE_TRANSACTION
+                  - STEP_UP_AUTH
+              required:
+              - name
+              - category
+              - conditions
+              - action
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: Unique fraud detection rule identifier
+                    example: rule-high-value-foreign
+                  name:
+                    type: string
+                    description: Rule display name
+                    example: High-Value Foreign Transaction
+                  description:
+                    type: string
+                    description: Detailed rule description and trigger conditions
+                    example: Flags transactions over $500 in a country different from the cardholder's home country
+                  category:
+                    type: string
+                    description: Rule category
+                    example: GEOLOCATION
+                    enum:
+                    - VELOCITY
+                    - GEOLOCATION
+                    - AMOUNT
+                    - PATTERN
+                    - DEVICE
+                    - BEHAVIORAL
+                  severity:
+                    type: string
+                    description: Alert severity when rule triggers
+                    example: HIGH
+                    enum:
+                    - LOW
+                    - MEDIUM
+                    - HIGH
+                    - CRITICAL
+                  enabled:
+                    type: boolean
+                    description: Whether the rule is currently active
+                    example: true
+                  conditions:
+                    type: object
+                    description: Rule trigger conditions as a JSON expression
+                    properties:
+                      field:
+                        type: string
+                        description: Data field to evaluate
+                      operator:
+                        type: string
+                        description: Comparison operator
+                      value:
+                        type: string
+                        description: Threshold value
+                  action:
+                    type: string
+                    description: Action to take when rule triggers
+                    example: ALERT_ONLY
+                    enum:
+                    - ALERT_ONLY
+                    - BLOCK_AND_ALERT
+                    - DECLINE_TRANSACTION
+                    - STEP_UP_AUTH
+                  updated_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - rule_id
+                - name
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /rules/{rule_id}:
+    get:
+      operationId: getFraudRule
+      summary: Get fraud rule details
+      description: Retrieves the full definition of a fraud detection rule including its trigger conditions as a JSON expression
+        tree, severity level, response action, and performance metrics (hit rate, false positive rate). Use this for detailed
+        rule review and optimization.
+      tags:
+      - Detection Rules
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        description: Unique rule id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: Unique fraud detection rule identifier
+                    example: rule-high-value-foreign
+                  name:
+                    type: string
+                    description: Rule display name
+                    example: High-Value Foreign Transaction
+                  description:
+                    type: string
+                    description: Detailed rule description and trigger conditions
+                    example: Flags transactions over $500 in a country different from the cardholder's home country
+                  category:
+                    type: string
+                    description: Rule category
+                    example: GEOLOCATION
+                    enum:
+                    - VELOCITY
+                    - GEOLOCATION
+                    - AMOUNT
+                    - PATTERN
+                    - DEVICE
+                    - BEHAVIORAL
+                  severity:
+                    type: string
+                    description: Alert severity when rule triggers
+                    example: HIGH
+                    enum:
+                    - LOW
+                    - MEDIUM
+                    - HIGH
+                    - CRITICAL
+                  enabled:
+                    type: boolean
+                    description: Whether the rule is currently active
+                    example: true
+                  conditions:
+                    type: object
+                    description: Rule trigger conditions as a JSON expression
+                    properties:
+                      field:
+                        type: string
+                        description: Data field to evaluate
+                      operator:
+                        type: string
+                        description: Comparison operator
+                      value:
+                        type: string
+                        description: Threshold value
+                  action:
+                    type: string
+                    description: Action to take when rule triggers
+                    example: ALERT_ONLY
+                    enum:
+                    - ALERT_ONLY
+                    - BLOCK_AND_ALERT
+                    - DECLINE_TRANSACTION
+                    - STEP_UP_AUTH
+                  updated_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - rule_id
+                - name
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateFraudRule
+      summary: Update a fraud detection rule
+      description: Updates the configuration of an existing fraud detection rule. Changes to conditions or action take effect
+        immediately for enabled rules. Severity and conditions can be adjusted based on performance metrics. Version history
+        is maintained for audit purposes.
+      tags:
+      - Detection Rules
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        description: Unique rule id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update a fraud detection rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Rule display name
+                  example: High-Value Foreign Transaction
+                description:
+                  type: string
+                  description: Detailed rule description and trigger conditions
+                  example: Flags transactions over $500 in a country different from the cardholder's home country
+                severity:
+                  type: string
+                  description: Alert severity when rule triggers
+                  example: HIGH
+                  enum:
+                  - LOW
+                  - MEDIUM
+                  - HIGH
+                  - CRITICAL
+                conditions:
+                  type: object
+                  description: Rule trigger conditions as a JSON expression
+                  properties:
+                    field:
+                      type: string
+                      description: Data field to evaluate
+                    operator:
+                      type: string
+                      description: Comparison operator
+                    value:
+                      type: string
+                      description: Threshold value
+                action:
+                  type: string
+                  description: Action to take when rule triggers
+                  example: ALERT_ONLY
+                  enum:
+                  - ALERT_ONLY
+                  - BLOCK_AND_ALERT
+                  - DECLINE_TRANSACTION
+                  - STEP_UP_AUTH
+                enabled:
+                  type: boolean
+                  description: Whether the rule is currently active
+                  example: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: Unique fraud detection rule identifier
+                    example: rule-high-value-foreign
+                  name:
+                    type: string
+                    description: Rule display name
+                    example: High-Value Foreign Transaction
+                  description:
+                    type: string
+                    description: Detailed rule description and trigger conditions
+                    example: Flags transactions over $500 in a country different from the cardholder's home country
+                  category:
+                    type: string
+                    description: Rule category
+                    example: GEOLOCATION
+                    enum:
+                    - VELOCITY
+                    - GEOLOCATION
+                    - AMOUNT
+                    - PATTERN
+                    - DEVICE
+                    - BEHAVIORAL
+                  severity:
+                    type: string
+                    description: Alert severity when rule triggers
+                    example: HIGH
+                    enum:
+                    - LOW
+                    - MEDIUM
+                    - HIGH
+                    - CRITICAL
+                  enabled:
+                    type: boolean
+                    description: Whether the rule is currently active
+                    example: true
+                  conditions:
+                    type: object
+                    description: Rule trigger conditions as a JSON expression
+                    properties:
+                      field:
+                        type: string
+                        description: Data field to evaluate
+                      operator:
+                        type: string
+                        description: Comparison operator
+                      value:
+                        type: string
+                        description: Threshold value
+                  action:
+                    type: string
+                    description: Action to take when rule triggers
+                    example: ALERT_ONLY
+                    enum:
+                    - ALERT_ONLY
+                    - BLOCK_AND_ALERT
+                    - DECLINE_TRANSACTION
+                    - STEP_UP_AUTH
+                  updated_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+    delete:
+      operationId: deleteFraudRule
+      summary: Delete a fraud detection rule
+      description: Permanently deletes a fraud detection rule. Active rules must be disabled before deletion. Historical alerts
+        generated by this rule are not affected. This action cannot be undone; consider disabling instead.
+      tags:
+      - Detection Rules
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        description: Unique rule id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /scoring:
+    post:
+      operationId: scoreTransaction
+      summary: Real-time transaction risk scoring
+      description: Performs real-time risk scoring on a transaction using the ML fraud detection model. Returns a risk score
+        from 0-100, matched rules, recommended action, and contributing risk factors. This endpoint is called during transaction
+        authorization to make accept/decline/step-up decisions. Response time SLA is under 100ms at p99.
+      tags:
+      - Risk Scoring
+      requestBody:
+        required: true
+        description: Real-time transaction risk scoring request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                card_id:
+                  type: string
+                  description: Unique card identifier
+                  example: card-8a2f4b91
+                amount:
+                  type: number
+                  description: Monetary amount
+                  format: double
+                  example: 250.0
+                currency:
+                  type: string
+                  description: ISO 4217 currency code
+                  example: USD
+                  minLength: 3
+                  maxLength: 3
+                merchant_name:
+                  type: string
+                  description: Merchant name as registered with the acquirer
+                  example: ACME Electronics Store
+                merchant_category_code:
+                  type: string
+                  description: ISO 18245 merchant category code
+                  example: '5411'
+                  pattern: ^[0-9]{4}$
+                merchant_country:
+                  type: string
+                  description: Merchant country code
+                  example: US
+                channel:
+                  type: string
+                  description: Transaction channel
+                  example: ECOMMERCE
+                  enum:
+                  - POS
+                  - ECOMMERCE
+                  - ATM
+                  - MOTO
+                  - CONTACTLESS
+                device_id:
+                  type: string
+                  description: Device fingerprint identifier if available
+                  example: dev-8a3c9f21
+                ip_address:
+                  type: string
+                  description: Cardholder IP address for CNP transactions
+                  example: 203.0.113.42
+              required:
+              - card_id
+              - amount
+              - currency
+              - merchant_name
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  risk_score:
+                    type: integer
+                    description: ML model risk score from 0 (safe) to 100 (high risk)
+                    example: 35
+                    minimum: 0
+                    maximum: 100
+                  recommendation:
+                    type: string
+                    description: Recommended action based on risk score and rules
+                    example: APPROVE
+                    enum:
+                    - APPROVE
+                    - DECLINE
+                    - STEP_UP_AUTH
+                    - REVIEW
+                  matched_rules:
+                    type: array
+                    description: Rules that triggered for this transaction
+                    items:
+                      type: string
+                      example: rule-international-ecommerce
+                  risk_factors:
+                    type: array
+                    description: Contributing risk factors
+                    items:
+                      type: string
+                      example: NEW_MERCHANT
+                  model_version:
+                    type: string
+                    description: Version of the ML model used for scoring
+                    example: v3.4.2-2025-06
+                required:
+                - risk_score
+                - recommendation
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /device-fingerprints:
+    post:
+      operationId: registerDeviceFingerprint
+      summary: Register a device fingerprint
+      description: Registers a new device fingerprint captured from the cardholder's browser or mobile app. The fingerprint
+        includes device type, OS, browser, screen resolution, and other hardware signals. Registered devices build a trust
+        profile over time. Unknown devices during transactions increase the risk score.
+      tags:
+      - Device Intelligence
+      requestBody:
+        required: true
+        description: Register a device fingerprint request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                card_id:
+                  type: string
+                  description: Unique card identifier
+                  example: card-8a2f4b91
+                fingerprint_hash:
+                  type: string
+                  description: SHA-256 hash of the device fingerprint components
+                  example: a1b2c3d4e5f6...
+                device_type:
+                  type: string
+                  description: Detected device type
+                  example: MOBILE
+                  enum:
+                  - MOBILE
+                  - DESKTOP
+                  - TABLET
+                  - UNKNOWN
+                os:
+                  type: string
+                  description: Operating system detected
+                  example: iOS 18.2
+                browser:
+                  type: string
+                  description: Browser detected
+                  example: Safari 18.0
+                ip_address:
+                  type: string
+                  description: Last known IP address
+                  example: 203.0.113.42
+                screen_resolution:
+                  type: string
+                  description: Screen resolution
+                  example: 1170x2532
+              required:
+              - card_id
+              - fingerprint_hash
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: Device fingerprint identifier
+                    example: dev-8a3c9f21
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  fingerprint_hash:
+                    type: string
+                    description: SHA-256 hash of the device fingerprint components
+                    example: a1b2c3d4e5f6...
+                  device_type:
+                    type: string
+                    description: Detected device type
+                    example: MOBILE
+                    enum:
+                    - MOBILE
+                    - DESKTOP
+                    - TABLET
+                    - UNKNOWN
+                  os:
+                    type: string
+                    description: Operating system detected
+                    example: iOS 18.2
+                  browser:
+                    type: string
+                    description: Browser detected
+                    example: Safari 18.0
+                  ip_address:
+                    type: string
+                    description: Last known IP address
+                    example: 203.0.113.42
+                  geolocation:
+                    type: object
+                    description: Approximate geolocation from IP
+                    properties:
+                      country:
+                        type: string
+                        description: Country code
+                        example: US
+                      city:
+                        type: string
+                        description: City name
+                        example: San Francisco
+                      latitude:
+                        type: number
+                        description: Latitude
+                        example: 37.7749
+                      longitude:
+                        type: number
+                        description: Longitude
+                        example: -122.4194
+                  trust_score:
+                    type: integer
+                    description: Device trust score from 0-100 based on history
+                    example: 92
+                    minimum: 0
+                    maximum: 100
+                  first_seen_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  last_seen_at:
+                    type: string
+                    description: Timestamp of most recent activity from this device
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - device_id
+                - trust_score
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /device-fingerprints/{device_id}:
+    get:
+      operationId: getDeviceProfile
+      summary: Get device trust profile
+      description: Retrieves the trust profile for a registered device including its trust score, geolocation history, operating
+        system, browser, and activity timestamps. Devices with more historical transactions and consistent behavior receive
+        higher trust scores. Use this to review device trust during fraud investigations.
+      tags:
+      - Device Intelligence
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        description: Unique device id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: Device fingerprint identifier
+                    example: dev-8a3c9f21
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  fingerprint_hash:
+                    type: string
+                    description: SHA-256 hash of the device fingerprint components
+                    example: a1b2c3d4e5f6...
+                  device_type:
+                    type: string
+                    description: Detected device type
+                    example: MOBILE
+                    enum:
+                    - MOBILE
+                    - DESKTOP
+                    - TABLET
+                    - UNKNOWN
+                  os:
+                    type: string
+                    description: Operating system detected
+                    example: iOS 18.2
+                  browser:
+                    type: string
+                    description: Browser detected
+                    example: Safari 18.0
+                  ip_address:
+                    type: string
+                    description: Last known IP address
+                    example: 203.0.113.42
+                  geolocation:
+                    type: object
+                    description: Approximate geolocation from IP
+                    properties:
+                      country:
+                        type: string
+                        description: Country code
+                        example: US
+                      city:
+                        type: string
+                        description: City name
+                        example: San Francisco
+                      latitude:
+                        type: number
+                        description: Latitude
+                        example: 37.7749
+                      longitude:
+                        type: number
+                        description: Longitude
+                        example: -122.4194
+                  trust_score:
+                    type: integer
+                    description: Device trust score from 0-100 based on history
+                    example: 92
+                    minimum: 0
+                    maximum: 100
+                  first_seen_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  last_seen_at:
+                    type: string
+                    description: Timestamp of most recent activity from this device
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - device_id
+                - trust_score
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /velocity-checks:
+    post:
+      operationId: runVelocityCheck
+      summary: Run a velocity check
+      description: Performs an on-demand velocity analysis for a card across configurable time windows. Returns transaction
+        counts and amounts for the last hour, day, week, and month, along with any velocity rule breaches detected. Use this
+        during manual fraud review or for custom authorization logic that needs real-time velocity data.
+      tags:
+      - Risk Scoring
+      requestBody:
+        required: true
+        description: Run a velocity check request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                card_id:
+                  type: string
+                  description: Unique card identifier
+                  example: card-8a2f4b91
+                check_windows:
+                  type: array
+                  description: Time windows to analyze
+                  items:
+                    type: string
+                    example: 1h
+              required:
+              - card_id
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: card-8a2f4b91
+                  velocity_data:
+                    type: object
+                    description: Transaction velocity across time windows
+                    properties:
+                      last_hour_count:
+                        type: integer
+                        description: Transactions in the last hour
+                        example: 2
+                      last_hour_amount:
+                        type: number
+                        description: Total amount in the last hour
+                        format: double
+                        example: 145.0
+                      last_24h_count:
+                        type: integer
+                        description: Transactions in the last 24 hours
+                        example: 7
+                      last_24h_amount:
+                        type: number
+                        description: Total amount in the last 24 hours
+                        format: double
+                        example: 892.5
+                  breached_rules:
+                    type: array
+                    description: Velocity rules currently breached
+                    items:
+                      type: string
+                      example: rule-daily-txn-count
+                required:
+                - card_id
+                - velocity_data
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

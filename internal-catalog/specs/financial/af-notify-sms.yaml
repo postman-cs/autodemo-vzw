@@ -1,0 +1,1155 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance SMS Notifications API
+  description: >-
+    SMS messaging platform for transactional alerts, OTP delivery, and two-way conversational messaging. Supports
+    shortcode provisioning, carrier-grade delivery reports, opt-in/opt-out compliance management (TCPA, CTIA), and
+    bulk messaging with per-recipient personalization. Integrates with major aggregators including Twilio, Vonage,
+    and Sinch.
+  version: 2.2.4
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-notify-sms
+  x-acme-domain: notify
+servers:
+  - url: https://af-notify-sms.api.acmefin.com/v1
+    description: Production
+  - url: https://af-notify-sms.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: SMS Messaging
+    description: Send individual and bulk SMS with delivery tracking and two-way messaging
+  - name: Shortcode Management
+    description: Provision and manage dedicated shortcodes for SMS campaigns
+paths:
+  /sms:
+    post:
+      operationId: sendSms
+      summary: Send SMS
+      description: >-
+        Send a single SMS message to a phone number. Supports long messages (auto-segmented beyond 160
+        characters), Unicode content, and optional shortcode selection. Returns immediately; delivery is
+        asynchronous.
+      tags:
+        - SMS Messaging
+      requestBody:
+        required: true
+        description: Send SMS request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    to:
+                      type: string
+                      description: "Recipient phone (E.164 format)"
+                      example: "+14155551234"
+                    body:
+                      type: string
+                      description: "Message text (max 1600 chars)"
+                      example: "Your OTP is 847291. Expires in 5 minutes."
+                    from_shortcode:
+                      type: string
+                      description: "Shortcode to send from (optional)"
+                      example: "72345"
+                    template_id:
+                      type: string
+                      description: "Template ID for rendering"
+                      example: "tpl-otp"
+                    template_vars:
+                      type: object
+                      description: "Variables for template substitution"
+                    callback_url:
+                      type: string
+                      description: "Webhook URL for delivery status updates"
+                      example: "https://api.acmefin.com/hooks/sms-status"
+              required:
+                - to
+                - body
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message_id:
+                    type: string
+                    description: "SMS message ID"
+                    format: uuid
+                    example: "sms-6a7b8c9d-0e1f-2a3b-4c5d-6e7f8a9b0c1d"
+                  segments:
+                    type: integer
+                    description: "Number of SMS segments"
+                    example: 1
+                  status:
+                    type: string
+                    description: "Initial status"
+                    example: "queued"
+                  estimated_cost:
+                    type: number
+                    description: "Estimated cost in USD"
+                    format: double
+                    example: 0.0075
+                required:
+                  - message_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sms/bulk:
+    post:
+      operationId: sendBulkSms
+      summary: Send bulk SMS
+      description: >-
+        Send up to 5,000 SMS messages in a single batch request. Each recipient can have personalized
+        content via template variables. Returns a batch ID for aggregate status tracking. Subject to rate
+        limiting (10 batches/minute).
+      tags:
+        - SMS Messaging
+      requestBody:
+        required: true
+        description: Send bulk SMS request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    recipients:
+                      type: array
+                      description: "List of {to, template_vars} objects"
+                      items:
+                        type: object
+                    body:
+                      type: string
+                      description: "Message template"
+                      example: "Hi {{name}}, your balance is {{balance}}."
+                    from_shortcode:
+                      type: string
+                      description: "Shortcode"
+                      example: "72345"
+                    template_id:
+                      type: string
+                      description: "Template ID"
+                      example: "tpl-balance-alert"
+              required:
+                - recipients
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: "Batch ID"
+                    format: uuid
+                    example: "smb-3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d"
+                  total_messages:
+                    type: integer
+                    description: "Messages queued"
+                    example: 2500
+                  status:
+                    type: string
+                    description: "Batch status"
+                    example: "processing"
+                required:
+                  - batch_id
+                  - total_messages
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sms/{message_id}:
+    get:
+      operationId: getSms
+      summary: Get SMS details
+      description: >-
+        Retrieve full details for a sent SMS including delivery status, carrier information, segment count,
+        cost, and provider-level metadata.
+      tags:
+        - SMS Messaging
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          description: "Unique message id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message_id:
+                    type: string
+                    description: "Message ID"
+                    format: uuid
+                    example: "sms-6a7b8c9d-0e1f-2a3b-4c5d-6e7f8a9b0c1d"
+                  to:
+                    type: string
+                    description: "Recipient number"
+                    example: "+14155551234"
+                  body:
+                    type: string
+                    description: "Message body"
+                    example: "Your OTP is 847291"
+                  status:
+                    type: string
+                    description: "Delivery status"
+                    example: "queued"
+                    enum:
+                      - queued
+                      - sent
+                      - delivered
+                      - undelivered
+                      - failed
+                  segments:
+                    type: integer
+                    description: "Segments used"
+                    example: 1
+                  carrier:
+                    type: string
+                    description: "Recipient carrier name"
+                    example: "T-Mobile"
+                  cost:
+                    type: number
+                    description: "Actual cost in USD"
+                    format: double
+                    example: 0.0075
+                  sent_at:
+                    type: string
+                    description: "Dispatch time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  delivered_at:
+                    type: string
+                    description: "Delivery confirmation time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - message_id
+                  - to
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /sms/{message_id}/delivery-report:
+    get:
+      operationId: getSmsDeliveryReport
+      summary: Get SMS delivery report
+      description: >-
+        Retrieve the carrier-grade delivery report for an SMS. Includes DLR status codes, carrier
+        timestamps, and error details for failed messages.
+      tags:
+        - SMS Messaging
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          description: "Unique message id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message_id:
+                    type: string
+                    description: "Message ID"
+                    format: uuid
+                    example: "sms-6a7b8c9d-0e1f-2a3b-4c5d-6e7f8a9b0c1d"
+                  dlr_status:
+                    type: string
+                    description: "DLR status code"
+                    example: "DELIVRD"
+                    enum:
+                      - DELIVRD
+                      - UNDELIV
+                      - EXPIRED
+                      - REJECTD
+                      - UNKNOWN
+                  carrier_timestamp:
+                    type: string
+                    description: "Carrier-reported delivery time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  error_code:
+                    type: string
+                    description: "Carrier error code (if failed)"
+                    example: "000"
+                  network_code:
+                    type: string
+                    description: "Mobile network code"
+                    example: "310260"
+                  raw_dlr:
+                    type: string
+                    description: "Raw DLR payload from carrier"
+                    example: "id:123 sub:001 dlvrd:001 submit date:..."
+                required:
+                  - message_id
+                  - dlr_status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /shortcodes:
+    get:
+      operationId: listShortcodes
+      summary: List shortcodes
+      description: >-
+        List all provisioned shortcodes for SMS campaigns. Includes approval status, campaign type, and
+        throughput limits.
+      tags:
+        - Shortcode Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        shortcode_id:
+                          type: string
+                          description: "Shortcode ID"
+                          format: uuid
+                          example: "sc-4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d"
+                        shortcode:
+                          type: string
+                          description: "The shortcode number"
+                          example: "72345"
+                        country:
+                          type: string
+                          description: "Country code"
+                          example: "US"
+                        status:
+                          type: string
+                          description: "Provisioning status"
+                          example: "pending_approval"
+                          enum:
+                            - pending_approval
+                            - active
+                            - suspended
+                            - decommissioned
+                        campaign_type:
+                          type: string
+                          description: "Approved campaign type"
+                          example: "transactional"
+                          enum:
+                            - transactional
+                            - marketing
+                            - mixed
+                        throughput:
+                          type: integer
+                          description: "Max messages per second"
+                          example: 100
+                      required:
+                        - shortcode_id
+                        - shortcode
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: provisionShortcode
+      summary: Provision a shortcode
+      description: >-
+        Request provisioning of a new dedicated shortcode. Shortcodes require carrier approval which can
+        take 8-12 weeks. A vanity shortcode can be requested but is subject to availability.
+      tags:
+        - Shortcode Management
+      requestBody:
+        required: true
+        description: Provision a shortcode request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    shortcode:
+                      type: string
+                      description: "Requested shortcode (or 'any')"
+                      example: "72345"
+                    country:
+                      type: string
+                      description: "Target country (ISO 3166-1)"
+                      example: "US"
+                    campaign_type:
+                      type: string
+                      description: "Campaign type"
+                      example: "transactional"
+                      enum:
+                        - transactional
+                        - marketing
+                        - mixed
+                    use_case_description:
+                      type: string
+                      description: "Description for carrier approval"
+                      example: "Banking transaction alerts and OTP delivery"
+              required:
+                - country
+                - campaign_type
+                - use_case_description
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shortcode_id:
+                    type: string
+                    description: "Provisioned ID"
+                    format: uuid
+                    example: "sc-4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d"
+                  shortcode:
+                    type: string
+                    description: "Assigned shortcode"
+                    example: "72345"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "pending_approval"
+                  estimated_approval:
+                    type: string
+                    description: "Estimated approval date"
+                    example: "2025-09-15"
+                required:
+                  - shortcode_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /shortcodes/{shortcode_id}:
+    get:
+      operationId: getShortcode
+      summary: Get shortcode details
+      description: >-
+        Retrieve full details for a provisioned shortcode including carrier approval status, throughput
+        limits, and usage statistics.
+      tags:
+        - Shortcode Management
+      parameters:
+        - name: shortcode_id
+          in: path
+          required: true
+          description: "Unique shortcode id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shortcode_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "sc-4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d"
+                  shortcode:
+                    type: string
+                    description: "Number"
+                    example: "72345"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                  campaign_type:
+                    type: string
+                    description: "Campaign type"
+                    example: "transactional"
+                  throughput:
+                    type: integer
+                    description: "Max MPS"
+                    example: 100
+                  messages_sent_today:
+                    type: integer
+                    description: "Today's message count"
+                    example: 4521
+                required:
+                  - shortcode_id
+                  - shortcode
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: decommissionShortcode
+      summary: Decommission shortcode
+      description: >-
+        Decommission a shortcode and release it back to the carrier pool. Active opt-in records are
+        preserved for compliance. This action is irreversible.
+      tags:
+        - Shortcode Management
+      parameters:
+        - name: shortcode_id
+          in: path
+          required: true
+          description: "Unique shortcode id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /opt-in-out:
+    get:
+      operationId: listOptRecords
+      summary: List opt-in/out records
+      description: >-
+        List SMS consent records for compliance tracking (TCPA, CTIA). Each record tracks whether a phone
+        number has opted in or out of receiving SMS from a specific shortcode.
+      tags:
+        - SMS Messaging
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: "Filter by opt status"
+          schema:
+            type: "string"
+            enum:
+              - opted_in
+              - opted_out
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        record_id:
+                          type: string
+                          description: "Record ID"
+                          format: uuid
+                          example: "opt-7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d"
+                        phone:
+                          type: string
+                          description: "Phone number (E.164)"
+                          example: "+14155551234"
+                        shortcode:
+                          type: string
+                          description: "Associated shortcode"
+                          example: "72345"
+                        status:
+                          type: string
+                          description: "Consent status"
+                          example: "opted_in"
+                          enum:
+                            - opted_in
+                            - opted_out
+                        method:
+                          type: string
+                          description: "How consent was captured"
+                          example: "keyword"
+                          enum:
+                            - keyword
+                            - web_form
+                            - api
+                            - carrier
+                        recorded_at:
+                          type: string
+                          description: "Consent timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - record_id
+                        - phone
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: recordOptChange
+      summary: Record opt-in/out
+      description: >-
+        Record a consent change for a phone number. Used to programmatically manage opt-in/out status in
+        response to keyword replies (STOP/START) or web form submissions.
+      tags:
+        - SMS Messaging
+      requestBody:
+        required: true
+        description: Record opt-in/out request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    phone:
+                      type: string
+                      description: "Phone number (E.164)"
+                      example: "+14155551234"
+                    shortcode:
+                      type: string
+                      description: "Shortcode"
+                      example: "72345"
+                    action:
+                      type: string
+                      description: "Consent action"
+                      example: "opt_in"
+                      enum:
+                        - opt_in
+                        - opt_out
+                    method:
+                      type: string
+                      description: "Capture method"
+                      example: "keyword"
+                      enum:
+                        - keyword
+                        - web_form
+                        - api
+                    evidence:
+                      type: string
+                      description: "Consent evidence reference"
+                      example: "SMS keyword STOP received 2025-06-15T10:30:00Z"
+              required:
+                - phone
+                - shortcode
+                - action
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  record_id:
+                    type: string
+                    description: "Record ID"
+                    format: uuid
+                    example: "opt-7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d"
+                  status:
+                    type: string
+                    description: "Updated status"
+                    example: "opted_out"
+                required:
+                  - record_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /conversations/{conversation_id}:
+    get:
+      operationId: getConversation
+      summary: Get SMS conversation
+      description: >-
+        Retrieve a two-way SMS conversation thread including all inbound and outbound messages.
+        Conversations are automatically created when a recipient replies to an outbound SMS.
+      tags:
+        - SMS Messaging
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          description: "Unique conversation id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation_id:
+                    type: string
+                    description: "Conversation ID"
+                    format: uuid
+                    example: "cnv-2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d"
+                  phone:
+                    type: string
+                    description: "Participant phone number"
+                    example: "+14155551234"
+                  shortcode:
+                    type: string
+                    description: "Shortcode used"
+                    example: "72345"
+                  status:
+                    type: string
+                    description: "Conversation state"
+                    example: "active"
+                    enum:
+                      - active
+                      - closed
+                      - expired
+                  messages:
+                    type: array
+                    description: "Chronological message thread"
+                    items:
+                      type: object
+                  message_count:
+                    type: integer
+                    description: "Total messages in thread"
+                    example: 5
+                  last_message_at:
+                    type: string
+                    description: "Timestamp of last message"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - conversation_id
+                  - phone
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

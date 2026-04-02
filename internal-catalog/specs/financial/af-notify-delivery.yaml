@@ -1,0 +1,1101 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Notification Delivery API
+  description: >-
+    Comprehensive delivery lifecycle management for multi-channel notifications. Tracks delivery status across
+    email, SMS, push, in-app, and webhook channels with real-time receipt confirmation, automatic retry with
+    exponential backoff, dead-letter queue management for permanently failed deliveries, and channel failover
+    orchestration when primary channels are unavailable.
+  version: 2.4.1
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-notify-delivery
+  x-acme-domain: notify
+servers:
+  - url: https://af-notify-delivery.api.acmefin.com/v1
+    description: Production
+  - url: https://af-notify-delivery.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Delivery Tracking
+    description: Track delivery status, receipts, and retry logic across notification channels
+  - name: Dead Letter Queue
+    description: Inspect and reprocess permanently failed notification deliveries
+paths:
+  /deliveries:
+    get:
+      operationId: listDeliveries
+      summary: List delivery records
+      description: >-
+        Retrieve a paginated list of delivery records with optional filtering by channel, status, date
+        range, and recipient. Results include full delivery metadata and attempt history.
+      tags:
+        - Delivery Tracking
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: channel
+          in: query
+          required: false
+          description: "Filter by delivery channel"
+          schema:
+            type: "string"
+            enum:
+              - email
+              - sms
+              - push
+              - in_app
+              - webhook
+        - name: status
+          in: query
+          required: false
+          description: "Filter by delivery status"
+          schema:
+            type: "string"
+            enum:
+              - pending
+              - dispatched
+              - delivered
+              - bounced
+              - failed
+        - name: since
+          in: query
+          required: false
+          description: "Return deliveries created after this ISO 8601 timestamp"
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        delivery_id:
+                          type: string
+                          description: "Unique delivery identifier"
+                          format: uuid
+                          example: "del-7f3a9b2c-e8d4-4a1f-b5c6-3d2e1f0a9b8c"
+                        notification_id:
+                          type: string
+                          description: "Parent notification ID"
+                          format: uuid
+                          example: "ntf-4e5f6a7b-c8d9-0e1f-2a3b-4c5d6e7f8a9b"
+                        channel:
+                          type: string
+                          description: "Delivery channel"
+                          example: "email"
+                          enum:
+                            - email
+                            - sms
+                            - push
+                            - in_app
+                            - webhook
+                        status:
+                          type: string
+                          description: "Delivery status"
+                          example: "pending"
+                          enum:
+                            - pending
+                            - dispatched
+                            - delivered
+                            - bounced
+                            - failed
+                        attempts:
+                          type: integer
+                          description: "Number of delivery attempts"
+                          example: 3
+                        last_attempt_at:
+                          type: string
+                          description: "Timestamp of last delivery attempt"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        delivered_at:
+                          type: string
+                          description: "Timestamp when successfully delivered"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        error_code:
+                          type: string
+                          description: "Machine-readable error code if failed"
+                          example: "MAILBOX_FULL"
+                        recipient:
+                          type: string
+                          description: "Recipient address or device token"
+                          example: "user@example.com"
+                      required:
+                        - delivery_id
+                        - notification_id
+                        - channel
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deliveries/{delivery_id}:
+    get:
+      operationId: getDelivery
+      summary: Get delivery details
+      description: >-
+        Retrieve full details for a specific delivery including attempt log, channel metadata, and receipt
+        information.
+      tags:
+        - Delivery Tracking
+      parameters:
+        - name: delivery_id
+          in: path
+          required: true
+          description: "Unique delivery id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivery_id:
+                    type: string
+                    description: "Unique delivery identifier"
+                    format: uuid
+                    example: "del-7f3a9b2c-e8d4-4a1f-b5c6-3d2e1f0a9b8c"
+                  notification_id:
+                    type: string
+                    description: "Parent notification ID"
+                    format: uuid
+                    example: "ntf-4e5f6a7b-c8d9-0e1f-2a3b-4c5d6e7f8a9b"
+                  channel:
+                    type: string
+                    description: "Delivery channel"
+                    example: "email"
+                    enum:
+                      - email
+                      - sms
+                      - push
+                      - in_app
+                      - webhook
+                  status:
+                    type: string
+                    description: "Delivery status"
+                    example: "pending"
+                    enum:
+                      - pending
+                      - dispatched
+                      - delivered
+                      - bounced
+                      - failed
+                  attempts:
+                    type: integer
+                    description: "Number of delivery attempts"
+                    example: 3
+                  last_attempt_at:
+                    type: string
+                    description: "Timestamp of last delivery attempt"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  delivered_at:
+                    type: string
+                    description: "Timestamp when successfully delivered"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  error_code:
+                    type: string
+                    description: "Machine-readable error code if failed"
+                    example: "MAILBOX_FULL"
+                  recipient:
+                    type: string
+                    description: "Recipient address or device token"
+                    example: "user@example.com"
+                required:
+                  - delivery_id
+                  - channel
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deliveries/{delivery_id}/retry:
+    post:
+      operationId: retryDelivery
+      summary: Retry failed delivery
+      description: >-
+        Re-enqueue a failed or bounced delivery for another attempt. Resets the attempt counter and applies
+        the configured retry policy with exponential backoff.
+      tags:
+        - Delivery Tracking
+      parameters:
+        - name: delivery_id
+          in: path
+          required: true
+          description: "Unique delivery id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Retry failed delivery request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    force:
+                      type: boolean
+                      description: "Bypass retry limit and force re-delivery"
+                      example: true
+                    channel_override:
+                      type: string
+                      description: "Override original channel for retry"
+                      example: "sms"
+              required:
+                - force
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivery_id:
+                    type: string
+                    description: "Delivery ID"
+                    format: uuid
+                    example: "del-7f3a9b2c-e8d4-4a1f-b5c6-3d2e1f0a9b8c"
+                  status:
+                    type: string
+                    description: "Updated status"
+                    example: "pending"
+                  next_attempt_at:
+                    type: string
+                    description: "Scheduled retry time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - delivery_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /deliveries/{delivery_id}/receipts:
+    get:
+      operationId: getDeliveryReceipts
+      summary: Get delivery receipts
+      description: >-
+        Retrieve delivery receipts and confirmations from downstream providers. Includes carrier-level
+        delivery confirmations for SMS, MTA responses for email, and FCM/APNs acknowledgments for push.
+      tags:
+        - Delivery Tracking
+      parameters:
+        - name: delivery_id
+          in: path
+          required: true
+          description: "Unique delivery identifier"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        receipt_id:
+                          type: string
+                          description: "Unique receipt ID"
+                          format: uuid
+                          example: "rcp-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                        provider:
+                          type: string
+                          description: "Downstream provider name"
+                          example: "aws-ses"
+                        provider_message_id:
+                          type: string
+                          description: "Provider-assigned message ID"
+                          example: "0100018f-1a2b3c4d-5e6f"
+                        status:
+                          type: string
+                          description: "Provider receipt status"
+                          example: "accepted"
+                          enum:
+                            - accepted
+                            - delivered
+                            - bounced
+                            - complaint
+                        received_at:
+                          type: string
+                          description: "When the receipt was received from provider"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        raw_response:
+                          type: string
+                          description: "Raw provider response payload"
+                          example: '{"messageId":"..."}'
+                      required:
+                        - receipt_id
+                        - provider
+                        - status
+                        - received_at
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deliveries/dlq:
+    get:
+      operationId: listDlqEntries
+      summary: List dead-letter queue entries
+      description: >-
+        List all deliveries that have exhausted their retry budget and been moved to the dead-letter queue.
+        These entries require manual inspection or reprocessing.
+      tags:
+        - Dead Letter Queue
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: channel
+          in: query
+          required: false
+          description: "Filter DLQ entries by channel"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        entry_id:
+                          type: string
+                          description: "DLQ entry ID"
+                          format: uuid
+                          example: "dlq-9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d"
+                        delivery_id:
+                          type: string
+                          description: "Original delivery ID"
+                          format: uuid
+                          example: "del-7f3a9b2c-e8d4-4a1f-b5c6-3d2e1f0a9b8c"
+                        failure_reason:
+                          type: string
+                          description: "Reason the delivery was moved to DLQ"
+                          example: "Max retries exceeded: SMTP 550 mailbox not found"
+                        total_attempts:
+                          type: integer
+                          description: "Total delivery attempts before DLQ"
+                          example: 5
+                        enqueued_at:
+                          type: string
+                          description: "When the entry was added to DLQ"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        channel:
+                          type: string
+                          description: "Original delivery channel"
+                          example: "email"
+                          enum:
+                            - email
+                            - sms
+                            - push
+                      required:
+                        - entry_id
+                        - delivery_id
+                        - failure_reason
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deliveries/dlq/{entry_id}/reprocess:
+    post:
+      operationId: reprocessDlqEntry
+      summary: Reprocess DLQ entry
+      description: >-
+        Move a dead-letter queue entry back to the active delivery pipeline. Optionally override the channel
+        or recipient before reprocessing.
+      tags:
+        - Dead Letter Queue
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          description: "Unique entry id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Reprocess DLQ entry request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    channel_override:
+                      type: string
+                      description: "Deliver via a different channel"
+                      example: "push"
+                    recipient_override:
+                      type: string
+                      description: "Override recipient address"
+                      example: "newaddr@example.com"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivery_id:
+                    type: string
+                    description: "New delivery ID"
+                    format: uuid
+                    example: "del-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  status:
+                    type: string
+                    description: "New delivery status"
+                    example: "pending"
+                required:
+                  - delivery_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /deliveries/channels/{channel}/failover:
+    get:
+      operationId: getChannelFailover
+      summary: Get channel failover config
+      description: >-
+        Retrieve the failover configuration for a notification channel, including fallback channel ordering
+        and activation thresholds.
+      tags:
+        - Delivery Tracking
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          description: "Unique channel"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  primary_channel:
+                    type: string
+                    description: "Primary channel name"
+                    example: "email"
+                  fallback_chain:
+                    type: array
+                    description: "Ordered list of fallback channels"
+                    items:
+                      type: string
+                  activation_threshold:
+                    type: number
+                    description: "Failure rate threshold to trigger failover (0.0-1.0)"
+                    format: double
+                    example: 0.15
+                  cooldown_minutes:
+                    type: integer
+                    description: "Minutes before re-evaluating primary channel health"
+                    example: 30
+                  enabled:
+                    type: boolean
+                    description: "Whether failover is active for this channel"
+                    example: true
+                required:
+                  - primary_channel
+                  - fallback_chain
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: updateChannelFailover
+      summary: Update channel failover config
+      description: >-
+        Update the failover configuration for a notification channel. Changes take effect immediately and
+        apply to all subsequent deliveries on the channel.
+      tags:
+        - Delivery Tracking
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          description: "Channel name (email, sms, push)"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update channel failover config request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    fallback_chain:
+                      type: array
+                      description: "Ordered fallback channels"
+                      items:
+                        type: string
+                    activation_threshold:
+                      type: number
+                      description: "Failure rate threshold (0.0-1.0)"
+                      format: double
+                      example: 0.2
+                    cooldown_minutes:
+                      type: integer
+                      description: "Cooldown period in minutes"
+                      example: 30
+                    enabled:
+                      type: boolean
+                      description: "Enable or disable failover"
+                      example: true
+              required:
+                - fallback_chain
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  primary_channel:
+                    type: string
+                    description: "Primary channel"
+                    example: "email"
+                  fallback_chain:
+                    type: array
+                    description: "Updated fallback chain"
+                    items:
+                      type: string
+                  activation_threshold:
+                    type: number
+                    description: "Updated threshold"
+                    format: double
+                    example: 0.2
+                  enabled:
+                    type: boolean
+                    description: "Updated enabled state"
+                    example: true
+                required:
+                  - primary_channel
+                  - fallback_chain
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /deliveries/analytics:
+    get:
+      operationId: getDeliveryAnalytics
+      summary: Get delivery analytics
+      description: >-
+        Aggregate delivery metrics across channels including success rates, average delivery latency, bounce
+        rates, and retry frequency. Supports time-range filtering for trend analysis.
+      tags:
+        - Delivery Tracking
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: "Start of time range (ISO 8601)"
+          schema:
+            type: "string"
+            format: "date-time"
+        - name: to
+          in: query
+          required: false
+          description: "End of time range (ISO 8601)"
+          schema:
+            type: "string"
+            format: "date-time"
+        - name: granularity
+          in: query
+          required: false
+          description: "Time bucket granularity"
+          schema:
+            type: "string"
+            enum:
+              - hour
+              - day
+              - week
+              - month
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_sent:
+                    type: integer
+                    description: "Total deliveries initiated"
+                    example: 125430
+                  total_delivered:
+                    type: integer
+                    description: "Successfully delivered count"
+                    example: 119200
+                  total_bounced:
+                    type: integer
+                    description: "Bounced delivery count"
+                    example: 3150
+                  total_failed:
+                    type: integer
+                    description: "Permanently failed count"
+                    example: 1280
+                  delivery_rate:
+                    type: number
+                    description: "Overall delivery success rate"
+                    format: double
+                    example: 0.9503
+                  avg_latency_ms:
+                    type: integer
+                    description: "Average delivery latency in milliseconds"
+                    example: 1240
+                  by_channel:
+                    type: object
+                    description: "Per-channel breakdown of delivery metrics"
+                required:
+                  - total_sent
+                  - total_delivered
+                  - delivery_rate
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,1743 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Checkout API
+  description: Hosted checkout experience for online merchants with PCI DSS Level 1 compliant payment processing. Supports
+    card payments, digital wallets, saved payment methods, 3D Secure 2.x authentication for PSD2/SCA compliance, express one-click
+    checkout, and comprehensive session lifecycle management.
+  version: 4.0.1
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-payments-checkout
+  x-acme-domain: payments
+servers:
+- url: https://af-payments-checkout.api.acmefin.com/v1
+  description: Production
+- url: https://af-payments-checkout.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Checkout Sessions
+  description: Create and manage hosted checkout sessions, process payments, and handle 3DS authentication
+- name: Saved Payment Methods
+  description: Store, retrieve, and manage customer payment instruments
+- name: Express Checkout
+  description: One-click checkout for returning customers with saved payment methods
+paths:
+  /checkout/sessions:
+    get:
+      operationId: listCheckoutSessions
+      summary: List checkout sessions
+      description: Retrieve checkout sessions with filtering by status, merchant, and creation date. Useful for reconciliation
+        and abandoned cart recovery analytics.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by session status
+        schema:
+          type: string
+      - name: merchant_id
+        in: query
+        required: false
+        description: Filter by merchant
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        session_id:
+                          type: string
+                          description: Checkout session identifier
+                          format: uuid
+                        merchant_id:
+                          type: string
+                          description: Merchant account identifier
+                          example: merch-001
+                        amount:
+                          type: number
+                          description: Transaction amount
+                          format: double
+                          example: 1500.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: USD
+                          minLength: 3
+                          maxLength: 3
+                        status:
+                          type: string
+                          enum:
+                          - created
+                          - pending_payment
+                          - processing
+                          - completed
+                          - expired
+                          - abandoned
+                        return_url:
+                          type: string
+                          description: URL to redirect after successful payment
+                          format: uri
+                        cancel_url:
+                          type: string
+                          description: URL to redirect on cancellation
+                          format: uri
+                        expires_at:
+                          type: string
+                          description: Session expiration timestamp
+                          format: date-time
+                        line_items:
+                          type: array
+                          description: Order line items
+                          items:
+                            type: object
+                        customer_email:
+                          type: string
+                          description: Customer email for receipts
+                          format: email
+                      required:
+                      - session_id
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createCheckoutSession
+      summary: Create checkout session
+      description: Initialize a new hosted checkout session. The session URL is returned for redirecting the customer to the
+        Acme Finance hosted payment page. Sessions expire after 30 minutes by default.
+      tags:
+      - Checkout Sessions
+      requestBody:
+        required: true
+        description: Create checkout session request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                merchant_id:
+                  type: string
+                  description: Merchant account identifier
+                  example: merch-001
+                amount:
+                  type: number
+                  description: Transaction amount
+                  format: double
+                  example: 1500.0
+                currency:
+                  type: string
+                  description: ISO 4217 currency code
+                  example: USD
+                  minLength: 3
+                  maxLength: 3
+                return_url:
+                  type: string
+                  description: URL to redirect after successful payment
+                  format: uri
+                cancel_url:
+                  type: string
+                  description: URL to redirect on cancellation
+                  format: uri
+                customer_email:
+                  type: string
+                  description: Customer email for receipts
+                  format: email
+              required:
+              - merchant_id
+              - amount
+              - currency
+              - return_url
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Checkout session identifier
+                    format: uuid
+                  merchant_id:
+                    type: string
+                    description: Merchant account identifier
+                    example: merch-001
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: USD
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    enum:
+                    - created
+                    - pending_payment
+                    - processing
+                    - completed
+                    - expired
+                    - abandoned
+                  return_url:
+                    type: string
+                    description: URL to redirect after successful payment
+                    format: uri
+                  cancel_url:
+                    type: string
+                    description: URL to redirect on cancellation
+                    format: uri
+                  expires_at:
+                    type: string
+                    description: Session expiration timestamp
+                    format: date-time
+                  line_items:
+                    type: array
+                    description: Order line items
+                    items:
+                      type: object
+                  customer_email:
+                    type: string
+                    description: Customer email for receipts
+                    format: email
+                  checkout_url:
+                    type: string
+                    description: Hosted checkout page URL
+                    format: uri
+                required:
+                - session_id
+                - checkout_url
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /checkout/sessions/{session_id}:
+    get:
+      operationId: getCheckoutSession
+      summary: Get checkout session
+      description: Retrieve session details including payment status, line items, and 3D Secure authentication results. Poll
+        this endpoint to detect payment completion.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        description: Unique session id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Checkout session identifier
+                    format: uuid
+                  merchant_id:
+                    type: string
+                    description: Merchant account identifier
+                    example: merch-001
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: USD
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    enum:
+                    - created
+                    - pending_payment
+                    - processing
+                    - completed
+                    - expired
+                    - abandoned
+                  return_url:
+                    type: string
+                    description: URL to redirect after successful payment
+                    format: uri
+                  cancel_url:
+                    type: string
+                    description: URL to redirect on cancellation
+                    format: uri
+                  expires_at:
+                    type: string
+                    description: Session expiration timestamp
+                    format: date-time
+                  line_items:
+                    type: array
+                    description: Order line items
+                    items:
+                      type: object
+                  customer_email:
+                    type: string
+                    description: Customer email for receipts
+                    format: email
+                required:
+                - session_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateCheckoutSession
+      summary: Update checkout session
+      description: Modify a checkout session before payment is processed. Only sessions in 'created' or 'pending_payment'
+        status can be updated.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        description: Unique session id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update checkout session request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: number
+                  description: Transaction amount
+                  format: double
+                  example: 1500.0
+                currency:
+                  type: string
+                  description: ISO 4217 currency code
+                  example: USD
+                  minLength: 3
+                  maxLength: 3
+                customer_email:
+                  type: string
+                  description: Customer email for receipts
+                  format: email
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Checkout session identifier
+                    format: uuid
+                  merchant_id:
+                    type: string
+                    description: Merchant account identifier
+                    example: merch-001
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: USD
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    enum:
+                    - created
+                    - pending_payment
+                    - processing
+                    - completed
+                    - expired
+                    - abandoned
+                  return_url:
+                    type: string
+                    description: URL to redirect after successful payment
+                    format: uri
+                  cancel_url:
+                    type: string
+                    description: URL to redirect on cancellation
+                    format: uri
+                  expires_at:
+                    type: string
+                    description: Session expiration timestamp
+                    format: date-time
+                  line_items:
+                    type: array
+                    description: Order line items
+                    items:
+                      type: object
+                  customer_email:
+                    type: string
+                    description: Customer email for receipts
+                    format: email
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /checkout/sessions/{session_id}/pay:
+    post:
+      operationId: processPayment
+      summary: Process payment
+      description: Submit payment for a checkout session. Supports card tokens, saved payment methods, and digital wallet
+        tokens. Triggers 3D Secure authentication if required by the issuer or merchant risk rules.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        description: Unique session id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Process payment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payment_method_id:
+                  type: string
+                  description: Stored payment method identifier
+                  format: uuid
+                card_token:
+                  type: string
+                  description: Tokenized card data from client-side SDK
+                save_payment_method:
+                  type: boolean
+                  description: Store payment method for future use
+                  default: false
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Checkout session identifier
+                    format: uuid
+                  status:
+                    type: string
+                    example: completed
+                  transaction_id:
+                    type: string
+                    format: uuid
+                  threeds_required:
+                    type: boolean
+                  threeds_redirect_url:
+                    type: string
+                    description: Redirect URL if 3DS challenge is required
+                    format: uri
+                required:
+                - session_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /checkout/sessions/{session_id}/expire:
+    post:
+      operationId: expireCheckoutSession
+      summary: Expire checkout session
+      description: Manually expire an active checkout session. Use for cleanup when the customer abandons the checkout flow.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        description: Unique session id
+        schema:
+          type: string
+      responses:
+        '202':
+          description: Action accepted for processing
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /checkout/sessions/{session_id}/refund:
+    post:
+      operationId: refundCheckoutPayment
+      summary: Refund checkout payment
+      description: Issue a full or partial refund for a completed checkout payment. Refunds are processed to the original
+        payment method.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        description: Unique session id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Refund checkout payment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: number
+                  description: Transaction amount
+                  format: double
+                  example: 1500.0
+                reason:
+                  type: string
+                  description: Refund reason
+                  enum:
+                  - customer_request
+                  - duplicate
+                  - fraudulent
+                  - product_not_received
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  refund_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: pending
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                required:
+                - refund_id
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /checkout/3ds:
+    post:
+      operationId: initiate3dsAuth
+      summary: Initiate 3D Secure
+      description: Start a 3D Secure 2.x authentication flow for Strong Customer Authentication (SCA) compliance under PSD2.
+        Collects device fingerprint data and determines whether a frictionless or challenge flow is required.
+      tags:
+      - Checkout Sessions
+      requestBody:
+        required: true
+        description: Initiate 3D Secure request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                  description: Checkout session identifier
+                  format: uuid
+                card_token:
+                  type: string
+                browser_info:
+                  type: object
+                  description: Browser fingerprint data for 3DS risk assessment
+                  properties:
+                    user_agent:
+                      type: string
+                    accept_header:
+                      type: string
+                    screen_width:
+                      type: integer
+                    java_enabled:
+                      type: boolean
+              required:
+              - session_id
+              - card_token
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threeds_id:
+                    type: string
+                    description: 3D Secure authentication identifier
+                    format: uuid
+                  status:
+                    type: string
+                    enum:
+                    - challenge_required
+                    - frictionless
+                    - authenticated
+                    - failed
+                    - attempted
+                  eci:
+                    type: string
+                    description: Electronic Commerce Indicator
+                    example: '05'
+                  cavv:
+                    type: string
+                    description: Cardholder Authentication Verification Value
+                  ds_transaction_id:
+                    type: string
+                    description: Directory Server transaction ID
+                  version:
+                    type: string
+                    description: 3DS protocol version
+                    example: 2.2.0
+                  challenge_url:
+                    type: string
+                    description: ACS challenge URL for cardholder interaction
+                    format: uri
+                required:
+                - threeds_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /checkout/3ds/{threeds_id}:
+    get:
+      operationId: get3dsResult
+      summary: Get 3DS result
+      description: Retrieve the 3D Secure authentication result after the cardholder completes the challenge flow or frictionless
+        authentication.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: threeds_id
+        in: path
+        required: true
+        description: Unique threeds id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threeds_id:
+                    type: string
+                    description: 3D Secure authentication identifier
+                    format: uuid
+                  status:
+                    type: string
+                    enum:
+                    - challenge_required
+                    - frictionless
+                    - authenticated
+                    - failed
+                    - attempted
+                  eci:
+                    type: string
+                    description: Electronic Commerce Indicator
+                    example: '05'
+                  cavv:
+                    type: string
+                    description: Cardholder Authentication Verification Value
+                  ds_transaction_id:
+                    type: string
+                    description: Directory Server transaction ID
+                  version:
+                    type: string
+                    description: 3DS protocol version
+                    example: 2.2.0
+                  challenge_url:
+                    type: string
+                    description: ACS challenge URL for cardholder interaction
+                    format: uri
+                required:
+                - threeds_id
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /payment-methods:
+    get:
+      operationId: listPaymentMethods
+      summary: List saved payment methods
+      description: Retrieve all stored payment methods for the authenticated customer. Includes card details, expiration status,
+        and default selection.
+      tags:
+      - Saved Payment Methods
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        payment_method_id:
+                          type: string
+                          description: Stored payment method identifier
+                          format: uuid
+                        type:
+                          type: string
+                          description: Payment instrument type
+                          enum:
+                          - card
+                          - bank_account
+                          - digital_wallet
+                        last_four:
+                          type: string
+                          description: Last four digits of the card or account
+                          example: '4242'
+                        brand:
+                          type: string
+                          description: Card brand
+                          example: visa
+                          enum:
+                          - visa
+                          - mastercard
+                          - amex
+                          - discover
+                        exp_month:
+                          type: integer
+                          description: Expiration month
+                          example: 12
+                        exp_year:
+                          type: integer
+                          description: Expiration year
+                          example: 2027
+                        is_default:
+                          type: boolean
+                          description: Whether this is the default payment method
+                        billing_address:
+                          type: object
+                          description: Billing address on file
+                          properties:
+                            postal_code:
+                              type: string
+                            country:
+                              type: string
+                      required:
+                      - payment_method_id
+                      - type
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: savePaymentMethod
+      summary: Save payment method
+      description: Store a new payment method from a tokenized card or bank account. Card data is never transmitted in plaintext—use
+        the client-side SDK to generate a secure token first.
+      tags:
+      - Saved Payment Methods
+      requestBody:
+        required: true
+        description: Save payment method request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                card_token:
+                  type: string
+                  description: Secure token from client-side SDK
+                type:
+                  type: string
+                  description: Payment instrument type
+                  enum:
+                  - card
+                  - bank_account
+                  - digital_wallet
+                set_default:
+                  type: boolean
+                  default: false
+                billing_address:
+                  type: object
+                  description: Billing address on file
+                  properties:
+                    postal_code:
+                      type: string
+                    country:
+                      type: string
+              required:
+              - card_token
+              - type
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_method_id:
+                    type: string
+                    description: Stored payment method identifier
+                    format: uuid
+                  type:
+                    type: string
+                    description: Payment instrument type
+                    enum:
+                    - card
+                    - bank_account
+                    - digital_wallet
+                  last_four:
+                    type: string
+                    description: Last four digits of the card or account
+                    example: '4242'
+                  brand:
+                    type: string
+                    description: Card brand
+                    example: visa
+                    enum:
+                    - visa
+                    - mastercard
+                    - amex
+                    - discover
+                  exp_month:
+                    type: integer
+                    description: Expiration month
+                    example: 12
+                  exp_year:
+                    type: integer
+                    description: Expiration year
+                    example: 2027
+                  is_default:
+                    type: boolean
+                    description: Whether this is the default payment method
+                  billing_address:
+                    type: object
+                    description: Billing address on file
+                    properties:
+                      postal_code:
+                        type: string
+                      country:
+                        type: string
+                required:
+                - payment_method_id
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /payment-methods/{payment_method_id}:
+    get:
+      operationId: getPaymentMethod
+      summary: Get payment method
+      description: Retrieve details for a stored payment method including card brand, last four digits, and expiration.
+      tags:
+      - Saved Payment Methods
+      parameters:
+      - name: payment_method_id
+        in: path
+        required: true
+        description: Unique payment method id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_method_id:
+                    type: string
+                    description: Stored payment method identifier
+                    format: uuid
+                  type:
+                    type: string
+                    description: Payment instrument type
+                    enum:
+                    - card
+                    - bank_account
+                    - digital_wallet
+                  last_four:
+                    type: string
+                    description: Last four digits of the card or account
+                    example: '4242'
+                  brand:
+                    type: string
+                    description: Card brand
+                    example: visa
+                    enum:
+                    - visa
+                    - mastercard
+                    - amex
+                    - discover
+                  exp_month:
+                    type: integer
+                    description: Expiration month
+                    example: 12
+                  exp_year:
+                    type: integer
+                    description: Expiration year
+                    example: 2027
+                  is_default:
+                    type: boolean
+                    description: Whether this is the default payment method
+                  billing_address:
+                    type: object
+                    description: Billing address on file
+                    properties:
+                      postal_code:
+                        type: string
+                      country:
+                        type: string
+                required:
+                - payment_method_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updatePaymentMethod
+      summary: Update payment method
+      description: Update billing address or default status for a saved payment method. Card details cannot be modified—delete
+        and re-add instead.
+      tags:
+      - Saved Payment Methods
+      parameters:
+      - name: payment_method_id
+        in: path
+        required: true
+        description: Unique payment method id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update payment method request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_default:
+                  type: boolean
+                  description: Whether this is the default payment method
+                billing_address:
+                  type: object
+                  description: Billing address on file
+                  properties:
+                    postal_code:
+                      type: string
+                    country:
+                      type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_method_id:
+                    type: string
+                    description: Stored payment method identifier
+                    format: uuid
+                  type:
+                    type: string
+                    description: Payment instrument type
+                    enum:
+                    - card
+                    - bank_account
+                    - digital_wallet
+                  last_four:
+                    type: string
+                    description: Last four digits of the card or account
+                    example: '4242'
+                  brand:
+                    type: string
+                    description: Card brand
+                    example: visa
+                    enum:
+                    - visa
+                    - mastercard
+                    - amex
+                    - discover
+                  exp_month:
+                    type: integer
+                    description: Expiration month
+                    example: 12
+                  exp_year:
+                    type: integer
+                    description: Expiration year
+                    example: 2027
+                  is_default:
+                    type: boolean
+                    description: Whether this is the default payment method
+                  billing_address:
+                    type: object
+                    description: Billing address on file
+                    properties:
+                      postal_code:
+                        type: string
+                      country:
+                        type: string
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+    delete:
+      operationId: deletePaymentMethod
+      summary: Delete payment method
+      description: Remove a saved payment method. Active subscriptions using this method will need an alternative payment
+        source.
+      tags:
+      - Saved Payment Methods
+      parameters:
+      - name: payment_method_id
+        in: path
+        required: true
+        description: Unique payment method id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /checkout/express:
+    post:
+      operationId: expressCheckout
+      summary: Express one-click checkout
+      description: Process a payment using a previously saved payment method with minimal friction. Combines session creation,
+        payment, and capture into a single API call for returning customers.
+      tags:
+      - Express Checkout
+      requestBody:
+        required: true
+        description: Express one-click checkout request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payment_method_id:
+                  type: string
+                  description: Stored payment method identifier
+                  format: uuid
+                amount:
+                  type: number
+                  description: Transaction amount
+                  format: double
+                  example: 1500.0
+                currency:
+                  type: string
+                  description: ISO 4217 currency code
+                  example: USD
+                  minLength: 3
+                  maxLength: 3
+                merchant_id:
+                  type: string
+                  description: Merchant account identifier
+                  example: merch-001
+                order_reference:
+                  type: string
+                  description: Merchant order reference
+              required:
+              - payment_method_id
+              - amount
+              - currency
+              - merchant_id
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  express_token:
+                    type: string
+                    description: One-click checkout token
+                  payment_method_id:
+                    type: string
+                    description: Stored payment method identifier
+                    format: uuid
+                  session_id:
+                    type: string
+                    description: Checkout session identifier
+                    format: uuid
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: USD
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    enum:
+                    - authorized
+                    - captured
+                    - declined
+                    - failed
+                required:
+                - express_token
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /checkout/sessions/{session_id}/line-items:
+    get:
+      operationId: listSessionLineItems
+      summary: List session line items
+      description: Retrieve the line items attached to a checkout session including product details, quantities, and per-item
+        pricing.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        item_id:
+                          type: string
+                        name:
+                          type: string
+                          description: Product or service name
+                        quantity:
+                          type: integer
+                        unit_price:
+                          type: number
+                          format: double
+                        total:
+                          type: number
+                          format: double
+                      required:
+                      - item_id
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /checkout/analytics/conversion:
+    get:
+      operationId: getConversionAnalytics
+      summary: Get checkout conversion analytics
+      description: Retrieve checkout funnel analytics including session creation rate, payment attempt rate, completion rate,
+        and abandonment rate. Grouped by merchant and time period for conversion optimization.
+      tags:
+      - Checkout Sessions
+      parameters:
+      - name: from_date
+        in: query
+        required: true
+        description: Start date
+        schema:
+          type: string
+          format: date
+      - name: to_date
+        in: query
+        required: true
+        description: End date
+        schema:
+          type: string
+          format: date
+      - name: merchant_id
+        in: query
+        required: false
+        description: Filter by merchant
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions_created:
+                    type: integer
+                  payments_attempted:
+                    type: integer
+                  payments_completed:
+                    type: integer
+                  conversion_rate:
+                    type: number
+                    format: double
+                  abandonment_rate:
+                    type: number
+                    format: double
+                  average_session_duration_seconds:
+                    type: integer
+                  top_failure_reasons:
+                    type: array
+                    items:
+                      type: object
+                required:
+                - sessions_created
+                - conversion_rate
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

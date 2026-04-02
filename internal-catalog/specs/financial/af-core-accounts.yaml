@@ -1,0 +1,1863 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Core Accounts API
+  description: >-
+    Comprehensive account management for retail and commercial deposit products. Supports the full account
+    lifecycle from origination through closure, including KYC-gated opening, multi-party ownership, signatory
+    management, and inter-account linking for sweep and overdraft protection. All balance fields reflect real-time
+    positions from the Core Ledger service.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-core-accounts
+  x-acme-domain: core
+servers:
+  - url: https://af-core-accounts.api.acmefin.com/v1
+    description: Production
+  - url: https://af-core-accounts.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Accounts
+    description: Core account CRUD and lifecycle operations
+  - name: Signatories
+    description: Manage authorized signatories on accounts
+  - name: Linked Accounts
+    description: Link accounts for sweep, overdraft, and collateral relationships
+  - name: Preferences
+    description: Account preferences and notification settings
+paths:
+  /accounts:
+    get:
+      operationId: listAccounts
+      summary: List accounts
+      description: >-
+        Retrieve a paginated list of accounts with optional filtering by account type, status, branch, or
+        primary holder CIF. Returns summary balances suitable for portfolio dashboards. Use the sort_by
+        parameter to order by opened_date, current_balance, or account_number.
+      tags:
+        - Accounts
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by account status
+          schema:
+            type: "string"
+            enum:
+              - ACTIVE
+              - FROZEN
+              - DORMANT
+              - CLOSED
+              - PENDING_APPROVAL
+        - name: account_type
+          in: query
+          required: false
+          description: Filter by product type
+          schema:
+            type: "string"
+            enum:
+              - CHECKING
+              - SAVINGS
+              - MONEY_MARKET
+              - CD
+              - IRA
+        - name: primary_holder
+          in: query
+          required: false
+          description: Filter by primary holder CIF ID
+          schema:
+            type: "string"
+        - name: branch_code
+          in: query
+          required: false
+          description: Filter by originating branch
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        account_id:
+                          type: string
+                          description: Unique account identifier
+                          example: "acct-10045892"
+                        account_number:
+                          type: string
+                          description: Customer-facing account number
+                          example: "4400-1289-7763"
+                        routing_number:
+                          type: string
+                          description: ABA routing transit number
+                          example: "021000021"
+                          pattern: '^\d{9}$'
+                        account_type:
+                          type: string
+                          description: Product type classification
+                          enum:
+                            - CHECKING
+                            - SAVINGS
+                            - MONEY_MARKET
+                            - CD
+                            - IRA
+                        status:
+                          type: string
+                          description: Current account status
+                          enum:
+                            - ACTIVE
+                            - FROZEN
+                            - DORMANT
+                            - CLOSED
+                            - PENDING_APPROVAL
+                        ownership_type:
+                          type: string
+                          description: Legal ownership structure
+                          enum:
+                            - INDIVIDUAL
+                            - JOINT
+                            - TRUST
+                            - CUSTODIAL
+                            - BUSINESS
+                        primary_holder:
+                          type: string
+                          description: CIF ID of the primary account holder
+                          example: "cif-9928341"
+                        branch_code:
+                          type: string
+                          description: Originating branch identifier
+                          example: "BR-0042"
+                        opened_date:
+                          type: string
+                          description: Date the account was opened
+                          format: date
+                          example: "2022-03-15"
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code for the account
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        current_balance:
+                          type: number
+                          description: Current ledger balance
+                          format: double
+                          example: 24589.47
+                        available_balance:
+                          type: number
+                          description: Available balance after holds and pending debits
+                          format: double
+                          example: 23100.0
+                        nickname:
+                          type: string
+                          description: Customer-assigned friendly name
+                          example: "My Checking"
+                        overdraft_protection:
+                          type: boolean
+                          description: Whether overdraft protection is enabled
+                          example: true
+                      required:
+                        - account_id
+                        - account_number
+                        - account_type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: openAccount
+      summary: Open a new account
+      description: >-
+        Open a new deposit account after passing KYC and CDD validation. The primary_holder must have an
+        active CIF record with verified identity. Accounts are created in PENDING_APPROVAL status until
+        back-office review is complete for balances exceeding $250,000.
+      tags:
+        - Accounts
+      requestBody:
+        required: true
+        description: Open a new account request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    account_type:
+                      type: string
+                      description: Product type classification
+                      enum:
+                        - CHECKING
+                        - SAVINGS
+                        - MONEY_MARKET
+                        - CD
+                        - IRA
+                    ownership_type:
+                      type: string
+                      description: Legal ownership structure
+                      enum:
+                        - INDIVIDUAL
+                        - JOINT
+                        - TRUST
+                        - CUSTODIAL
+                        - BUSINESS
+                    primary_holder:
+                      type: string
+                      description: CIF ID of the primary account holder
+                      example: "cif-9928341"
+                    branch_code:
+                      type: string
+                      description: Originating branch identifier
+                      example: "BR-0042"
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code for the account
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    overdraft_protection:
+                      type: boolean
+                      description: Whether overdraft protection is enabled
+                      example: true
+              required:
+                - account_type
+                - primary_holder
+                - branch_code
+                - currency
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Unique account identifier
+                    example: "acct-10045892"
+                  account_number:
+                    type: string
+                    description: Customer-facing account number
+                    example: "4400-1289-7763"
+                  routing_number:
+                    type: string
+                    description: ABA routing transit number
+                    example: "021000021"
+                    pattern: '^\d{9}$'
+                  account_type:
+                    type: string
+                    description: Product type classification
+                    enum:
+                      - CHECKING
+                      - SAVINGS
+                      - MONEY_MARKET
+                      - CD
+                      - IRA
+                  status:
+                    type: string
+                    description: Current account status
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - DORMANT
+                      - CLOSED
+                      - PENDING_APPROVAL
+                  ownership_type:
+                    type: string
+                    description: Legal ownership structure
+                    enum:
+                      - INDIVIDUAL
+                      - JOINT
+                      - TRUST
+                      - CUSTODIAL
+                      - BUSINESS
+                  primary_holder:
+                    type: string
+                    description: CIF ID of the primary account holder
+                    example: "cif-9928341"
+                  branch_code:
+                    type: string
+                    description: Originating branch identifier
+                    example: "BR-0042"
+                  opened_date:
+                    type: string
+                    description: Date the account was opened
+                    format: date
+                    example: "2022-03-15"
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code for the account
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  current_balance:
+                    type: number
+                    description: Current ledger balance
+                    format: double
+                    example: 24589.47
+                  available_balance:
+                    type: number
+                    description: Available balance after holds and pending debits
+                    format: double
+                    example: 23100.0
+                  nickname:
+                    type: string
+                    description: Customer-assigned friendly name
+                    example: "My Checking"
+                  overdraft_protection:
+                    type: boolean
+                    description: Whether overdraft protection is enabled
+                    example: true
+                required:
+                  - account_id
+                  - account_number
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{account_id}:
+    get:
+      operationId: getAccount
+      summary: Get account details
+      description: >-
+        Retrieve complete account details including real-time balances, product terms, signatory count, and
+        linked account references. The available_balance reflects all posted transactions, pending holds,
+        and memo-posted items as of the current instant.
+      tags:
+        - Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Unique account identifier
+                    example: "acct-10045892"
+                  account_number:
+                    type: string
+                    description: Customer-facing account number
+                    example: "4400-1289-7763"
+                  routing_number:
+                    type: string
+                    description: ABA routing transit number
+                    example: "021000021"
+                    pattern: '^\d{9}$'
+                  account_type:
+                    type: string
+                    description: Product type classification
+                    enum:
+                      - CHECKING
+                      - SAVINGS
+                      - MONEY_MARKET
+                      - CD
+                      - IRA
+                  status:
+                    type: string
+                    description: Current account status
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - DORMANT
+                      - CLOSED
+                      - PENDING_APPROVAL
+                  ownership_type:
+                    type: string
+                    description: Legal ownership structure
+                    enum:
+                      - INDIVIDUAL
+                      - JOINT
+                      - TRUST
+                      - CUSTODIAL
+                      - BUSINESS
+                  primary_holder:
+                    type: string
+                    description: CIF ID of the primary account holder
+                    example: "cif-9928341"
+                  branch_code:
+                    type: string
+                    description: Originating branch identifier
+                    example: "BR-0042"
+                  opened_date:
+                    type: string
+                    description: Date the account was opened
+                    format: date
+                    example: "2022-03-15"
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code for the account
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  current_balance:
+                    type: number
+                    description: Current ledger balance
+                    format: double
+                    example: 24589.47
+                  available_balance:
+                    type: number
+                    description: Available balance after holds and pending debits
+                    format: double
+                    example: 23100.0
+                  nickname:
+                    type: string
+                    description: Customer-assigned friendly name
+                    example: "My Checking"
+                  overdraft_protection:
+                    type: boolean
+                    description: Whether overdraft protection is enabled
+                    example: true
+                required:
+                  - account_id
+                  - account_number
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateAccount
+      summary: Update account details
+      description: >-
+        Update mutable account attributes such as nickname, overdraft protection settings, or branch
+        assignment. Core fields like account_type and ownership_type require a separate account conversion
+        or ownership change request.
+      tags:
+        - Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update account details request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    nickname:
+                      type: string
+                      description: Customer-assigned friendly name
+                      example: "My Checking"
+                    overdraft_protection:
+                      type: boolean
+                      description: Whether overdraft protection is enabled
+                      example: true
+                    branch_code:
+                      type: string
+                      description: Originating branch identifier
+                      example: "BR-0042"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Unique account identifier
+                    example: "acct-10045892"
+                  account_number:
+                    type: string
+                    description: Customer-facing account number
+                    example: "4400-1289-7763"
+                  routing_number:
+                    type: string
+                    description: ABA routing transit number
+                    example: "021000021"
+                    pattern: '^\d{9}$'
+                  account_type:
+                    type: string
+                    description: Product type classification
+                    enum:
+                      - CHECKING
+                      - SAVINGS
+                      - MONEY_MARKET
+                      - CD
+                      - IRA
+                  status:
+                    type: string
+                    description: Current account status
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - DORMANT
+                      - CLOSED
+                      - PENDING_APPROVAL
+                  ownership_type:
+                    type: string
+                    description: Legal ownership structure
+                    enum:
+                      - INDIVIDUAL
+                      - JOINT
+                      - TRUST
+                      - CUSTODIAL
+                      - BUSINESS
+                  primary_holder:
+                    type: string
+                    description: CIF ID of the primary account holder
+                    example: "cif-9928341"
+                  branch_code:
+                    type: string
+                    description: Originating branch identifier
+                    example: "BR-0042"
+                  opened_date:
+                    type: string
+                    description: Date the account was opened
+                    format: date
+                    example: "2022-03-15"
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code for the account
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  current_balance:
+                    type: number
+                    description: Current ledger balance
+                    format: double
+                    example: 24589.47
+                  available_balance:
+                    type: number
+                    description: Available balance after holds and pending debits
+                    format: double
+                    example: 23100.0
+                  nickname:
+                    type: string
+                    description: Customer-assigned friendly name
+                    example: "My Checking"
+                  overdraft_protection:
+                    type: boolean
+                    description: Whether overdraft protection is enabled
+                    example: true
+                required:
+                  - account_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{account_id}/freeze:
+    post:
+      operationId: freezeAccount
+      summary: Freeze account
+      description: >-
+        Place an administrative freeze on the account, blocking all debit transactions and external
+        transfers. Credit transactions such as direct deposits continue to post. Requires COMPLIANCE_OFFICER
+        or BRANCH_MANAGER role. The freeze is effective immediately and triggers an alert to the account
+        holder via their preferred notification channel.
+      tags:
+        - Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Freeze account request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    freeze_reason:
+                      type: string
+                      description: Regulatory or operational reason
+                      enum:
+                        - FRAUD_INVESTIGATION
+                        - COURT_ORDER
+                        - COMPLIANCE_REVIEW
+                        - CUSTOMER_REQUEST
+                        - DECEASED_HOLDER
+                    freeze_duration_days:
+                      type: integer
+                      description: Optional duration in days; omit for indefinite
+                      example: 90
+                      minimum: 1
+                    notes:
+                      type: string
+                      description: Internal notes for the freeze record
+                      example: "SAR filed 2025-06-01 case #FR-8821"
+              required:
+                - freeze_reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Unique account identifier
+                    example: "acct-10045892"
+                  status:
+                    type: string
+                    description: Current account status
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - DORMANT
+                      - CLOSED
+                      - PENDING_APPROVAL
+                  frozen_at:
+                    type: string
+                    description: Timestamp of freeze
+                    format: date-time
+                    example: "2025-06-10T16:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{account_id}/unfreeze:
+    post:
+      operationId: unfreezeAccount
+      summary: Unfreeze account
+      description: >-
+        Remove a freeze and restore the account to ACTIVE status. All pending debit transactions that were
+        queued during the freeze period are released for processing in FIFO order. Requires the same or
+        higher authorization level as the original freeze.
+      tags:
+        - Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Unfreeze account request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    unfreeze_reason:
+                      type: string
+                      description: Justification for lifting the freeze
+                      example: "Investigation closed — no fraud confirmed"
+              required:
+                - unfreeze_reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Unique account identifier
+                    example: "acct-10045892"
+                  status:
+                    type: string
+                    description: Current account status
+                    enum:
+                      - ACTIVE
+                      - FROZEN
+                      - DORMANT
+                      - CLOSED
+                      - PENDING_APPROVAL
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{account_id}/ownership:
+    post:
+      operationId: changeOwnership
+      summary: Change account ownership
+      description: >-
+        Transfer primary ownership of the account to a different CIF record. Both the current and new
+        holders must have verified identities on file. Joint accounts require consent from all existing
+        signatories before the transfer is processed.
+      tags:
+        - Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Change account ownership request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    new_primary_holder:
+                      type: string
+                      description: CIF ID of the new primary holder
+                      example: "cif-5567210"
+                    ownership_type:
+                      type: string
+                      description: Legal ownership structure
+                      enum:
+                        - INDIVIDUAL
+                        - JOINT
+                        - TRUST
+                        - CUSTODIAL
+                        - BUSINESS
+                    effective_date:
+                      type: string
+                      description: Effective date of the transfer
+                      format: date
+                      example: "2025-07-01"
+              required:
+                - new_primary_holder
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Unique account identifier
+                    example: "acct-10045892"
+                  primary_holder:
+                    type: string
+                    description: CIF ID of the primary account holder
+                    example: "cif-9928341"
+                  ownership_type:
+                    type: string
+                    description: Legal ownership structure
+                    enum:
+                      - INDIVIDUAL
+                      - JOINT
+                      - TRUST
+                      - CUSTODIAL
+                      - BUSINESS
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{account_id}/signatories:
+    get:
+      operationId: listSignatories
+      summary: List account signatories
+      description: >-
+        Retrieve all authorized signatories on the account. Each signatory record includes their CIF
+        reference, authorization role, and the date their signing authority became effective.
+      tags:
+        - Signatories
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        signatory_id:
+                          type: string
+                          description: Unique signatory record identifier
+                          example: "sig-44210"
+                        cif_id:
+                          type: string
+                          description: Customer Information File identifier
+                          example: "cif-9928341"
+                        name:
+                          type: string
+                          description: Full legal name of the signatory
+                          example: "Jane A. Doe"
+                        role:
+                          type: string
+                          description: Signatory authorization level
+                          enum:
+                            - PRIMARY
+                            - SECONDARY
+                            - AUTHORIZED_SIGNER
+                            - POWER_OF_ATTORNEY
+                        effective_date:
+                          type: string
+                          description: Date signatory authority begins
+                          format: date
+                          example: "2023-01-15"
+                      required:
+                        - signatory_id
+                        - cif_id
+                        - role
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: addSignatory
+      summary: Add signatory to account
+      description: >-
+        Add an authorized signatory to the account. The new signatory must have a verified CIF record and
+        pass OFAC screening. For business accounts, the authorized signer resolution document must be on
+        file before this operation is permitted.
+      tags:
+        - Signatories
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Add signatory to account request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    cif_id:
+                      type: string
+                      description: Customer Information File identifier
+                      example: "cif-9928341"
+                    role:
+                      type: string
+                      description: Signatory authorization level
+                      enum:
+                        - PRIMARY
+                        - SECONDARY
+                        - AUTHORIZED_SIGNER
+                        - POWER_OF_ATTORNEY
+                    effective_date:
+                      type: string
+                      description: Date signatory authority begins
+                      format: date
+                      example: "2023-01-15"
+              required:
+                - cif_id
+                - role
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signatory_id:
+                    type: string
+                    description: Unique signatory record identifier
+                    example: "sig-44210"
+                  cif_id:
+                    type: string
+                    description: Customer Information File identifier
+                    example: "cif-9928341"
+                  name:
+                    type: string
+                    description: Full legal name of the signatory
+                    example: "Jane A. Doe"
+                  role:
+                    type: string
+                    description: Signatory authorization level
+                    enum:
+                      - PRIMARY
+                      - SECONDARY
+                      - AUTHORIZED_SIGNER
+                      - POWER_OF_ATTORNEY
+                  effective_date:
+                    type: string
+                    description: Date signatory authority begins
+                    format: date
+                    example: "2023-01-15"
+                required:
+                  - signatory_id
+                  - cif_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{account_id}/signatories/{signatory_id}:
+    delete:
+      operationId: removeSignatory
+      summary: Remove signatory from account
+      description: >-
+        Remove an authorized signatory from the account. The primary signatory cannot be removed unless
+        ownership is transferred first. Removal is effective immediately and the signatory loses all
+        transaction authorization.
+      tags:
+        - Signatories
+      parameters:
+        - name: signatory_id
+          in: path
+          required: true
+          description: Unique signatory id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /accounts/{account_id}/links:
+    get:
+      operationId: listLinkedAccounts
+      summary: List linked accounts
+      description: >-
+        Retrieve all accounts linked to this account for sweep, overdraft protection, or collateral
+        purposes. Each link shows the relationship type, direction, and current status.
+      tags:
+        - Linked Accounts
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        link_id:
+                          type: string
+                          description: Link record identifier
+                          example: "lnk-88102"
+                        source_account_id:
+                          type: string
+                          description: Source account in the link
+                          example: "acct-10045892"
+                        target_account_id:
+                          type: string
+                          description: Target account in the link
+                          example: "acct-20098341"
+                        link_type:
+                          type: string
+                          description: Nature of the account relationship
+                          enum:
+                            - OVERDRAFT_SWEEP
+                            - SAVINGS_SWEEP
+                            - FUNDING
+                            - COLLATERAL
+                            - BENEFICIARY
+                        status:
+                          type: string
+                          description: Link status
+                          enum:
+                            - ACTIVE
+                            - SUSPENDED
+                            - TERMINATED
+                      required:
+                        - link_id
+                        - link_type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: linkAccount
+      summary: Link another account
+      description: >-
+        Create a new link between this account and a target account for overdraft sweep, savings sweep, or
+        collateral relationships. Both accounts must be ACTIVE and owned by the same CIF or have a
+        documented fiduciary relationship.
+      tags:
+        - Linked Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Link another account request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    target_account_id:
+                      type: string
+                      description: Target account in the link
+                      example: "acct-20098341"
+                    link_type:
+                      type: string
+                      description: Nature of the account relationship
+                      enum:
+                        - OVERDRAFT_SWEEP
+                        - SAVINGS_SWEEP
+                        - FUNDING
+                        - COLLATERAL
+                        - BENEFICIARY
+              required:
+                - target_account_id
+                - link_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  link_id:
+                    type: string
+                    description: Link record identifier
+                    example: "lnk-88102"
+                  source_account_id:
+                    type: string
+                    description: Source account in the link
+                    example: "acct-10045892"
+                  target_account_id:
+                    type: string
+                    description: Target account in the link
+                    example: "acct-20098341"
+                  link_type:
+                    type: string
+                    description: Nature of the account relationship
+                    enum:
+                      - OVERDRAFT_SWEEP
+                      - SAVINGS_SWEEP
+                      - FUNDING
+                      - COLLATERAL
+                      - BENEFICIARY
+                  status:
+                    type: string
+                    description: Link status
+                    enum:
+                      - ACTIVE
+                      - SUSPENDED
+                      - TERMINATED
+                required:
+                  - link_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{account_id}/history:
+    get:
+      operationId: getAccountHistory
+      summary: Get account history
+      description: >-
+        Retrieve the audit history of all changes made to the account including status changes, ownership
+        transfers, signatory modifications, and preference updates. Each entry includes the acting user,
+        timestamp, and before/after values.
+      tags:
+        - Accounts
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event_id:
+                          type: string
+                          description: Unique event identifier
+                          example: "evt-881024"
+                        event_type:
+                          type: string
+                          description: Type of change event
+                          enum:
+                            - STATUS_CHANGE
+                            - OWNERSHIP_TRANSFER
+                            - SIGNATORY_ADDED
+                            - SIGNATORY_REMOVED
+                            - PREFERENCE_UPDATE
+                            - FREEZE
+                            - UNFREEZE
+                        timestamp:
+                          type: string
+                          description: When the event occurred
+                          format: date-time
+                          example: "2025-05-20T11:00:00Z"
+                        actor:
+                          type: string
+                          description: User who performed the action
+                          example: "user-ops-4421"
+                        details:
+                          type: string
+                          description: Human-readable change summary
+                          example: "Account frozen — fraud investigation"
+                      required:
+                        - event_id
+                        - event_type
+                        - timestamp
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /accounts/{account_id}/nickname:
+    patch:
+      operationId: updateNickname
+      summary: Update account nickname
+      description: >-
+        Set or change the customer-assigned nickname displayed in digital banking channels. Nicknames are
+        limited to 40 characters and must not contain profanity per content policy.
+      tags:
+        - Preferences
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update account nickname request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    nickname:
+                      type: string
+                      description: New display name
+                      example: "Joint Household"
+                      maxLength: 40
+              required:
+                - nickname
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Unique account identifier
+                    example: "acct-10045892"
+                  nickname:
+                    type: string
+                    description: Customer-assigned friendly name
+                    example: "My Checking"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{account_id}/beneficiaries:
+    get:
+      operationId: listBeneficiaries
+      summary: List account beneficiaries
+      description: >-
+        Retrieve the designated beneficiaries for this account including their allocation percentages and
+        contact information. Required for payable-on-death (POD) and trust accounts.
+      tags:
+        - Preferences
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        beneficiary_id:
+                          type: string
+                          description: Beneficiary record ID
+                          example: "ben-55012"
+                        name:
+                          type: string
+                          description: Full legal name
+                          example: "Robert J. Doe"
+                        relationship:
+                          type: string
+                          description: Relationship to account holder
+                          example: "Spouse"
+                        allocation_pct:
+                          type: number
+                          description: Percentage allocation (all must sum to 100)
+                          format: double
+                          example: 50.0
+                      required:
+                        - beneficiary_id
+                        - name
+                        - allocation_pct
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /accounts/summary:
+    get:
+      operationId: getPortfolioSummary
+      summary: Get portfolio summary
+      description: >-
+        Retrieve an aggregate summary across all accounts for the authenticated customer. Returns total
+        balances by product type, number of active accounts, and combined available balance. Useful for
+        dashboard widgets and financial planning tools.
+      tags:
+        - Accounts
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_accounts:
+                    type: integer
+                    description: Total number of accounts
+                    example: 5
+                  total_current_balance:
+                    type: number
+                    description: Sum of current balances
+                    format: double
+                    example: 87432.19
+                  total_available_balance:
+                    type: number
+                    description: Sum of available balances
+                    format: double
+                    example: 82100.0
+                  by_product_type:
+                    type: array
+                    description: Balance breakdown by product
+                    items:
+                      type: object
+                required:
+                  - total_accounts
+                  - total_current_balance
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,2137 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Service Mesh Control Plane API
+  description: >-
+    Service mesh control plane managing service discovery, health monitoring, circuit breaker patterns, retry
+    policies with jitter, weighted traffic shifting for canary deployments, and mutual TLS certificate management.
+    Provides a centralized API for configuring Envoy sidecar proxies across the microservices fleet.
+  version: 2.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-platform-service-mesh
+  x-acme-domain: platform
+servers:
+  - url: https://af-platform-service-mesh.api.acmefin.com/v1
+    description: Production
+  - url: https://af-platform-service-mesh.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Service Registry
+    description: Service registration, discovery, and instance health monitoring
+  - name: Resilience Policies
+    description: Circuit breaker and retry policy configuration
+  - name: Traffic Management
+    description: Traffic shifting rules and mutual TLS certificate management
+paths:
+  /services:
+    get:
+      operationId: listMeshServices
+      summary: List mesh services
+      description: List all services registered in the mesh with health status and instance counts.
+      tags:
+        - Service Registry
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        service_id:
+                          type: string
+                          description: "Service ID"
+                          format: uuid
+                          example: "svc-4a5b6c7d-8e9f"
+                        name:
+                          type: string
+                          description: "Service name"
+                          example: "payments-service"
+                        namespace:
+                          type: string
+                          description: "Service namespace"
+                          example: "finance"
+                        healthy_instances:
+                          type: integer
+                          description: "Healthy instance count"
+                          example: 5
+                        total_instances:
+                          type: integer
+                          description: "Total instances"
+                          example: 6
+                        protocol:
+                          type: string
+                          description: "Service protocol"
+                          example: "http"
+                          enum:
+                            - http
+                            - grpc
+                            - tcp
+                        mtls_enabled:
+                          type: boolean
+                          description: "Whether mTLS is enforced"
+                          example: true
+                      required:
+                        - service_id
+                        - name
+                        - healthy_instances
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: registerMeshService
+      summary: Register service
+      description: >-
+        Register a new service in the mesh. Service discovery begins immediately and health checks are
+        scheduled.
+      tags:
+        - Service Registry
+      requestBody:
+        required: true
+        description: Register service request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Service name"
+                      example: "accounts-service"
+                    namespace:
+                      type: string
+                      description: "Namespace"
+                      example: "finance"
+                    port:
+                      type: integer
+                      description: "Service port"
+                      example: 8080
+                    protocol:
+                      type: string
+                      description: "Protocol"
+                      example: "http"
+                      enum:
+                        - http
+                        - grpc
+                        - tcp
+                    health_check_path:
+                      type: string
+                      description: "Health endpoint"
+                      example: "/health"
+                    labels:
+                      type: object
+                      description: "Service labels for routing"
+              required:
+                - name
+                - port
+                - protocol
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "svc-4a5b6c7d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "accounts-service"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "registered"
+                required:
+                  - service_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /services/{service_id}:
+    get:
+      operationId: getMeshService
+      summary: Get service
+      description: Retrieve service configuration and health status.
+      tags:
+        - Service Registry
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          description: "Unique service id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "svc-4a5b6c7d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "payments-service"
+                  namespace:
+                    type: string
+                    description: "Namespace"
+                    example: "finance"
+                  healthy_instances:
+                    type: integer
+                    description: "Healthy"
+                    example: 5
+                  total_instances:
+                    type: integer
+                    description: "Total"
+                    example: 6
+                required:
+                  - service_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateMeshService
+      summary: Update service
+      description: Update service mesh configuration.
+      tags:
+        - Service Registry
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          description: "Unique service id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update service request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    health_check_path:
+                      type: string
+                      description: "Health path"
+                      example: "/healthz"
+                    labels:
+                      type: object
+                      description: "Labels"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "svc-4a5b6c7d"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - service_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deregisterMeshService
+      summary: Deregister service
+      description: Remove a service from the mesh.
+      tags:
+        - Service Registry
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          description: "Unique service id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /services/{service_id}/health:
+    get:
+      operationId: getMeshServiceHealth
+      summary: Get service health
+      description: Retrieve detailed health status for all instances of a service.
+      tags:
+        - Service Registry
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          description: "Unique service id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "svc-4a5b6c7d"
+                  overall_status:
+                    type: string
+                    description: "Aggregate health"
+                    example: "healthy"
+                    enum:
+                      - healthy
+                      - degraded
+                      - unhealthy
+                  instances:
+                    type: array
+                    description: "Per-instance health details"
+                    items:
+                      type: object
+                required:
+                  - service_id
+                  - overall_status
+                  - instances
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /services/{service_id}/instances:
+    get:
+      operationId: listServiceInstances
+      summary: List service instances
+      description: >-
+        List all running instances of a service with their IP addresses, ports, health status, and load
+        metrics.
+      tags:
+        - Service Registry
+      parameters:
+        - name: service_id
+          in: path
+          required: true
+          description: "Service ID"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        instance_id:
+                          type: string
+                          description: "Instance ID"
+                          format: uuid
+                          example: "ins-1a2b3c4d"
+                        address:
+                          type: string
+                          description: "Instance IP"
+                          example: "10.0.1.42"
+                        port:
+                          type: integer
+                          description: "Instance port"
+                          example: 8080
+                        status:
+                          type: string
+                          description: "Instance health"
+                          example: "healthy"
+                          enum:
+                            - healthy
+                            - draining
+                            - unhealthy
+                        zone:
+                          type: string
+                          description: "Availability zone"
+                          example: "us-east-1a"
+                        requests_per_second:
+                          type: number
+                          description: "Current RPS"
+                          format: double
+                          example: 125.3
+                        started_at:
+                          type: string
+                          description: "Instance start time"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - instance_id
+                        - address
+                        - port
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /circuit-breakers:
+    get:
+      operationId: listCircuitBreakers
+      summary: List circuit breakers
+      description: List all circuit breaker configurations in the mesh.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        breaker_id:
+                          type: string
+                          description: "Circuit breaker ID"
+                          format: uuid
+                          example: "cb-6a7b8c9d"
+                        service_id:
+                          type: string
+                          description: "Target service"
+                          format: uuid
+                          example: "svc-4a5b6c7d"
+                        state:
+                          type: string
+                          description: "Current breaker state"
+                          example: "closed"
+                          enum:
+                            - closed
+                            - open
+                            - half_open
+                        failure_threshold:
+                          type: integer
+                          description: "Failures to trip"
+                          example: 5
+                        reset_timeout_seconds:
+                          type: integer
+                          description: "Seconds before half-open"
+                          example: 30
+                        consecutive_failures:
+                          type: integer
+                          description: "Current failure count"
+                          example: 0
+                      required:
+                        - breaker_id
+                        - service_id
+                        - state
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createCircuitBreaker
+      summary: Create circuit breaker
+      description: >-
+        Configure a circuit breaker for a service. When failures exceed the threshold, the circuit opens and
+        requests fail fast.
+      tags:
+        - Resilience Policies
+      requestBody:
+        required: true
+        description: Create circuit breaker request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    service_id:
+                      type: string
+                      description: "Target service"
+                      format: uuid
+                      example: "svc-4a5b6c7d"
+                    failure_threshold:
+                      type: integer
+                      description: "Trip threshold"
+                      example: 5
+                    reset_timeout_seconds:
+                      type: integer
+                      description: "Reset timeout"
+                      example: 30
+                    half_open_max_requests:
+                      type: integer
+                      description: "Requests in half-open"
+                      example: 3
+                    failure_rate_threshold:
+                      type: number
+                      description: "Failure rate to trip (0.0-1.0)"
+                      format: double
+                      example: 0.5
+              required:
+                - service_id
+                - failure_threshold
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  breaker_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "cb-6a7b8c9d"
+                  service_id:
+                    type: string
+                    description: "Service"
+                    format: uuid
+                    example: "svc-4a5b6c7d"
+                  state:
+                    type: string
+                    description: "State"
+                    example: "closed"
+                required:
+                  - breaker_id
+                  - state
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /circuit-breakers/{breaker_id}:
+    get:
+      operationId: getCircuitBreaker
+      summary: Get circuit breaker
+      description: Retrieve circuit breaker state and configuration.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: breaker_id
+          in: path
+          required: true
+          description: "Unique breaker id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  breaker_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "cb-6a7b8c9d"
+                  service_id:
+                    type: string
+                    description: "Service"
+                    format: uuid
+                    example: "svc-4a5b6c7d"
+                  state:
+                    type: string
+                    description: "State"
+                    example: "closed"
+                  failure_threshold:
+                    type: integer
+                    description: "Threshold"
+                    example: 5
+                  consecutive_failures:
+                    type: integer
+                    description: "Failures"
+                    example: 0
+                required:
+                  - breaker_id
+                  - state
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateCircuitBreaker
+      summary: Update circuit breaker
+      description: Update circuit breaker thresholds.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: breaker_id
+          in: path
+          required: true
+          description: "Unique breaker id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update circuit breaker request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    failure_threshold:
+                      type: integer
+                      description: "New threshold"
+                      example: 10
+                    reset_timeout_seconds:
+                      type: integer
+                      description: "New timeout"
+                      example: 60
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  breaker_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "cb-6a7b8c9d"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - breaker_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteCircuitBreaker
+      summary: Delete circuit breaker
+      description: Remove circuit breaker configuration.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: breaker_id
+          in: path
+          required: true
+          description: "Unique breaker id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /circuit-breakers/{breaker_id}/state:
+    get:
+      operationId: getCircuitBreakerState
+      summary: Get breaker state
+      description: Get real-time circuit breaker state with failure history.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: breaker_id
+          in: path
+          required: true
+          description: "Unique breaker id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                    description: "Current state"
+                    example: "closed"
+                    enum:
+                      - closed
+                      - open
+                      - half_open
+                  consecutive_failures:
+                    type: integer
+                    description: "Failure count"
+                    example: 0
+                  last_failure_at:
+                    type: string
+                    description: "Last failure time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  last_success_at:
+                    type: string
+                    description: "Last success time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  total_requests:
+                    type: integer
+                    description: "Requests since last reset"
+                    example: 15420
+                  total_failures:
+                    type: integer
+                    description: "Failures since last reset"
+                    example: 3
+                required:
+                  - state
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: setCircuitBreakerState
+      summary: Force breaker state
+      description: >-
+        Manually force a circuit breaker to a specific state. Use for emergency recovery.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: breaker_id
+          in: path
+          required: true
+          description: "Breaker ID"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Force breaker state request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    state:
+                      type: string
+                      description: "Target state"
+                      example: "closed"
+                      enum:
+                        - closed
+                        - open
+                        - half_open
+                    reason:
+                      type: string
+                      description: "Reason for override"
+                      example: "Manual reset after incident resolution"
+              required:
+                - state
+                - reason
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  breaker_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "cb-6a7b8c9d"
+                  state:
+                    type: string
+                    description: "New state"
+                    example: "closed"
+                  forced_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - breaker_id
+                  - state
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /retry-policies:
+    get:
+      operationId: listRetryPolicies
+      summary: List retry policies
+      description: List all retry policies configured in the service mesh.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        policy_id:
+                          type: string
+                          description: "Policy ID"
+                          format: uuid
+                          example: "rp-2a3b4c5d"
+                        name:
+                          type: string
+                          description: "Policy name"
+                          example: "standard-retry"
+                        max_retries:
+                          type: integer
+                          description: "Max retry attempts"
+                          example: 3
+                        backoff_ms:
+                          type: integer
+                          description: "Initial backoff"
+                          example: 100
+                        max_backoff_ms:
+                          type: integer
+                          description: "Max backoff"
+                          example: 10000
+                        jitter:
+                          type: boolean
+                          description: "Enable jitter"
+                          example: true
+                        retryable_status_codes:
+                          type: array
+                          description: "HTTP codes to retry on"
+                          items:
+                            type: integer
+                      required:
+                        - policy_id
+                        - name
+                        - max_retries
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createRetryPolicy
+      summary: Create retry policy
+      description: Create a retry policy with configurable backoff and jitter.
+      tags:
+        - Resilience Policies
+      requestBody:
+        required: true
+        description: Create retry policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Policy name"
+                      example: "aggressive-retry"
+                    max_retries:
+                      type: integer
+                      description: "Max retries"
+                      example: 5
+                    backoff_ms:
+                      type: integer
+                      description: "Initial backoff ms"
+                      example: 200
+                    max_backoff_ms:
+                      type: integer
+                      description: "Max backoff ms"
+                      example: 30000
+                    jitter:
+                      type: boolean
+                      description: "Enable jitter"
+                      example: true
+                    retryable_status_codes:
+                      type: array
+                      description: "HTTP status codes to retry"
+                      items:
+                        type: integer
+              required:
+                - name
+                - max_retries
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "rp-2a3b4c5d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "aggressive-retry"
+                required:
+                  - policy_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /retry-policies/{policy_id}:
+    get:
+      operationId: getRetryPolicy
+      summary: Get retry policy
+      description: Retrieve retry policy details.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "rp-2a3b4c5d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "standard-retry"
+                  max_retries:
+                    type: integer
+                    description: "Retries"
+                    example: 3
+                  backoff_ms:
+                    type: integer
+                    description: "Backoff"
+                    example: 100
+                required:
+                  - policy_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateRetryPolicy
+      summary: Update retry policy
+      description: Update retry policy configuration.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update retry policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    max_retries:
+                      type: integer
+                      description: "Retries"
+                      example: 5
+                    backoff_ms:
+                      type: integer
+                      description: "Backoff"
+                      example: 200
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "rp-2a3b4c5d"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - policy_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteRetryPolicy
+      summary: Delete retry policy
+      description: Remove a retry policy.
+      tags:
+        - Resilience Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /traffic-shifting:
+    get:
+      operationId: listTrafficRules
+      summary: List traffic shifting rules
+      description: List all traffic shifting rules for canary deployments and blue-green releases.
+      tags:
+        - Traffic Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rule_id:
+                          type: string
+                          description: "Rule ID"
+                          format: uuid
+                          example: "ts-5a6b7c8d"
+                        service_id:
+                          type: string
+                          description: "Target service"
+                          format: uuid
+                          example: "svc-4a5b6c7d"
+                        name:
+                          type: string
+                          description: "Rule name"
+                          example: "canary-v2-rollout"
+                        primary_weight:
+                          type: integer
+                          description: "Primary traffic weight (%)"
+                          example: 90
+                        canary_weight:
+                          type: integer
+                          description: "Canary traffic weight (%)"
+                          example: 10
+                        status:
+                          type: string
+                          description: "Rule status"
+                          example: "active"
+                          enum:
+                            - active
+                            - completed
+                            - rolled_back
+                      required:
+                        - rule_id
+                        - service_id
+                        - name
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTrafficRule
+      summary: Create traffic shifting rule
+      description: >-
+        Create a traffic shifting rule for gradual rollout between primary and canary versions.
+      tags:
+        - Traffic Management
+      requestBody:
+        required: true
+        description: Create traffic shifting rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    service_id:
+                      type: string
+                      description: "Service"
+                      format: uuid
+                      example: "svc-4a5b6c7d"
+                    name:
+                      type: string
+                      description: "Rule name"
+                      example: "canary-v3"
+                    primary_version:
+                      type: string
+                      description: "Primary version tag"
+                      example: "v2.1.0"
+                    canary_version:
+                      type: string
+                      description: "Canary version tag"
+                      example: "v3.0.0"
+                    canary_weight:
+                      type: integer
+                      description: "Initial canary weight %"
+                      example: 5
+              required:
+                - service_id
+                - primary_version
+                - canary_version
+                - canary_weight
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ts-5a6b7c8d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "canary-v3"
+                  canary_weight:
+                    type: integer
+                    description: "Weight"
+                    example: 5
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - rule_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /traffic-shifting/{rule_id}:
+    get:
+      operationId: getTrafficRule
+      summary: Get traffic rule
+      description: Retrieve traffic rule details.
+      tags:
+        - Traffic Management
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          description: "Unique rule id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ts-5a6b7c8d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "canary-v2-rollout"
+                  primary_weight:
+                    type: integer
+                    description: "Primary %"
+                    example: 90
+                  canary_weight:
+                    type: integer
+                    description: "Canary %"
+                    example: 10
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - rule_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateTrafficRule
+      summary: Update traffic weights
+      description: Adjust traffic weights between primary and canary versions.
+      tags:
+        - Traffic Management
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          description: "Unique rule id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update traffic weights request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    canary_weight:
+                      type: integer
+                      description: "New canary weight %"
+                      example: 25
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ts-5a6b7c8d"
+                  canary_weight:
+                    type: integer
+                    description: "Weight"
+                    example: 25
+                  primary_weight:
+                    type: integer
+                    description: "Primary"
+                    example: 75
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - rule_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteTrafficRule
+      summary: Delete traffic rule
+      description: Remove a traffic shifting rule (all traffic goes to primary).
+      tags:
+        - Traffic Management
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          description: "Unique rule id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /mtls/certificates:
+    get:
+      operationId: listMtlsCerts
+      summary: List mTLS certificates
+      description: List all mutual TLS certificates in the mesh.
+      tags:
+        - Traffic Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cert_id:
+                          type: string
+                          description: "Certificate ID"
+                          format: uuid
+                          example: "mc-9a0b1c2d"
+                        service_id:
+                          type: string
+                          description: "Service"
+                          format: uuid
+                          example: "svc-4a5b6c7d"
+                        common_name:
+                          type: string
+                          description: "CN"
+                          example: "payments-service.finance.mesh"
+                        expires_at:
+                          type: string
+                          description: "Expiration"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        auto_rotate:
+                          type: boolean
+                          description: "Auto-rotation enabled"
+                          example: true
+                        status:
+                          type: string
+                          description: "Status"
+                          example: "active"
+                          enum:
+                            - active
+                            - expiring_soon
+                            - expired
+                            - revoked
+                      required:
+                        - cert_id
+                        - service_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: issueMtlsCert
+      summary: Issue mTLS certificate
+      description: Issue a new mTLS certificate for service-to-service authentication.
+      tags:
+        - Traffic Management
+      requestBody:
+        required: true
+        description: Issue mTLS certificate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    service_id:
+                      type: string
+                      description: "Service"
+                      format: uuid
+                      example: "svc-4a5b6c7d"
+                    validity_days:
+                      type: integer
+                      description: "Certificate validity period"
+                      example: 365
+                    auto_rotate:
+                      type: boolean
+                      description: "Enable auto-rotation before expiry"
+                      example: true
+              required:
+                - service_id
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cert_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "mc-9a0b1c2d"
+                  common_name:
+                    type: string
+                    description: "CN"
+                    example: "payments-service.finance.mesh"
+                  expires_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - cert_id
+                  - common_name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mtls/certificates/{cert_id}:
+    get:
+      operationId: getMtlsCert
+      summary: Get mTLS certificate
+      description: Retrieve certificate details.
+      tags:
+        - Traffic Management
+      parameters:
+        - name: cert_id
+          in: path
+          required: true
+          description: "Unique cert id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cert_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "mc-9a0b1c2d"
+                  service_id:
+                    type: string
+                    description: "Service"
+                    format: uuid
+                    example: "svc-4a5b6c7d"
+                  common_name:
+                    type: string
+                    description: "CN"
+                    example: "payments.finance.mesh"
+                  expires_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - cert_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: revokeMtlsCert
+      summary: Revoke mTLS certificate
+      description: >-
+        Revoke a certificate. The service must have another valid certificate or mTLS will block traffic.
+      tags:
+        - Traffic Management
+      parameters:
+        - name: cert_id
+          in: path
+          required: true
+          description: "Unique cert id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,1826 @@
+openapi: 3.0.3
+info:
+  title: VZW Radio Observability Stream API
+  description: |
+    Radio KPI event stream aggregation API used by RAN observability and optimization workflows.
+    The service ingests high-volume radio telemetry (RSRP, RSRQ, SINR, CQI), computes
+    windowed aggregates per stream and network dimensions (cell, sector, slice), flags
+    statistical anomalies, and manages real-time subscription delivery for KPI alerts.
+
+    Primary use cases:
+    - Ingest near-real-time KPI events from gNodeB and edge collectors
+    - Query stream-level and cell-level health and performance trends
+    - Detect KPI deviations with z-score-driven anomaly logic
+    - Subscribe downstream optimization engines to alert events
+  version: 1.0.0
+  contact:
+    name: Verizon Radio Observability Platform
+    email: ran-observability-api@verizon.com
+    url: https://developer.verizon.com/networking/radio-observability
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/api
+  x-verizon-catalog-id: vzw-radio-observability-stream-api
+  x-verizon-domain: radio-observability
+servers:
+  - url: https://vzw-radio-observability-stream-api.api.verizon.com
+    description: Production
+  - url: https://vzw-radio-observability-stream-api.staging.api.verizon.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Stream Ingestion
+    description: Batch ingest radio KPI events into a processing stream.
+  - name: Stream Metrics
+    description: Query stream-level windowed KPI aggregates.
+  - name: Stream Anomalies
+    description: Retrieve flagged KPI anomalies and deviation statistics.
+  - name: Alert Subscriptions
+    description: Manage real-time stream alert subscription lifecycle.
+  - name: Cell Analytics
+    description: Retrieve historical KPI timelines at cell scope.
+  - name: Stream Health
+    description: Inspect stream processing health, lag, and error indicators.
+paths:
+  /v1/streams/ingest:
+    post:
+      operationId: ingestStreamEvents
+      summary: Ingest radio KPI event batch
+      description: |
+        Ingests a batch of radio observability KPI events into a named stream.
+        Events are validated, normalized, deduplicated, and appended to the stream ingest topic.
+
+        Validation highlights:
+        - `stream_id` must map to a configured ingest pipeline
+        - `event_ts` must be within configured lateness threshold
+        - RAN KPI fields must satisfy expected ranges and units
+      tags:
+        - Stream Ingestion
+      requestBody:
+        required: true
+        description: Radio KPI event batch payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestBatchRequest'
+            examples:
+              radioEventBatch:
+                summary: Typical KPI ingest for two cells
+                value:
+                  stream_id: stream-ran-west-01
+                  source:
+                    producer_id: edge-collector-usw2-17
+                    producer_type: edge_collector
+                    region: us-west-2
+                  idempotency_key: 0d2fc997-44fc-4c9d-9ac5-5b4b7fa2b389
+                  events:
+                    - event_id: evt-001f9d57
+                      event_ts: '2026-03-27T12:01:45Z'
+                      received_ts: '2026-03-27T12:01:47Z'
+                      cell_id: NCI-310-410-12001
+                      sector_id: A
+                      nr_arfcn: 634240
+                      band: n77
+                      slice_id: eMBB-primary
+                      ue_count: 91
+                      rsrp_dbm: -96.3
+                      rsrq_db: -11.2
+                      sinr_db: 17.1
+                      cqi: 10
+                      prb_utilization: 74.8
+                      dl_throughput_mbps: 612.4
+                      ul_throughput_mbps: 78.1
+                    - event_id: evt-001f9d58
+                      event_ts: '2026-03-27T12:01:46Z'
+                      received_ts: '2026-03-27T12:01:48Z'
+                      cell_id: NCI-310-410-12002
+                      sector_id: B
+                      nr_arfcn: 634240
+                      band: n77
+                      slice_id: urllc-robotics
+                      ue_count: 41
+                      rsrp_dbm: -89.1
+                      rsrq_db: -9.8
+                      sinr_db: 21.6
+                      cqi: 13
+                      prb_utilization: 63.5
+                      dl_throughput_mbps: 332.7
+                      ul_throughput_mbps: 61.2
+      responses:
+        '202':
+          description: Batch accepted for asynchronous stream processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestBatchAcceptedResponse'
+              examples:
+                accepted:
+                  value:
+                    ingest_request_id: ing-2f28c714ae
+                    stream_id: stream-ran-west-01
+                    accepted_events: 2
+                    rejected_events: 0
+                    duplicate_events: 0
+                    status: accepted
+                    submitted_at: '2026-03-27T12:01:48Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/TooManyRequestsError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+
+  /v1/streams/{streamId}/metrics:
+    get:
+      operationId: getStreamWindowedMetrics
+      summary: Get windowed stream metrics
+      description: |
+        Returns aggregated KPI metrics for a stream over a requested time window.
+        Aggregations can be grouped by cell, sector, and network slice to support
+        optimization and capacity planning decisions.
+      tags:
+        - Stream Metrics
+      parameters:
+        - $ref: '#/components/parameters/StreamIdPath'
+        - $ref: '#/components/parameters/FromQuery'
+        - $ref: '#/components/parameters/ToQuery'
+        - $ref: '#/components/parameters/WindowQuery'
+        - $ref: '#/components/parameters/GroupByQuery'
+        - $ref: '#/components/parameters/CellIdFilterQuery'
+        - $ref: '#/components/parameters/SliceIdFilterQuery'
+        - $ref: '#/components/parameters/IncludePercentilesQuery'
+      responses:
+        '200':
+          description: Stream KPI aggregates successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamMetricsResponse'
+              examples:
+                groupedByCell:
+                  summary: Five minute aggregates grouped by cell
+                  value:
+                    stream_id: stream-ran-west-01
+                    from: '2026-03-27T12:00:00Z'
+                    to: '2026-03-27T12:30:00Z'
+                    window: 5m
+                    group_by:
+                      - cell_id
+                    aggregates:
+                      - window_start: '2026-03-27T12:00:00Z'
+                        window_end: '2026-03-27T12:05:00Z'
+                        dimension:
+                          cell_id: NCI-310-410-12001
+                        sample_count: 1850
+                        rsrp_dbm:
+                          min: -118.4
+                          max: -71.1
+                          avg: -94.9
+                          p50: -95.1
+                          p95: -82.8
+                        rsrq_db:
+                          min: -18.1
+                          max: -5.4
+                          avg: -10.9
+                          p50: -10.8
+                          p95: -8.1
+                        sinr_db:
+                          min: -3.2
+                          max: 31.5
+                          avg: 16.7
+                          p50: 16.5
+                          p95: 25.4
+                        cqi:
+                          min: 1
+                          max: 15
+                          avg: 10.3
+                          p50: 10
+                          p95: 14
+                        prb_utilization:
+                          min: 41.3
+                          max: 91.7
+                          avg: 73.6
+                        dl_throughput_mbps:
+                          min: 98.1
+                          max: 819.2
+                          avg: 598.4
+                        ul_throughput_mbps:
+                          min: 15.8
+                          max: 141.7
+                          avg: 74.2
+                        ue_count:
+                          min: 45
+                          max: 127
+                          avg: 92.1
+                    meta:
+                      request_id: req-5be629f9c1
+                      generated_at: '2026-03-27T12:30:02Z'
+                      partial_results: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/TooManyRequestsError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+
+  /v1/streams/{streamId}/anomalies:
+    get:
+      operationId: listStreamAnomalies
+      summary: Get stream anomaly flags
+      description: |
+        Returns anomalies detected for KPI series within the selected stream and interval.
+        An anomaly is flagged when a KPI deviates beyond configured thresholds (typically z-score,
+        percentile envelope, or dynamic seasonal baseline).
+      tags:
+        - Stream Anomalies
+      parameters:
+        - $ref: '#/components/parameters/StreamIdPath'
+        - $ref: '#/components/parameters/FromQuery'
+        - $ref: '#/components/parameters/ToQuery'
+        - $ref: '#/components/parameters/CellIdFilterQuery'
+        - $ref: '#/components/parameters/SliceIdFilterQuery'
+        - $ref: '#/components/parameters/KpiNameQuery'
+        - $ref: '#/components/parameters/MinZScoreQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+      responses:
+        '200':
+          description: Stream anomalies successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamAnomaliesResponse'
+              examples:
+                anomalies:
+                  summary: KPI deviations for a specific stream
+                  value:
+                    stream_id: stream-ran-west-01
+                    anomalies:
+                      - anomaly_id: anm-39f21ad8
+                        event_ts: '2026-03-27T12:14:00Z'
+                        cell_id: NCI-310-410-12001
+                        sector_id: A
+                        slice_id: eMBB-primary
+                        kpi_name: sinr_db
+                        observed_value: 4.2
+                        expected_value: 16.8
+                        z_score: -3.48
+                        severity: critical
+                        detector_type: zscore
+                        baseline_window: 30m
+                        context:
+                          ue_count: 118
+                          prb_utilization: 92.3
+                          incident_hint: potential_interference
+                      - anomaly_id: anm-39f21ad9
+                        event_ts: '2026-03-27T12:15:00Z'
+                        cell_id: NCI-310-410-12002
+                        sector_id: B
+                        slice_id: urllc-robotics
+                        kpi_name: rsrq_db
+                        observed_value: -16.1
+                        expected_value: -9.7
+                        z_score: -2.91
+                        severity: high
+                        detector_type: zscore
+                        baseline_window: 30m
+                        context:
+                          ue_count: 57
+                          prb_utilization: 86.1
+                          incident_hint: uplink_noise_rise
+                    pagination:
+                      page: 1
+                      per_page: 50
+                      total: 2
+                      total_pages: 1
+                    meta:
+                      request_id: req-311bb4a7df
+                      generated_at: '2026-03-27T12:16:02Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/TooManyRequestsError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+
+  /v1/streams/subscriptions:
+    post:
+      operationId: createStreamSubscription
+      summary: Create real-time KPI alert subscription
+      description: |
+        Creates a subscription that receives real-time KPI alert notifications for selected streams,
+        cells, slices, and KPI thresholds. Delivery is retried according to configured policy.
+      tags:
+        - Alert Subscriptions
+      requestBody:
+        required: true
+        description: Subscription definition and delivery configuration
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscriptionRequest'
+            examples:
+              webhookSubscription:
+                value:
+                  name: west-ran-critical-alerts
+                  stream_ids:
+                    - stream-ran-west-01
+                  filters:
+                    cell_ids:
+                      - NCI-310-410-12001
+                      - NCI-310-410-12002
+                    slice_ids:
+                      - eMBB-primary
+                    kpi_names:
+                      - rsrp_dbm
+                      - sinr_db
+                      - prb_utilization
+                    min_severity: high
+                    min_abs_z_score: 2.5
+                  delivery:
+                    channel: webhook
+                    endpoint_url: https://ran-optimizer.verizon.net/hooks/radio-alerts
+                    auth:
+                      type: hmac_sha256
+                      secret_ref: sm://ran-observability/webhook-secret
+                    timeout_ms: 3000
+                    retry_policy:
+                      max_attempts: 5
+                      backoff_strategy: exponential
+                      initial_backoff_ms: 500
+                      max_backoff_ms: 10000
+      responses:
+        '201':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResponse'
+              examples:
+                created:
+                  value:
+                    sub_id: sub-51f63f1785
+                    name: west-ran-critical-alerts
+                    status: active
+                    created_at: '2026-03-27T12:20:12Z'
+                    updated_at: '2026-03-27T12:20:12Z'
+                    stream_ids:
+                      - stream-ran-west-01
+                    filters:
+                      min_severity: high
+                      min_abs_z_score: 2.5
+                    delivery:
+                      channel: webhook
+                      endpoint_url: https://ran-optimizer.verizon.net/hooks/radio-alerts
+                      timeout_ms: 3000
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/TooManyRequestsError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+
+  /v1/streams/subscriptions/{subId}:
+    delete:
+      operationId: deleteStreamSubscription
+      summary: Delete KPI alert subscription
+      description: |
+        Deletes an existing subscription and stops future alert delivery.
+        In-flight deliveries may still complete depending on retry state.
+      tags:
+        - Alert Subscriptions
+      parameters:
+        - $ref: '#/components/parameters/SubIdPath'
+      responses:
+        '204':
+          description: Subscription deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '429':
+          $ref: '#/components/responses/TooManyRequestsError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+
+  /v1/cells/{cellId}/timeline:
+    get:
+      operationId: getCellKpiTimeline
+      summary: Get historical KPI timeline for a cell
+      description: |
+        Returns historical KPI time-series points for a given cell and optional slice.
+        Supports fixed interval bucketing and down-sampling for dashboard rendering.
+      tags:
+        - Cell Analytics
+      parameters:
+        - $ref: '#/components/parameters/CellIdPath'
+        - $ref: '#/components/parameters/FromQuery'
+        - $ref: '#/components/parameters/ToQuery'
+        - $ref: '#/components/parameters/ResolutionQuery'
+        - $ref: '#/components/parameters/SliceIdFilterQuery'
+        - $ref: '#/components/parameters/KpiNameMultiQuery'
+      responses:
+        '200':
+          description: Cell timeline successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CellTimelineResponse'
+              examples:
+                timeline:
+                  value:
+                    cell_id: NCI-310-410-12001
+                    from: '2026-03-27T11:30:00Z'
+                    to: '2026-03-27T12:30:00Z'
+                    resolution: 1m
+                    points:
+                      - ts: '2026-03-27T12:27:00Z'
+                        slice_id: eMBB-primary
+                        rsrp_dbm: -95.2
+                        rsrq_db: -10.8
+                        sinr_db: 17.2
+                        cqi: 10
+                        prb_utilization: 75.4
+                        dl_throughput_mbps: 601.3
+                        ul_throughput_mbps: 73.5
+                        ue_count: 94
+                      - ts: '2026-03-27T12:28:00Z'
+                        slice_id: eMBB-primary
+                        rsrp_dbm: -94.8
+                        rsrq_db: -10.5
+                        sinr_db: 17.9
+                        cqi: 11
+                        prb_utilization: 72.6
+                        dl_throughput_mbps: 622.1
+                        ul_throughput_mbps: 77.9
+                        ue_count: 91
+                    meta:
+                      request_id: req-51f0a9772a
+                      generated_at: '2026-03-27T12:30:01Z'
+                      downsampled: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/TooManyRequestsError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+
+  /v1/streams/health:
+    get:
+      operationId: getStreamHealth
+      summary: Get stream processing health
+      description: |
+        Returns service and stream pipeline health indicators, including ingest lag,
+        processing throughput, drop/error rates, and subscription dispatch health.
+      tags:
+        - Stream Health
+      parameters:
+        - name: stream_id
+          in: query
+          required: false
+          description: Optional stream scope. If omitted, returns fleet-wide summary.
+          schema:
+            type: string
+            example: stream-ran-west-01
+      responses:
+        '200':
+          description: Stream health status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamHealthResponse'
+              examples:
+                health:
+                  value:
+                    status: degraded
+                    generated_at: '2026-03-27T12:30:00Z'
+                    scope:
+                      stream_id: stream-ran-west-01
+                      region: us-west-2
+                    ingest:
+                      events_per_second: 12580
+                      accepted_rate: 0.997
+                      reject_rate: 0.003
+                    processing:
+                      lag_seconds_p50: 2.1
+                      lag_seconds_p95: 8.4
+                      lag_seconds_p99: 16.7
+                      backlog_events: 48213
+                    anomalies:
+                      anomalies_per_minute: 11.4
+                      critical_open_count: 3
+                    subscriptions:
+                      active_count: 24
+                      dispatch_success_rate: 0.992
+                      dispatch_error_rate: 0.008
+                    errors:
+                      - code: STREAM_BACKPRESSURE
+                        message: Processing lag crossed warning threshold for 3 consecutive windows
+                        first_seen_at: '2026-03-27T12:24:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/TooManyRequestsError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    StreamIdPath:
+      name: streamId
+      in: path
+      required: true
+      description: Unique stream identifier
+      schema:
+        type: string
+        pattern: '^stream-[a-z0-9-]{3,64}$'
+        example: stream-ran-west-01
+    SubIdPath:
+      name: subId
+      in: path
+      required: true
+      description: Subscription identifier
+      schema:
+        type: string
+        pattern: '^sub-[a-z0-9]{8,32}$'
+        example: sub-51f63f1785
+    CellIdPath:
+      name: cellId
+      in: path
+      required: true
+      description: NR cell global identifier (NCI format)
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+        example: NCI-310-410-12001
+    FromQuery:
+      name: from
+      in: query
+      required: true
+      description: Inclusive start timestamp in UTC (RFC3339)
+      schema:
+        type: string
+        format: date-time
+        example: '2026-03-27T12:00:00Z'
+    ToQuery:
+      name: to
+      in: query
+      required: true
+      description: Exclusive end timestamp in UTC (RFC3339)
+      schema:
+        type: string
+        format: date-time
+        example: '2026-03-27T12:30:00Z'
+    WindowQuery:
+      name: window
+      in: query
+      required: false
+      description: Aggregate window size
+      schema:
+        type: string
+        enum:
+          - 1m
+          - 5m
+          - 15m
+          - 30m
+          - 1h
+        default: 5m
+    ResolutionQuery:
+      name: resolution
+      in: query
+      required: false
+      description: Timeline bucket resolution
+      schema:
+        type: string
+        enum:
+          - 30s
+          - 1m
+          - 5m
+          - 15m
+        default: 1m
+    GroupByQuery:
+      name: group_by
+      in: query
+      required: false
+      description: Comma-separated grouping dimensions
+      schema:
+        type: array
+        items:
+          type: string
+          enum:
+            - cell_id
+            - sector_id
+            - slice_id
+        default:
+          - cell_id
+      style: form
+      explode: false
+    CellIdFilterQuery:
+      name: cell_id
+      in: query
+      required: false
+      description: Optional filter by a specific cell identifier
+      schema:
+        type: string
+        example: NCI-310-410-12001
+    SliceIdFilterQuery:
+      name: slice_id
+      in: query
+      required: false
+      description: Optional filter by network slice identifier
+      schema:
+        type: string
+        example: eMBB-primary
+    KpiNameQuery:
+      name: kpi_name
+      in: query
+      required: false
+      description: Filter anomalies by KPI name
+      schema:
+        $ref: '#/components/schemas/KpiName'
+    KpiNameMultiQuery:
+      name: kpi_name
+      in: query
+      required: false
+      description: Optional KPI list filter for timeline query
+      schema:
+        type: array
+        items:
+          $ref: '#/components/schemas/KpiName'
+      style: form
+      explode: false
+    MinZScoreQuery:
+      name: min_abs_z_score
+      in: query
+      required: false
+      description: Minimum absolute z-score threshold for returned anomalies
+      schema:
+        type: number
+        format: float
+        minimum: 0
+        default: 2
+        example: 2.5
+    IncludePercentilesQuery:
+      name: include_percentiles
+      in: query
+      required: false
+      description: Include p50/p95 percentile values in aggregate payload
+      schema:
+        type: boolean
+        default: true
+    PageQuery:
+      name: page
+      in: query
+      required: false
+      description: Result page number
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPageQuery:
+      name: per_page
+      in: query
+      required: false
+      description: Number of results per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+  responses:
+    BadRequestError:
+      description: Request payload or query parameters are invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            badRequest:
+              value:
+                error:
+                  code: BAD_REQUEST
+                  message: Invalid request parameters
+                  details:
+                    - field: from
+                      issue: must be before `to`
+                request_id: req-e27bc9f4ef
+    UnauthorizedError:
+      description: Authentication credentials are missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Bearer token is missing or expired
+                request_id: req-a201bfdafe
+    ForbiddenError:
+      description: Caller is authenticated but not authorized for this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: Missing required scope `radio-observability:write`
+                request_id: req-6fa31dcdd4
+    NotFoundError:
+      description: Requested stream, subscription, or cell was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            notFound:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: streamId `stream-ran-west-99` was not found
+                request_id: req-54bd5b5b18
+    ConflictError:
+      description: Resource state conflict occurred
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            conflict:
+              value:
+                error:
+                  code: CONFLICT
+                  message: Subscription with same name already exists
+                request_id: req-2dd364ebf5
+    PayloadTooLargeError:
+      description: Request body exceeds maximum allowed payload size
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            payloadTooLarge:
+              value:
+                error:
+                  code: PAYLOAD_TOO_LARGE
+                  message: Event batch exceeds 2 MB payload limit
+                request_id: req-6d72ea5ac7
+    UnsupportedMediaTypeError:
+      description: Request content type is unsupported
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unsupportedMediaType:
+              value:
+                error:
+                  code: UNSUPPORTED_MEDIA_TYPE
+                  message: Content-Type must be application/json
+                request_id: req-e10d1d2dd7
+    UnprocessableEntityError:
+      description: Request is syntactically valid but semantically invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            semanticValidationFailure:
+              value:
+                error:
+                  code: UNPROCESSABLE_ENTITY
+                  message: One or more KPI fields are outside allowed bounds
+                  details:
+                    - field: events[0].cqi
+                      issue: must be between 0 and 15
+                request_id: req-f9bcd4f5d2
+    TooManyRequestsError:
+      description: Caller exceeded allotted API rate limits
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            throttled:
+              value:
+                error:
+                  code: TOO_MANY_REQUESTS
+                  message: Rate limit exceeded for tenant
+                request_id: req-e4917f165f
+    InternalServerError:
+      description: Unexpected internal service failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            serverError:
+              value:
+                error:
+                  code: INTERNAL_SERVER_ERROR
+                  message: Unexpected stream processing failure
+                request_id: req-04aab6d8f1
+    ServiceUnavailableError:
+      description: Service is temporarily unavailable or under maintenance
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unavailable:
+              value:
+                error:
+                  code: SERVICE_UNAVAILABLE
+                  message: Ingestion pipeline unavailable in region us-west-2
+                request_id: req-fbeecdc33c
+
+  schemas:
+    KpiName:
+      type: string
+      description: Supported radio KPI metric names
+      enum:
+        - rsrp_dbm
+        - rsrq_db
+        - sinr_db
+        - cqi
+        - prb_utilization
+        - dl_throughput_mbps
+        - ul_throughput_mbps
+        - ue_count
+
+    IngestBatchRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - stream_id
+        - source
+        - events
+      properties:
+        stream_id:
+          type: string
+          description: Target stream identifier for event ingestion
+          example: stream-ran-west-01
+        source:
+          $ref: '#/components/schemas/EventSource'
+        idempotency_key:
+          type: string
+          description: Optional client-generated dedupe key for safe retries
+          minLength: 8
+          maxLength: 128
+          example: 0d2fc997-44fc-4c9d-9ac5-5b4b7fa2b389
+        events:
+          type: array
+          description: Batch of radio KPI events to ingest
+          minItems: 1
+          maxItems: 5000
+          items:
+            $ref: '#/components/schemas/RadioKpiEvent'
+
+    EventSource:
+      type: object
+      additionalProperties: false
+      required:
+        - producer_id
+        - producer_type
+        - region
+      properties:
+        producer_id:
+          type: string
+          example: edge-collector-usw2-17
+        producer_type:
+          type: string
+          enum:
+            - edge_collector
+            - gnob_exporter
+            - replay_job
+        region:
+          type: string
+          example: us-west-2
+
+    RadioKpiEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - event_ts
+        - cell_id
+        - rsrp_dbm
+        - rsrq_db
+        - sinr_db
+        - cqi
+        - prb_utilization
+      properties:
+        event_id:
+          type: string
+          description: Producer-assigned unique event identifier
+          example: evt-001f9d57
+        event_ts:
+          type: string
+          format: date-time
+          description: Event timestamp generated at source
+        received_ts:
+          type: string
+          format: date-time
+          description: Optional timestamp when source received sample
+        cell_id:
+          type: string
+          description: NR cell identifier (NCI format)
+          example: NCI-310-410-12001
+        sector_id:
+          type: string
+          description: Cell sector label where event was observed
+          example: A
+        nr_arfcn:
+          type: integer
+          minimum: 0
+          maximum: 3279165
+          description: NR Absolute Radio Frequency Channel Number
+          example: 634240
+        band:
+          type: string
+          description: NR operating band
+          example: n77
+        slice_id:
+          type: string
+          description: 5G network slice identifier
+          example: eMBB-primary
+        ue_count:
+          type: integer
+          minimum: 0
+          maximum: 5000
+          description: Number of active UEs observed in sample interval
+          example: 91
+        rsrp_dbm:
+          type: number
+          format: float
+          minimum: -160
+          maximum: -30
+          description: Reference Signal Received Power in dBm
+          example: -96.3
+        rsrq_db:
+          type: number
+          format: float
+          minimum: -40
+          maximum: 10
+          description: Reference Signal Received Quality in dB
+          example: -11.2
+        sinr_db:
+          type: number
+          format: float
+          minimum: -30
+          maximum: 50
+          description: Signal to Interference plus Noise Ratio in dB
+          example: 17.1
+        cqi:
+          type: integer
+          minimum: 0
+          maximum: 15
+          description: Channel Quality Indicator value
+          example: 10
+        prb_utilization:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          description: Physical resource block utilization percentage
+          example: 74.8
+        dl_throughput_mbps:
+          type: number
+          format: float
+          minimum: 0
+          description: Downlink throughput in Mbps
+          example: 612.4
+        ul_throughput_mbps:
+          type: number
+          format: float
+          minimum: 0
+          description: Uplink throughput in Mbps
+          example: 78.1
+
+    IngestBatchAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ingest_request_id
+        - stream_id
+        - accepted_events
+        - rejected_events
+        - duplicate_events
+        - status
+        - submitted_at
+      properties:
+        ingest_request_id:
+          type: string
+          example: ing-2f28c714ae
+        stream_id:
+          type: string
+          example: stream-ran-west-01
+        accepted_events:
+          type: integer
+          minimum: 0
+          example: 2
+        rejected_events:
+          type: integer
+          minimum: 0
+          example: 0
+        duplicate_events:
+          type: integer
+          minimum: 0
+          example: 0
+        status:
+          type: string
+          enum:
+            - accepted
+            - partially_accepted
+          example: accepted
+        submitted_at:
+          type: string
+          format: date-time
+
+    StreamMetricsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - stream_id
+        - from
+        - to
+        - window
+        - aggregates
+        - meta
+      properties:
+        stream_id:
+          type: string
+          example: stream-ran-west-01
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        window:
+          type: string
+          example: 5m
+        group_by:
+          type: array
+          items:
+            type: string
+            enum:
+              - cell_id
+              - sector_id
+              - slice_id
+        aggregates:
+          type: array
+          items:
+            $ref: '#/components/schemas/WindowedKpiAggregate'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+    WindowedKpiAggregate:
+      type: object
+      additionalProperties: false
+      required:
+        - window_start
+        - window_end
+        - sample_count
+      properties:
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+        dimension:
+          $ref: '#/components/schemas/AggregateDimension'
+        sample_count:
+          type: integer
+          minimum: 0
+        rsrp_dbm:
+          $ref: '#/components/schemas/NumericSummary'
+        rsrq_db:
+          $ref: '#/components/schemas/NumericSummary'
+        sinr_db:
+          $ref: '#/components/schemas/NumericSummary'
+        cqi:
+          $ref: '#/components/schemas/NumericSummary'
+        prb_utilization:
+          $ref: '#/components/schemas/NumericSummarySimple'
+        dl_throughput_mbps:
+          $ref: '#/components/schemas/NumericSummarySimple'
+        ul_throughput_mbps:
+          $ref: '#/components/schemas/NumericSummarySimple'
+        ue_count:
+          $ref: '#/components/schemas/NumericSummarySimple'
+
+    AggregateDimension:
+      type: object
+      additionalProperties: false
+      properties:
+        cell_id:
+          type: string
+          example: NCI-310-410-12001
+        sector_id:
+          type: string
+          example: A
+        slice_id:
+          type: string
+          example: eMBB-primary
+
+    NumericSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        min:
+          type: number
+          format: float
+        max:
+          type: number
+          format: float
+        avg:
+          type: number
+          format: float
+        p50:
+          type: number
+          format: float
+        p95:
+          type: number
+          format: float
+
+    NumericSummarySimple:
+      type: object
+      additionalProperties: false
+      properties:
+        min:
+          type: number
+          format: float
+        max:
+          type: number
+          format: float
+        avg:
+          type: number
+          format: float
+
+    StreamAnomaliesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - stream_id
+        - anomalies
+        - pagination
+        - meta
+      properties:
+        stream_id:
+          type: string
+        anomalies:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnomalyRecord'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+    AnomalyRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - anomaly_id
+        - event_ts
+        - cell_id
+        - kpi_name
+        - observed_value
+        - expected_value
+        - z_score
+        - severity
+        - detector_type
+      properties:
+        anomaly_id:
+          type: string
+          example: anm-39f21ad8
+        event_ts:
+          type: string
+          format: date-time
+        cell_id:
+          type: string
+          example: NCI-310-410-12001
+        sector_id:
+          type: string
+          example: A
+        slice_id:
+          type: string
+          example: eMBB-primary
+        kpi_name:
+          $ref: '#/components/schemas/KpiName'
+        observed_value:
+          type: number
+          format: float
+        expected_value:
+          type: number
+          format: float
+        z_score:
+          type: number
+          format: float
+          description: Standard score of observed value compared to expected baseline
+        severity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+            - critical
+        detector_type:
+          type: string
+          enum:
+            - zscore
+            - seasonal_baseline
+            - percentile_band
+        baseline_window:
+          type: string
+          example: 30m
+        context:
+          $ref: '#/components/schemas/AnomalyContext'
+
+    AnomalyContext:
+      type: object
+      additionalProperties: true
+      description: Optional detector-specific context fields
+      properties:
+        ue_count:
+          type: integer
+          minimum: 0
+        prb_utilization:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        incident_hint:
+          type: string
+          example: potential_interference
+
+    CreateSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - stream_ids
+        - filters
+        - delivery
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 128
+          example: west-ran-critical-alerts
+        stream_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            example: stream-ran-west-01
+        filters:
+          $ref: '#/components/schemas/SubscriptionFilters'
+        delivery:
+          $ref: '#/components/schemas/SubscriptionDeliveryConfig'
+
+    SubscriptionFilters:
+      type: object
+      additionalProperties: false
+      properties:
+        cell_ids:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+            example: NCI-310-410-12001
+        slice_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            example: eMBB-primary
+        kpi_names:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/KpiName'
+        min_severity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+            - critical
+          default: medium
+        min_abs_z_score:
+          type: number
+          format: float
+          minimum: 0
+          default: 2
+
+    SubscriptionDeliveryConfig:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - endpoint_url
+        - timeout_ms
+        - retry_policy
+      properties:
+        channel:
+          type: string
+          enum:
+            - webhook
+            - queue
+        endpoint_url:
+          type: string
+          format: uri
+          example: https://ran-optimizer.verizon.net/hooks/radio-alerts
+        auth:
+          $ref: '#/components/schemas/DeliveryAuthConfig'
+        timeout_ms:
+          type: integer
+          minimum: 250
+          maximum: 60000
+          default: 3000
+        retry_policy:
+          $ref: '#/components/schemas/RetryPolicy'
+
+    DeliveryAuthConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - none
+            - hmac_sha256
+            - bearer
+          default: none
+        secret_ref:
+          type: string
+          description: Secret manager reference for delivery credential
+          example: sm://ran-observability/webhook-secret
+
+    RetryPolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - max_attempts
+        - backoff_strategy
+      properties:
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+        backoff_strategy:
+          type: string
+          enum:
+            - fixed
+            - exponential
+          default: exponential
+        initial_backoff_ms:
+          type: integer
+          minimum: 100
+          maximum: 60000
+          default: 500
+        max_backoff_ms:
+          type: integer
+          minimum: 100
+          maximum: 300000
+          default: 10000
+
+    SubscriptionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - sub_id
+        - name
+        - status
+        - created_at
+        - updated_at
+        - stream_ids
+        - filters
+        - delivery
+      properties:
+        sub_id:
+          type: string
+          example: sub-51f63f1785
+        name:
+          type: string
+          example: west-ran-critical-alerts
+        status:
+          type: string
+          enum:
+            - active
+            - paused
+            - deleting
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        stream_ids:
+          type: array
+          items:
+            type: string
+        filters:
+          $ref: '#/components/schemas/SubscriptionFilterSummary'
+        delivery:
+          $ref: '#/components/schemas/SubscriptionDeliverySummary'
+
+    SubscriptionFilterSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        min_severity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+            - critical
+        min_abs_z_score:
+          type: number
+          format: float
+
+    SubscriptionDeliverySummary:
+      type: object
+      additionalProperties: false
+      properties:
+        channel:
+          type: string
+          enum:
+            - webhook
+            - queue
+        endpoint_url:
+          type: string
+          format: uri
+        timeout_ms:
+          type: integer
+
+    CellTimelineResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - cell_id
+        - from
+        - to
+        - resolution
+        - points
+        - meta
+      properties:
+        cell_id:
+          type: string
+          example: NCI-310-410-12001
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        resolution:
+          type: string
+          example: 1m
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelinePoint'
+        meta:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/ResponseMeta'
+            - type: object
+              properties:
+                downsampled:
+                  type: boolean
+
+    TimelinePoint:
+      type: object
+      additionalProperties: false
+      required:
+        - ts
+      properties:
+        ts:
+          type: string
+          format: date-time
+        slice_id:
+          type: string
+          example: eMBB-primary
+        rsrp_dbm:
+          type: number
+          format: float
+        rsrq_db:
+          type: number
+          format: float
+        sinr_db:
+          type: number
+          format: float
+        cqi:
+          type: integer
+        prb_utilization:
+          type: number
+          format: float
+        dl_throughput_mbps:
+          type: number
+          format: float
+        ul_throughput_mbps:
+          type: number
+          format: float
+        ue_count:
+          type: integer
+
+    StreamHealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - generated_at
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - unhealthy
+        generated_at:
+          type: string
+          format: date-time
+        scope:
+          $ref: '#/components/schemas/HealthScope'
+        ingest:
+          $ref: '#/components/schemas/IngestHealth'
+        processing:
+          $ref: '#/components/schemas/ProcessingHealth'
+        anomalies:
+          $ref: '#/components/schemas/AnomalyHealth'
+        subscriptions:
+          $ref: '#/components/schemas/SubscriptionHealth'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/HealthError'
+
+    HealthScope:
+      type: object
+      additionalProperties: false
+      properties:
+        stream_id:
+          type: string
+          example: stream-ran-west-01
+        region:
+          type: string
+          example: us-west-2
+
+    IngestHealth:
+      type: object
+      additionalProperties: false
+      properties:
+        events_per_second:
+          type: number
+          format: float
+        accepted_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        reject_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    ProcessingHealth:
+      type: object
+      additionalProperties: false
+      properties:
+        lag_seconds_p50:
+          type: number
+          format: float
+        lag_seconds_p95:
+          type: number
+          format: float
+        lag_seconds_p99:
+          type: number
+          format: float
+        backlog_events:
+          type: integer
+          minimum: 0
+
+    AnomalyHealth:
+      type: object
+      additionalProperties: false
+      properties:
+        anomalies_per_minute:
+          type: number
+          format: float
+        critical_open_count:
+          type: integer
+          minimum: 0
+
+    SubscriptionHealth:
+      type: object
+      additionalProperties: false
+      properties:
+        active_count:
+          type: integer
+          minimum: 0
+        dispatch_success_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        dispatch_error_rate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    HealthError:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: STREAM_BACKPRESSURE
+        message:
+          type: string
+        first_seen_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+        - request_id
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+        request_id:
+          type: string
+          description: Server-generated request correlation identifier
+          example: req-e27bc9f4ef
+
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: BAD_REQUEST
+        message:
+          type: string
+          example: Invalid request parameters
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorFieldDetail'
+
+    ErrorFieldDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - issue
+      properties:
+        field:
+          type: string
+          example: events[0].cqi
+        issue:
+          type: string
+          example: must be between 0 and 15
+
+    PaginationMeta:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        per_page:
+          type: integer
+          minimum: 1
+          example: 50
+        total:
+          type: integer
+          minimum: 0
+          example: 2
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 1
+
+    ResponseMeta:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - generated_at
+      properties:
+        request_id:
+          type: string
+          example: req-5be629f9c1
+        generated_at:
+          type: string
+          format: date-time
+        partial_results:
+          type: boolean

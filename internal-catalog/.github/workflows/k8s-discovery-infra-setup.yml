@@ -1,0 +1,340 @@
+name: Kubernetes Discovery Shared Infrastructure Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: AWS region for kubernetes shared infrastructure
+        required: true
+        default: eu-west-2
+        type: string
+      resource_prefix:
+        description: Prefix for shared kubernetes resources
+        required: true
+        default: vzw-partner-demo
+        type: string
+      k8s_namespace:
+        description: Kubernetes namespace for discovery daemonset
+        required: true
+        default: vzw-partner-demo
+        type: string
+      team_slug:
+        description: Team slug for isolated daemonset namespace
+        required: false
+        default: default
+        type: string
+      team_id:
+        description: Postman team id for verification token lookup
+        required: true
+        type: string
+
+concurrency:
+  group: k8s-discovery-infra-lifecycle
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      RESOURCE_PREFIX: ${{ inputs.resource_prefix }}
+      K8S_NAMESPACE: ${{ inputs.k8s_namespace }}
+      TEAM_SLUG: ${{ inputs.team_slug }}
+      AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.0.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure kubeconfig
+        run: |
+          set -euo pipefail
+          if [ -z "${{ secrets.KUBECONFIG_B64 }}" ]; then
+            echo "::error::KUBECONFIG_B64 secret is required"
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          # Remove kubeconfig profile references so aws CLI uses env var credentials
+          sed -i '/^[[:space:]]*- --profile$/ {N;d;}' "$HOME/.kube/config"
+          sed -i '/^[[:space:]]*- --profile=.*/d' "$HOME/.kube/config"
+          sed -i '/^[[:space:]]*- name: AWS_PROFILE$/ {N;d;}' "$HOME/.kube/config"
+          sed -i '/^[[:space:]]*- name: AWS_DEFAULT_PROFILE$/ {N;d;}' "$HOME/.kube/config"
+          if grep -Eq -- '^[[:space:]]*- --profile($|=)|^[[:space:]]*- name: AWS_(DEFAULT_)?PROFILE$' "$HOME/.kube/config"; then
+            echo "::error::kubeconfig still contains AWS profile references after sanitization"
+            exit 1
+          fi
+          echo "Kubeconfig profile references sanitized"
+          if [ -n "${{ vars.K8S_CONTEXT }}" ]; then
+            kubectl config use-context "${{ vars.K8S_CONTEXT }}"
+          fi
+
+      - name: Deploy discovery DaemonSet
+        id: daemonset
+        env:
+          POSTMAN_API_KEY: ${{ secrets.POSTMAN_API_KEY }}
+          POSTMAN_ACCESS_TOKEN: ${{ secrets.POSTMAN_ACCESS_TOKEN }}
+          POSTMAN_TEAM_ID: ${{ inputs.team_id }}
+        run: |
+          set -euo pipefail
+          CLUSTER_NAME="${{ vars.POSTMAN_INSIGHTS_CLUSTER_NAME }}"
+          if [ -z "${CLUSTER_NAME}" ]; then
+            echo "::error::POSTMAN_INSIGHTS_CLUSTER_NAME variable is required"
+            exit 1
+          fi
+          if [ -z "${POSTMAN_API_KEY}" ]; then
+            echo "::error::POSTMAN_API_KEY secret is required"
+            exit 1
+          fi
+
+          SAFE_TEAM_SLUG="$(echo "${TEAM_SLUG}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/-\+/-/g; s/^-//; s/-$//')"
+          [ -z "${SAFE_TEAM_SLUG}" ] && SAFE_TEAM_SLUG="default"
+          DS_NAMESPACE="postman-insights-${SAFE_TEAM_SLUG}"
+          DS_NAME="postman-insights-agent"
+
+          # Auto-discover a workspace UUID for the verification token call.
+          # The token is team-scoped (same value regardless of workspace), so any workspace works.
+          WORKSPACE_ID=$(curl -sS "https://api.getpostman.com/workspaces" \
+            -H "x-api-key: ${POSTMAN_API_KEY}" | jq -r '.workspaces[0].id // empty')
+
+          VERIFY_TOKEN=""
+          if [ -z "${WORKSPACE_ID}" ]; then
+            echo "::warning::No workspaces found via Postman API; skipping verification token"
+          else
+            echo "Retrieving team verification token via Bifrost (workspace: ${WORKSPACE_ID})..."
+            VERIFY_TOKEN=$(curl -sS -X POST "https://bifrost-premium-https-v4.gw.postman.com/ws/proxy" \
+              -H "Content-Type: application/json" \
+              -H "x-access-token: ${POSTMAN_ACCESS_TOKEN}" \
+              -H "x-entity-team-id: ${POSTMAN_TEAM_ID}" \
+              -d "{
+                \"service\": \"akita\",
+                \"method\": \"GET\",
+                \"path\": \"/v2/workspaces/${WORKSPACE_ID}/team-verification-token\",
+                \"body\": {}
+              }" | jq -r '.team_verification_token // empty')
+
+            if [ -z "${VERIFY_TOKEN}" ]; then
+              echo "::warning::Failed to retrieve team verification token; proceeding without it"
+            else
+              echo "Retrieved team verification token"
+            fi
+          fi
+
+          # Create namespace
+          kubectl create namespace "${DS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create secret with both API key and verification token
+          if [ -n "${VERIFY_TOKEN}" ]; then
+            kubectl create secret generic postman-agent-secrets \
+              --namespace "${DS_NAMESPACE}" \
+              --from-literal=postman-api-key="${POSTMAN_API_KEY}" \
+              --from-literal=postman-verification-token="${VERIFY_TOKEN}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+          else
+            kubectl create secret generic postman-agent-secrets \
+              --namespace "${DS_NAMESPACE}" \
+              --from-literal=postman-api-key="${POSTMAN_API_KEY}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+          fi
+
+          # Generate and apply the full DaemonSet manifest
+          cat <<MANIFEST | kubectl apply -f -
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: postman-insights-service-account
+            namespace: ${DS_NAMESPACE}
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: postman-insights-read-only-role-${TEAM_SLUG}
+          rules:
+          - apiGroups: [""]
+            resources: ["pods", "nodes"]
+            verbs: ["get", "list", "watch"]
+          - apiGroups: ["apps"]
+            resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+            verbs: ["get", "list", "watch"]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: postman-insights-view-all-resources-binding-${TEAM_SLUG}
+          subjects:
+          - kind: ServiceAccount
+            name: postman-insights-service-account
+            namespace: ${DS_NAMESPACE}
+          roleRef:
+            kind: ClusterRole
+            name: postman-insights-read-only-role-${TEAM_SLUG}
+            apiGroup: rbac.authorization.k8s.io
+          ---
+          apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: ${DS_NAME}
+            namespace: ${DS_NAMESPACE}
+            labels:
+              name: ${DS_NAME}
+          spec:
+            selector:
+              matchLabels:
+                name: ${DS_NAME}
+            template:
+              metadata:
+                labels:
+                  name: ${DS_NAME}
+              spec:
+                serviceAccountName: postman-insights-service-account
+                hostNetwork: true
+                hostPID: true
+                containers:
+                - name: ${DS_NAME}
+                  image: public.ecr.aws/postman/postman-insights-agent:latest
+                  args:
+                  - kube
+                  - run
+                  - --discovery-mode
+                  - --repro-mode
+                  - --include-namespaces
+                  - "${K8S_NAMESPACE}"
+                  env:
+                  - name: POSTMAN_INSIGHTS_CLUSTER_NAME
+                    value: "${CLUSTER_NAME}"
+                  - name: POSTMAN_INSIGHTS_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: postman-agent-secrets
+                        key: postman-api-key
+                  - name: POSTMAN_INSIGHTS_K8S_NODE
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: spec.nodeName
+                  - name: POSTMAN_INSIGHTS_CRI_ENDPOINT
+                    value: /var/run/containerd/containerd.sock
+                  - name: POSTMAN_INSIGHTS_VERIFICATION_TOKEN
+                    valueFrom:
+                      secretKeyRef:
+                        name: postman-agent-secrets
+                        key: postman-verification-token
+                        optional: true
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 256Mi
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+                  securityContext:
+                    privileged: true
+                  volumeMounts:
+                  - name: cri-socket
+                    mountPath: /var/run/containerd/containerd.sock
+                    readOnly: true
+                  - name: host-proc
+                    mountPath: /host/proc
+                    readOnly: true
+                volumes:
+                - name: cri-socket
+                  hostPath:
+                    path: /var/run/containerd/containerd.sock
+                    type: Socket
+                - name: host-proc
+                  hostPath:
+                    path: /proc
+          MANIFEST
+
+          echo "DaemonSet applied. Waiting for pods to be ready..."
+
+          # Poll for readiness (up to 2 minutes)
+          for _attempt in $(seq 1 24); do
+            DS_READY=$(kubectl get daemonset "${DS_NAME}" -n "${DS_NAMESPACE}" -o jsonpath='{.status.numberReady}' 2>/dev/null || echo "0")
+            DS_DESIRED=$(kubectl get daemonset "${DS_NAME}" -n "${DS_NAMESPACE}" -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "0")
+            if [ "${DS_READY:-0}" -gt 0 ] && [ "${DS_READY}" -eq "${DS_DESIRED}" ]; then
+              echo "DaemonSet ready: ${DS_READY}/${DS_DESIRED} pods"
+              break
+            fi
+            echo "Waiting for DaemonSet pods (${DS_READY:-0}/${DS_DESIRED:-?})..."
+            sleep 5
+          done
+
+          # Final check
+          DS_READY=$(kubectl get daemonset "${DS_NAME}" -n "${DS_NAMESPACE}" -o jsonpath='{.status.numberReady}' 2>/dev/null || echo "0")
+          DS_DESIRED=$(kubectl get daemonset "${DS_NAME}" -n "${DS_NAMESPACE}" -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "0")
+          if [ "${DS_READY:-0}" -lt 1 ]; then
+            echo "::error::DaemonSet not ready after 2 minutes (ready=${DS_READY}, desired=${DS_DESIRED})"
+            kubectl get pods -n "${DS_NAMESPACE}" -o wide
+            kubectl describe daemonset "${DS_NAME}" -n "${DS_NAMESPACE}"
+            exit 1
+          fi
+
+          {
+            echo "daemonset_namespace=${DS_NAMESPACE}"
+            echo "daemonset_name=${DS_NAME}"
+            echo "cluster_name=${CLUSTER_NAME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upsert Airtable record (active)
+        run: |
+          set -euo pipefail
+          if [ -z "${AIRTABLE_API_KEY}" ] || [ -z "${AIRTABLE_BASE_ID}" ]; then
+            echo "AIRTABLE_API_KEY and AIRTABLE_BASE_ID are required secrets"
+            exit 1
+          fi
+
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          QUERY_URL="https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Infrastructure"
+          FILTER="{component}='k8s_discovery_shared'"
+
+          RESP="$(curl -sS --get "${QUERY_URL}" \
+            -H "Authorization: Bearer ${AIRTABLE_API_KEY}" \
+            --data-urlencode "filterByFormula=${FILTER}" \
+            --data-urlencode "maxRecords=1")"
+          REC_ID="$(echo "${RESP}" | jq -r '.records[0].id // empty')"
+
+          PAYLOAD="$(jq -n \
+            --arg status "active" \
+            --arg now "${NOW}" \
+            --arg run_url "${RUN_URL}" \
+            --arg region "${AWS_REGION}" \
+            --arg namespace "${{ steps.daemonset.outputs.daemonset_namespace }}" \
+            --arg daemonset_name "${{ steps.daemonset.outputs.daemonset_name }}" \
+            --arg cluster_name "${{ steps.daemonset.outputs.cluster_name }}" \
+            --arg context "${{ vars.K8S_CONTEXT }}" \
+            --arg ingress "${{ vars.K8S_INGRESS_BASE_DOMAIN }}" \
+            '{fields:{
+              component:"k8s_discovery_shared",
+              status:$status,
+              aws_region:$region,
+              k8s_namespace:$namespace,
+              k8s_daemonset_name:$daemonset_name,
+              k8s_cluster_name:$cluster_name,
+              k8s_context:$context,
+              alb_dns_name:$ingress,
+              created_at:$now,
+              updated_at:$now,
+              last_error:"",
+              last_run_url:$run_url
+            }}')"
+
+          if [ -n "${REC_ID}" ]; then
+            curl -sS -X PATCH "${QUERY_URL}/${REC_ID}" \
+              -H "Authorization: Bearer ${AIRTABLE_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "${PAYLOAD}" >/dev/null
+          else
+            curl -sS -X POST "${QUERY_URL}" \
+              -H "Authorization: Bearer ${AIRTABLE_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "${PAYLOAD}" >/dev/null
+          fi

@@ -1,0 +1,2216 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Trading API
+  description: Advanced trading services for equities and options. Provides extended-hours trading (pre-market and after-
+    hours), margin account management with Reg-T and portfolio margin support, short selling with borrow locate management,
+    options chain data with Greeks (delta, gamma, theta, vega), algorithmic order strategies (TWAP, VWAP, POV, implementation
+    shortfall), and real-time trading halt monitoring.
+  version: 5.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-invest-trading
+  x-acme-domain: invest
+servers:
+- url: https://af-invest-trading.api.acmefin.com/v1
+  description: Production
+- url: https://af-invest-trading.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Trading Sessions
+  description: Exchange session status and extended-hours trading windows
+- name: Extended Hours
+  description: Pre-market and after-hours limit order submission
+- name: Margin
+  description: Margin account balances, buying power, and maintenance requirements
+- name: Short Selling
+  description: Short position management and stock borrow locate services
+- name: Options
+  description: Options chain data, Greeks, and implied volatility analytics
+- name: Algorithmic Trading
+  description: Algorithmic order strategies including TWAP, VWAP, and POV
+- name: Trading Halts
+  description: Real-time trading halt and resumption monitoring
+paths:
+  /trading/sessions:
+    get:
+      operationId: listTradingSessions
+      summary: List trading sessions
+      description: Retrieve current and upcoming trading sessions across exchanges with pre-market, regular, and after- hours
+        windows. Includes session status, start/end times, and halt information.
+      tags:
+      - Trading Sessions
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        session_id:
+                          type: string
+                          description: Trading session identifier
+                          format: uuid
+                          example: sess-a1b2c3d4
+                        exchange:
+                          type: string
+                          description: Exchange
+                          example: NYSE
+                        session_type:
+                          type: string
+                          description: Session type
+                          enum:
+                          - pre_market
+                          - regular
+                          - after_hours
+                        status:
+                          type: string
+                          description: Session status
+                          enum:
+                          - open
+                          - closed
+                          - halted
+                        start_time:
+                          type: string
+                          description: Session start time
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                        end_time:
+                          type: string
+                          description: Session end time
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - session_id
+                      - exchange
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/sessions/{session_id}:
+    get:
+      operationId: getTradingSession
+      summary: Get session details
+      description: Retrieve detailed information for a specific trading session including status, timing, and any active halts
+        or circuit breakers.
+      tags:
+      - Trading Sessions
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        description: Unique session id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Trading session identifier
+                    format: uuid
+                    example: sess-a1b2c3d4
+                  exchange:
+                    type: string
+                    description: Exchange
+                    example: NYSE
+                  session_type:
+                    type: string
+                    description: Session type
+                    enum:
+                    - pre_market
+                    - regular
+                    - after_hours
+                  status:
+                    type: string
+                    description: Session status
+                    enum:
+                    - open
+                    - closed
+                    - halted
+                  start_time:
+                    type: string
+                    description: Session start time
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  end_time:
+                    type: string
+                    description: Session end time
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - session_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/extended-hours/orders:
+    get:
+      operationId: listExtendedHoursOrders
+      summary: List extended hours orders
+      description: Retrieve orders placed during pre-market or after-hours trading sessions. Extended hours orders must be
+        limit orders and are subject to different liquidity and volatility conditions.
+      tags:
+      - Extended Hours
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: session
+        in: query
+        required: false
+        description: Filter by session type
+        schema:
+          type: string
+          enum:
+          - pre_market
+          - after_hours
+      - name: status
+        in: query
+        required: false
+        description: Filter by order status
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        order_id:
+                          type: string
+                          description: Extended hours order identifier
+                          format: uuid
+                          example: ord-a1b2c3d4
+                        ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        side:
+                          type: string
+                          description: Order side
+                          enum:
+                          - buy
+                          - sell
+                        quantity:
+                          type: number
+                          description: Order quantity
+                          format: double
+                          example: 100
+                        limit_price:
+                          type: number
+                          description: Limit price (required for extended hours)
+                          format: double
+                          example: 178.0
+                        session:
+                          type: string
+                          description: Trading session
+                          enum:
+                          - pre_market
+                          - after_hours
+                        status:
+                          type: string
+                          description: Order status
+                          enum:
+                          - new
+                          - filled
+                          - canceled
+                          - rejected
+                        submitted_at:
+                          type: string
+                          description: Submission timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - order_id
+                      - ticker
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: placeExtendedHoursOrder
+      summary: Place extended hours order
+      description: Submit a limit order for execution during pre-market (4:00-9:30 AM ET) or after-hours (4:00-8:00 PM ET)
+        trading sessions. Only limit orders are accepted during extended hours.
+      tags:
+      - Extended Hours
+      requestBody:
+        required: true
+        description: Place extended hours order request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                side:
+                  type: string
+                  description: Order side
+                  enum:
+                  - buy
+                  - sell
+                quantity:
+                  type: number
+                  description: Shares
+                  format: double
+                  example: 100
+                limit_price:
+                  type: number
+                  description: Limit price
+                  format: double
+                  example: 178.0
+                session:
+                  type: string
+                  description: Target session
+                  enum:
+                  - pre_market
+                  - after_hours
+              required:
+              - account_id
+              - ticker
+              - side
+              - quantity
+              - limit_price
+              - session
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    description: Extended hours order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  side:
+                    type: string
+                    description: Order side
+                    enum:
+                    - buy
+                    - sell
+                  quantity:
+                    type: number
+                    description: Order quantity
+                    format: double
+                    example: 100
+                  limit_price:
+                    type: number
+                    description: Limit price (required for extended hours)
+                    format: double
+                    example: 178.0
+                  session:
+                    type: string
+                    description: Trading session
+                    enum:
+                    - pre_market
+                    - after_hours
+                  status:
+                    type: string
+                    description: Order status
+                    enum:
+                    - new
+                    - filled
+                    - canceled
+                    - rejected
+                  submitted_at:
+                    type: string
+                    description: Submission timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - order_id
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /trading/margin/{account_id}:
+    get:
+      operationId: getMarginStatus
+      summary: Get margin account status
+      description: Retrieve real-time margin account details including equity, margin balance, buying power, maintenance requirement,
+        SMA balance, day trade buying power (for PDT accounts), and any outstanding margin calls.
+      tags:
+      - Margin
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Margin account identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  margin_type:
+                    type: string
+                    description: Margin account type
+                    enum:
+                    - reg_t
+                    - portfolio_margin
+                  equity:
+                    type: object
+                    description: Account equity
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 250000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  margin_balance:
+                    type: object
+                    description: Margin debit balance (borrowed funds)
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 75000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  buying_power:
+                    type: object
+                    description: Available buying power
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 350000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  maintenance_requirement:
+                    type: object
+                    description: Maintenance margin requirement
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 112500.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  maintenance_excess:
+                    type: object
+                    description: Excess above maintenance (margin cushion)
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 62500.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  sma:
+                    type: object
+                    description: Special Memorandum Account balance
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 45000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  margin_call_amount:
+                    type: object
+                    description: Outstanding margin call amount (0 if no call)
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  day_trade_buying_power:
+                    type: object
+                    description: Day trade buying power (4x equity for PDT accounts)
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 1000000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                required:
+                - account_id
+                - equity
+                - buying_power
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/margin/{account_id}/requirement:
+    post:
+      operationId: calculateMarginRequirement
+      summary: Calculate margin requirement
+      description: Calculate the initial and maintenance margin requirement for a proposed trade. Returns the margin impact,
+        buying power effect, and whether the trade would trigger a margin call.
+      tags:
+      - Margin
+      requestBody:
+        required: true
+        description: Calculate margin requirement request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                side:
+                  type: string
+                  description: Order side
+                  enum:
+                  - buy
+                  - sell_short
+                quantity:
+                  type: number
+                  description: Shares
+                  format: double
+                  example: 100
+                limit_price:
+                  type: number
+                  description: Estimated price
+                  format: double
+                  example: 178.0
+              required:
+              - ticker
+              - side
+              - quantity
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  initial_requirement:
+                    type: object
+                    description: Initial margin requirement
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 8900.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  maintenance_requirement:
+                    type: object
+                    description: Maintenance margin requirement
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 6675.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  buying_power_impact:
+                    type: object
+                    description: Impact on buying power
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: -8900.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  would_trigger_margin_call:
+                    type: boolean
+                    description: Whether trade would cause margin call
+                    example: false
+                  post_trade_maintenance_excess:
+                    type: object
+                    description: Maintenance excess after trade
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 53600.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                required:
+                - initial_requirement
+                - would_trigger_margin_call
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /trading/short-positions:
+    get:
+      operationId: listShortPositions
+      summary: List short positions
+      description: Retrieve all open short positions with entry price, current P&L, borrow rate, and accrued borrow cost.
+        Short sellers are responsible for dividend payments and must maintain adequate margin.
+      tags:
+      - Short Selling
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: account_id
+        in: query
+        required: false
+        description: Filter by account
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        short_position_id:
+                          type: string
+                          description: Short position identifier
+                          format: uuid
+                          example: shrt-a1b2c3d4
+                        account_id:
+                          type: string
+                          description: Brokerage account identifier
+                          format: uuid
+                          example: acct-a1b2c3d4
+                        ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        quantity:
+                          type: number
+                          description: Shares sold short (positive number)
+                          format: double
+                          example: 200
+                        entry_price:
+                          type: number
+                          description: Average short sale price
+                          format: double
+                          example: 185.0
+                        current_price:
+                          type: number
+                          description: Current market price
+                          format: double
+                          example: 178.5
+                        unrealized_pnl:
+                          type: object
+                          description: Unrealized P&L on short position
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 1300.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        borrow_rate:
+                          type: number
+                          description: Current stock borrow rate (annualized %)
+                          format: double
+                          example: 0.5
+                        borrow_cost_accrued:
+                          type: object
+                          description: Accumulated borrow cost
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 12.5
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        short_available:
+                          type: boolean
+                          description: Whether shares are currently available to borrow
+                          example: true
+                      required:
+                      - short_position_id
+                      - ticker
+                      - quantity
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/short-positions/{short_position_id}:
+    get:
+      operationId: getShortPosition
+      summary: Get short position details
+      description: Retrieve detailed short position information including unrealized P&L, current borrow rate, accumulated
+        borrow costs, and short squeeze risk indicators.
+      tags:
+      - Short Selling
+      parameters:
+      - name: short_position_id
+        in: path
+        required: true
+        description: Unique short position id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  short_position_id:
+                    type: string
+                    description: Short position identifier
+                    format: uuid
+                    example: shrt-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  quantity:
+                    type: number
+                    description: Shares sold short (positive number)
+                    format: double
+                    example: 200
+                  entry_price:
+                    type: number
+                    description: Average short sale price
+                    format: double
+                    example: 185.0
+                  current_price:
+                    type: number
+                    description: Current market price
+                    format: double
+                    example: 178.5
+                  unrealized_pnl:
+                    type: object
+                    description: Unrealized P&L on short position
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 1300.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  borrow_rate:
+                    type: number
+                    description: Current stock borrow rate (annualized %)
+                    format: double
+                    example: 0.5
+                  borrow_cost_accrued:
+                    type: object
+                    description: Accumulated borrow cost
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 12.5
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  short_available:
+                    type: boolean
+                    description: Whether shares are currently available to borrow
+                    example: true
+                required:
+                - short_position_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/locates:
+    post:
+      operationId: requestBorrowLocate
+      summary: Request borrow locate
+      description: Request a stock borrow locate to sell short. The locate confirms share availability and provides an indicative
+        borrow rate. Locates are valid for the current trading session only.
+      tags:
+      - Short Selling
+      requestBody:
+        required: true
+        description: Request borrow locate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                quantity:
+                  type: integer
+                  description: Shares to borrow
+                  example: 500
+              required:
+              - account_id
+              - ticker
+              - quantity
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  locate_id:
+                    type: string
+                    description: Borrow locate identifier
+                    format: uuid
+                    example: loc-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  quantity_requested:
+                    type: integer
+                    description: Shares requested to borrow
+                    example: 500
+                  quantity_located:
+                    type: integer
+                    description: Shares located/available
+                    example: 500
+                  borrow_rate:
+                    type: number
+                    description: Indicative borrow rate (annualized %)
+                    format: double
+                    example: 0.5
+                  locate_status:
+                    type: string
+                    description: Locate status
+                    enum:
+                    - available
+                    - partial
+                    - unavailable
+                    - expired
+                  valid_until:
+                    type: string
+                    description: Locate validity expiration
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - locate_id
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /trading/locates/{locate_id}:
+    get:
+      operationId: getBorrowLocate
+      summary: Get locate status
+      description: Check the status of a stock borrow locate request including availability, quantity located, borrow rate,
+        and validity expiration.
+      tags:
+      - Short Selling
+      parameters:
+      - name: locate_id
+        in: path
+        required: true
+        description: Unique locate id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  locate_id:
+                    type: string
+                    description: Borrow locate identifier
+                    format: uuid
+                    example: loc-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  quantity_requested:
+                    type: integer
+                    description: Shares requested to borrow
+                    example: 500
+                  quantity_located:
+                    type: integer
+                    description: Shares located/available
+                    example: 500
+                  borrow_rate:
+                    type: number
+                    description: Indicative borrow rate (annualized %)
+                    format: double
+                    example: 0.5
+                  locate_status:
+                    type: string
+                    description: Locate status
+                    enum:
+                    - available
+                    - partial
+                    - unavailable
+                    - expired
+                  valid_until:
+                    type: string
+                    description: Locate validity expiration
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - locate_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/options/chains/{ticker}:
+    get:
+      operationId: getOptionsChain
+      summary: Get options chain
+      description: Retrieve the full options chain for an underlying security with all available expirations and strikes.
+        Includes bid/ask, volume, open interest, implied volatility, and Greeks (delta, gamma, theta, vega) for each contract.
+      tags:
+      - Options
+      parameters:
+      - name: ticker
+        in: path
+        required: true
+        description: Underlying ticker symbol
+        schema:
+          type: string
+      - name: expiration
+        in: query
+        required: false
+        description: Filter by expiration date
+        schema:
+          type: string
+          format: date
+      - name: option_type
+        in: query
+        required: false
+        description: Filter by call or put
+        schema:
+          type: string
+          enum:
+          - call
+          - put
+      - name: min_strike
+        in: query
+        required: false
+        description: Minimum strike price
+        schema:
+          type: number
+      - name: max_strike
+        in: query
+        required: false
+        description: Maximum strike price
+        schema:
+          type: number
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  underlying_ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  underlying_price:
+                    type: number
+                    description: Current underlying price
+                    format: double
+                    example: 178.5
+                  expiration_date:
+                    type: string
+                    description: Option expiration date
+                    format: date
+                    example: '2025-07-18'
+                  strikes:
+                    type: array
+                    description: Available strike prices with call/put data
+                    items:
+                      type: object
+                  iv_rank:
+                    type: number
+                    description: Implied volatility rank (percentile)
+                    format: double
+                    example: 35.0
+                  iv_30d:
+                    type: number
+                    description: 30-day implied volatility
+                    format: double
+                    example: 22.5
+                  put_call_ratio:
+                    type: number
+                    description: Put/call open interest ratio
+                    format: double
+                    example: 0.85
+                required:
+                - underlying_ticker
+                - strikes
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/options/contracts/{contract_id}:
+    get:
+      operationId: getOptionContract
+      summary: Get option contract details
+      description: Retrieve detailed information for a specific option contract including real-time bid/ask, volume, open
+        interest, implied volatility, and the full set of Greeks.
+      tags:
+      - Options
+      parameters:
+      - name: contract_id
+        in: path
+        required: true
+        description: Unique contract id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_id:
+                    type: string
+                    description: Option contract identifier
+                    format: uuid
+                    example: opt-a1b2c3d4
+                  underlying_ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  option_type:
+                    type: string
+                    description: Option type
+                    enum:
+                    - call
+                    - put
+                  strike_price:
+                    type: number
+                    description: Strike price
+                    format: double
+                    example: 180.0
+                  expiration_date:
+                    type: string
+                    description: Expiration date
+                    format: date
+                    example: '2025-07-18'
+                  bid:
+                    type: number
+                    description: Current bid
+                    format: double
+                    example: 3.4
+                  ask:
+                    type: number
+                    description: Current ask
+                    format: double
+                    example: 3.6
+                  last:
+                    type: number
+                    description: Last traded price
+                    format: double
+                    example: 3.5
+                  volume:
+                    type: integer
+                    description: Today's volume
+                    example: 1250
+                  open_interest:
+                    type: integer
+                    description: Open interest
+                    example: 8400
+                  implied_volatility:
+                    type: number
+                    description: Implied volatility
+                    format: double
+                    example: 0.225
+                  delta:
+                    type: number
+                    description: Option delta
+                    format: double
+                    example: 0.45
+                  gamma:
+                    type: number
+                    description: Option gamma
+                    format: double
+                    example: 0.035
+                  theta:
+                    type: number
+                    description: Option theta (daily time decay)
+                    format: double
+                    example: -0.08
+                  vega:
+                    type: number
+                    description: Option vega
+                    format: double
+                    example: 0.18
+                required:
+                - contract_id
+                - underlying_ticker
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/options/expirations/{ticker}:
+    get:
+      operationId: getOptionExpirations
+      summary: Get available expirations
+      description: Retrieve all available option expiration dates for an underlying security, indicating weekly vs. monthly
+        expirations and days to expiration.
+      tags:
+      - Options
+      parameters:
+      - name: ticker
+        in: path
+        required: true
+        description: Underlying ticker symbol
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  underlying_ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  expirations:
+                    type: array
+                    description: Available expiration dates with metadata
+                    items:
+                      type: object
+                required:
+                - underlying_ticker
+                - expirations
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/algos:
+    get:
+      operationId: listAlgoOrders
+      summary: List algorithmic orders
+      description: Retrieve active and completed algorithmic orders with fill progress, average execution price, and participation
+        rate metrics.
+      tags:
+      - Algorithmic Trading
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: account_id
+        in: query
+        required: false
+        description: Filter by account
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        description: Filter by status
+        schema:
+          type: string
+          enum:
+          - running
+          - completed
+          - paused
+          - canceled
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        algo_order_id:
+                          type: string
+                          description: Algorithmic order identifier
+                          format: uuid
+                          example: algo-a1b2c3d4
+                        account_id:
+                          type: string
+                          description: Brokerage account identifier
+                          format: uuid
+                          example: acct-a1b2c3d4
+                        ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        side:
+                          type: string
+                          description: Order side
+                          enum:
+                          - buy
+                          - sell
+                        total_quantity:
+                          type: number
+                          description: Total order quantity
+                          format: double
+                          example: 50000
+                        algo_type:
+                          type: string
+                          description: Algorithm type
+                          enum:
+                          - twap
+                          - vwap
+                          - pov
+                          - implementation_shortfall
+                          - iceberg
+                        start_time:
+                          type: string
+                          description: Algorithm start time
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                        end_time:
+                          type: string
+                          description: Algorithm end time
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                        filled_quantity:
+                          type: number
+                          description: Shares filled so far
+                          format: double
+                          example: 32000
+                        avg_fill_price:
+                          type: number
+                          description: Average fill price
+                          format: double
+                          example: 178.15
+                        participation_rate:
+                          type: number
+                          description: Target participation rate (for POV)
+                          format: double
+                          example: 10.0
+                        status:
+                          type: string
+                          description: Algo order status
+                          enum:
+                          - running
+                          - completed
+                          - paused
+                          - canceled
+                      required:
+                      - algo_order_id
+                      - ticker
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: submitAlgoOrder
+      summary: Submit algorithmic order
+      description: Submit an order for algorithmic execution using TWAP (time-weighted), VWAP (volume-weighted), POV (percentage
+        of volume), or implementation shortfall strategies. Algo orders minimize market impact for large block trades.
+      tags:
+      - Algorithmic Trading
+      requestBody:
+        required: true
+        description: Submit algorithmic order request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                side:
+                  type: string
+                  description: Side
+                  enum:
+                  - buy
+                  - sell
+                total_quantity:
+                  type: number
+                  description: Total shares
+                  format: double
+                  example: 50000
+                algo_type:
+                  type: string
+                  description: Algorithm
+                  enum:
+                  - twap
+                  - vwap
+                  - pov
+                  - implementation_shortfall
+                  - iceberg
+                start_time:
+                  type: string
+                  description: Algo start time
+                  format: date-time
+                  example: '2025-06-15T14:30:00Z'
+                end_time:
+                  type: string
+                  description: Algo end time
+                  format: date-time
+                  example: '2025-06-15T14:30:00Z'
+                participation_rate:
+                  type: number
+                  description: Target participation rate (for POV)
+                  format: double
+                  example: 10.0
+                limit_price:
+                  type: number
+                  description: Not-held limit price (optional)
+                  format: double
+                  example: 180.0
+              required:
+              - account_id
+              - ticker
+              - side
+              - total_quantity
+              - algo_type
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  algo_order_id:
+                    type: string
+                    description: Algorithmic order identifier
+                    format: uuid
+                    example: algo-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  side:
+                    type: string
+                    description: Order side
+                    enum:
+                    - buy
+                    - sell
+                  total_quantity:
+                    type: number
+                    description: Total order quantity
+                    format: double
+                    example: 50000
+                  algo_type:
+                    type: string
+                    description: Algorithm type
+                    enum:
+                    - twap
+                    - vwap
+                    - pov
+                    - implementation_shortfall
+                    - iceberg
+                  start_time:
+                    type: string
+                    description: Algorithm start time
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  end_time:
+                    type: string
+                    description: Algorithm end time
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  filled_quantity:
+                    type: number
+                    description: Shares filled so far
+                    format: double
+                    example: 32000
+                  avg_fill_price:
+                    type: number
+                    description: Average fill price
+                    format: double
+                    example: 178.15
+                  participation_rate:
+                    type: number
+                    description: Target participation rate (for POV)
+                    format: double
+                    example: 10.0
+                  status:
+                    type: string
+                    description: Algo order status
+                    enum:
+                    - running
+                    - completed
+                    - paused
+                    - canceled
+                required:
+                - algo_order_id
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /trading/algos/{algo_order_id}:
+    get:
+      operationId: getAlgoOrder
+      summary: Get algo order details
+      description: Retrieve detailed status of an algorithmic order including fill progress, average execution price, slippage
+        vs. arrival price, and participation rate.
+      tags:
+      - Algorithmic Trading
+      parameters:
+      - name: algo_order_id
+        in: path
+        required: true
+        description: Unique algo order id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  algo_order_id:
+                    type: string
+                    description: Algorithmic order identifier
+                    format: uuid
+                    example: algo-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  side:
+                    type: string
+                    description: Order side
+                    enum:
+                    - buy
+                    - sell
+                  total_quantity:
+                    type: number
+                    description: Total order quantity
+                    format: double
+                    example: 50000
+                  algo_type:
+                    type: string
+                    description: Algorithm type
+                    enum:
+                    - twap
+                    - vwap
+                    - pov
+                    - implementation_shortfall
+                    - iceberg
+                  start_time:
+                    type: string
+                    description: Algorithm start time
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  end_time:
+                    type: string
+                    description: Algorithm end time
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  filled_quantity:
+                    type: number
+                    description: Shares filled so far
+                    format: double
+                    example: 32000
+                  avg_fill_price:
+                    type: number
+                    description: Average fill price
+                    format: double
+                    example: 178.15
+                  participation_rate:
+                    type: number
+                    description: Target participation rate (for POV)
+                    format: double
+                    example: 10.0
+                  status:
+                    type: string
+                    description: Algo order status
+                    enum:
+                    - running
+                    - completed
+                    - paused
+                    - canceled
+                required:
+                - algo_order_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    delete:
+      operationId: cancelAlgoOrder
+      summary: Cancel algo order
+      description: Cancel a running algorithmic order. Shares already filled are retained; only unfilled quantity is canceled.
+      tags:
+      - Algorithmic Trading
+      parameters:
+      - name: algo_order_id
+        in: path
+        required: true
+        description: Unique algo order id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /trading/halts:
+    get:
+      operationId: listTradingHalts
+      summary: List active trading halts
+      description: Retrieve currently active trading halts across all exchanges. Includes halt type (LULD, news, regulatory),
+        reason, reference price, and estimated resume time.
+      tags:
+      - Trading Halts
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: exchange
+        in: query
+        required: false
+        description: Filter by exchange
+        schema:
+          type: string
+      - name: halt_type
+        in: query
+        required: false
+        description: Filter by halt type
+        schema:
+          type: string
+          enum:
+          - luld
+          - news_pending
+          - regulatory
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        halt_type:
+                          type: string
+                          description: Halt type
+                          enum:
+                          - luld
+                          - news_pending
+                          - regulatory
+                          - operational
+                        halt_time:
+                          type: string
+                          description: Halt start time
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                        resume_time:
+                          type: string
+                          description: Expected/actual resume time
+                          format: date-time
+                          example: ''
+                        halt_reason:
+                          type: string
+                          description: Detailed halt reason
+                          example: Limit Up-Limit Down (LULD) band triggered
+                        reference_price:
+                          type: number
+                          description: Reference price at halt
+                          format: double
+                          example: 178.5
+                      required:
+                      - ticker
+                      - halt_type
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

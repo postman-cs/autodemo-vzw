@@ -1,0 +1,1315 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Mutual Funds API
+  description: Mutual fund data services including fund screening, NAV history, share class details, prospectus access, distribution
+    history, and fund flow analytics. Covers load and no-load funds across equity, fixed income, balanced, and specialty categories
+    with Morningstar ratings integration.
+  version: 3.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-invest-mutual-funds
+  x-acme-domain: invest
+servers:
+- url: https://af-invest-mutual-funds.api.acmefin.com/v1
+  description: Production
+- url: https://af-invest-mutual-funds.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Fund Catalog
+  description: Search and screen mutual funds by category, family, rating, and fee structure
+- name: Share Classes
+  description: Share class details including load structure, expense ratios, and minimum investments
+- name: NAV & Performance
+  description: Historical NAV, total returns, and performance comparison
+- name: Distributions
+  description: Income dividend and capital gain distribution history
+- name: Fund Flows
+  description: Net fund flow data and organic growth rate analytics
+paths:
+  /funds:
+    get:
+      operationId: searchMutualFunds
+      summary: Search mutual funds
+      description: Search and screen mutual funds by category, fund family, Morningstar rating, load type, and expense ratio.
+        Returns fund profiles with NAV, total assets, and key metrics for comparison.
+      tags:
+      - Fund Catalog
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: category
+        in: query
+        required: false
+        description: Morningstar category filter
+        schema:
+          type: string
+      - name: fund_family
+        in: query
+        required: false
+        description: Fund family/company filter
+        schema:
+          type: string
+      - name: load_type
+        in: query
+        required: false
+        description: Sales load structure
+        schema:
+          type: string
+          enum:
+          - no_load
+          - front_load
+          - back_load
+      - name: min_rating
+        in: query
+        required: false
+        description: Minimum Morningstar star rating
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 5
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        fund_id:
+                          type: string
+                          description: Mutual fund identifier
+                          format: uuid
+                          example: mf-a1b2c3d4
+                        ticker:
+                          type: string
+                          description: Fund ticker symbol
+                          example: VFINX
+                        fund_name:
+                          type: string
+                          description: Fund full name
+                          example: Acme Large Cap Growth Fund
+                        fund_family:
+                          type: string
+                          description: Fund family/company
+                          example: Acme Asset Management
+                        category:
+                          type: string
+                          description: Morningstar category
+                          enum:
+                          - large_growth
+                          - large_blend
+                          - large_value
+                          - mid_growth
+                          - mid_blend
+                          - small_growth
+                          - bond_intermediate
+                          - balanced
+                        nav:
+                          type: number
+                          description: Net asset value per share
+                          format: double
+                          example: 42.87
+                        nav_date:
+                          type: string
+                          description: NAV calculation date
+                          format: date
+                          example: '2025-06-13'
+                        expense_ratio:
+                          type: number
+                          description: Annual expense ratio
+                          format: double
+                          example: 0.45
+                        load_type:
+                          type: string
+                          description: Sales load structure
+                          enum:
+                          - no_load
+                          - front_load
+                          - back_load
+                          - level_load
+                        min_investment:
+                          type: object
+                          description: Minimum initial investment
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 3000.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        total_assets:
+                          type: object
+                          description: Total net assets
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 12500000000.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        morningstar_rating:
+                          type: integer
+                          description: Morningstar star rating (1-5)
+                          example: 4
+                        inception_date:
+                          type: string
+                          description: Fund inception date
+                          format: date
+                          example: '1996-03-15'
+                        manager_name:
+                          type: string
+                          description: Lead portfolio manager
+                          example: Sarah Chen
+                        turnover_ratio:
+                          type: number
+                          description: Annual portfolio turnover ratio
+                          format: double
+                          example: 28.5
+                      required:
+                      - fund_id
+                      - ticker
+                      - fund_name
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /funds/{fund_id}:
+    get:
+      operationId: getMutualFund
+      summary: Get fund details
+      description: Retrieve comprehensive mutual fund profile including fund objectives, portfolio manager, total assets,
+        expense ratio, turnover ratio, Morningstar rating, and inception performance.
+      tags:
+      - Fund Catalog
+      parameters:
+      - name: fund_id
+        in: path
+        required: true
+        description: Unique fund id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fund_id:
+                    type: string
+                    description: Mutual fund identifier
+                    format: uuid
+                    example: mf-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Fund ticker symbol
+                    example: VFINX
+                  fund_name:
+                    type: string
+                    description: Fund full name
+                    example: Acme Large Cap Growth Fund
+                  fund_family:
+                    type: string
+                    description: Fund family/company
+                    example: Acme Asset Management
+                  category:
+                    type: string
+                    description: Morningstar category
+                    enum:
+                    - large_growth
+                    - large_blend
+                    - large_value
+                    - mid_growth
+                    - mid_blend
+                    - small_growth
+                    - bond_intermediate
+                    - balanced
+                  nav:
+                    type: number
+                    description: Net asset value per share
+                    format: double
+                    example: 42.87
+                  nav_date:
+                    type: string
+                    description: NAV calculation date
+                    format: date
+                    example: '2025-06-13'
+                  expense_ratio:
+                    type: number
+                    description: Annual expense ratio
+                    format: double
+                    example: 0.45
+                  load_type:
+                    type: string
+                    description: Sales load structure
+                    enum:
+                    - no_load
+                    - front_load
+                    - back_load
+                    - level_load
+                  min_investment:
+                    type: object
+                    description: Minimum initial investment
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 3000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_assets:
+                    type: object
+                    description: Total net assets
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 12500000000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  morningstar_rating:
+                    type: integer
+                    description: Morningstar star rating (1-5)
+                    example: 4
+                  inception_date:
+                    type: string
+                    description: Fund inception date
+                    format: date
+                    example: '1996-03-15'
+                  manager_name:
+                    type: string
+                    description: Lead portfolio manager
+                    example: Sarah Chen
+                  turnover_ratio:
+                    type: number
+                    description: Annual portfolio turnover ratio
+                    format: double
+                    example: 28.5
+                required:
+                - fund_id
+                - ticker
+                - fund_name
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /funds/{fund_id}/share-classes:
+    get:
+      operationId: listShareClasses
+      summary: List share classes
+      description: Retrieve all share class variants for a mutual fund with their respective tickers, expense ratios, sales
+        loads, minimum investment requirements, and current NAV.
+      tags:
+      - Share Classes
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        share_class_id:
+                          type: string
+                          description: Share class identifier
+                          format: uuid
+                          example: sc-a1b2c3d4
+                        fund_id:
+                          type: string
+                          description: Parent fund identifier
+                          format: uuid
+                          example: mf-a1b2c3d4
+                        class_name:
+                          type: string
+                          description: Share class designation
+                          enum:
+                          - A
+                          - B
+                          - C
+                          - I
+                          - R
+                          - Admiral
+                          - Investor
+                        ticker:
+                          type: string
+                          description: Share class ticker
+                          example: VFIAX
+                        expense_ratio:
+                          type: number
+                          description: Share class expense ratio
+                          format: double
+                          example: 0.04
+                        front_load_pct:
+                          type: number
+                          description: Front-end sales load percentage
+                          format: double
+                          example: 0.0
+                        cdsc_pct:
+                          type: number
+                          description: Contingent deferred sales charge
+                          format: double
+                          example: 0.0
+                        min_investment:
+                          type: object
+                          description: Minimum investment for this share class
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 10000.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        nav:
+                          type: number
+                          description: Share class NAV
+                          format: double
+                          example: 398.52
+                      required:
+                      - share_class_id
+                      - class_name
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /funds/{fund_id}/nav-history:
+    get:
+      operationId: getNAVHistory
+      summary: Get NAV history
+      description: Retrieve historical net asset value per share with daily total returns and cumulative return calculations.
+        Supports date range filtering for performance analysis.
+      tags:
+      - NAV & Performance
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: from
+        in: query
+        required: false
+        description: Start date
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        description: End date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          description: NAV date
+                          format: date
+                          example: '2025-06-13'
+                        nav:
+                          type: number
+                          description: Net asset value per share
+                          format: double
+                          example: 42.87
+                        total_return_pct:
+                          type: number
+                          description: Daily total return percentage
+                          format: double
+                          example: 0.15
+                        cumulative_return_pct:
+                          type: number
+                          description: Cumulative return from period start
+                          format: double
+                          example: 8.42
+                      required:
+                      - date
+                      - nav
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /funds/{fund_id}/distributions:
+    get:
+      operationId: listDistributionHistory
+      summary: List distribution history
+      description: Retrieve historical income dividend and capital gain distributions for a mutual fund, including short-term
+        and long-term capital gain breakdowns for tax reporting.
+      tags:
+      - Distributions
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: year
+        in: query
+        required: false
+        description: Filter by distribution year
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        distribution_id:
+                          type: string
+                          description: Distribution identifier
+                          format: uuid
+                          example: mdist-a1b2c3d4
+                        fund_id:
+                          type: string
+                          description: Fund identifier
+                          format: uuid
+                          example: mf-a1b2c3d4
+                        record_date:
+                          type: string
+                          description: Record date
+                          format: date
+                          example: '2025-03-28'
+                        ex_date:
+                          type: string
+                          description: Ex-distribution date
+                          format: date
+                          example: '2025-03-27'
+                        pay_date:
+                          type: string
+                          description: Payment date
+                          format: date
+                          example: '2025-03-31'
+                        income_dividend:
+                          type: number
+                          description: Income dividend per share
+                          format: double
+                          example: 0.125
+                        short_term_gain:
+                          type: number
+                          description: Short-term capital gain per share
+                          format: double
+                          example: 0.0
+                        long_term_gain:
+                          type: number
+                          description: Long-term capital gain per share
+                          format: double
+                          example: 0.45
+                        total_distribution:
+                          type: number
+                          description: Total distribution per share
+                          format: double
+                          example: 0.575
+                      required:
+                      - distribution_id
+                      - pay_date
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /funds/{fund_id}/flows:
+    get:
+      operationId: getFundFlows
+      summary: Get fund flows
+      description: Retrieve monthly net fund flow data showing inflows, outflows, and organic growth rate. Useful for gauging
+        investor sentiment and fund stability.
+      tags:
+      - Fund Flows
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: from
+        in: query
+        required: false
+        description: Start period (YYYY-MM)
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: false
+        description: End period (YYYY-MM)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        fund_id:
+                          type: string
+                          description: Fund identifier
+                          format: uuid
+                          example: mf-a1b2c3d4
+                        period:
+                          type: string
+                          description: Flow period
+                          example: 2025-06
+                        net_flow:
+                          type: object
+                          description: Net fund flows for period
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: -125000000.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        inflows:
+                          type: object
+                          description: Gross inflows
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 340000000.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        outflows:
+                          type: object
+                          description: Gross outflows
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 465000000.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        organic_growth_rate:
+                          type: number
+                          description: Organic growth rate (flows / beginning AUM)
+                          format: double
+                          example: -0.98
+                      required:
+                      - fund_id
+                      - period
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /funds/{fund_id}/prospectus:
+    get:
+      operationId: getFundProspectus
+      summary: Get fund prospectus
+      description: Retrieve the current summary prospectus and statement of additional information (SAI) document URLs for
+        a mutual fund. Includes effective date and SEC filing reference.
+      tags:
+      - Fund Catalog
+      parameters:
+      - name: fund_id
+        in: path
+        required: true
+        description: Fund identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fund_id:
+                    type: string
+                    description: Fund identifier
+                    format: uuid
+                    example: mf-a1b2c3d4
+                  prospectus_url:
+                    type: string
+                    description: Summary prospectus download URL
+                    example: https://docs.acmefin.com/funds/mf-123/prospectus.pdf
+                  sai_url:
+                    type: string
+                    description: Statement of Additional Information URL
+                    example: https://docs.acmefin.com/funds/mf-123/sai.pdf
+                  effective_date:
+                    type: string
+                    description: Prospectus effective date
+                    format: date
+                    example: '2025-02-01'
+                  sec_filing_url:
+                    type: string
+                    description: SEC EDGAR filing link
+                    example: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany
+                required:
+                - fund_id
+                - prospectus_url
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /funds/compare:
+    post:
+      operationId: compareFunds
+      summary: Compare mutual funds
+      description: Side-by-side comparison of up to five mutual funds on expense ratio, performance, risk metrics, Morningstar
+        rating, and portfolio characteristics.
+      tags:
+      - Fund Catalog
+      requestBody:
+        required: true
+        description: Compare mutual funds request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fund_ids:
+                  type: array
+                  description: Fund identifiers to compare (max 5)
+                  items:
+                    type: string
+              required:
+              - fund_ids
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comparisons:
+                    type: array
+                    description: Fund comparison data
+                    items:
+                      type: object
+                required:
+                - comparisons
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /funds/{fund_id}/holdings-summary:
+    get:
+      operationId: getFundHoldingsSummary
+      summary: Get fund holdings summary
+      description: Retrieve a summary of fund holdings by sector, asset class, and top-10 positions with portfolio weight
+        percentages. Full holdings are typically disclosed quarterly.
+      tags:
+      - Fund Catalog
+      parameters:
+      - name: fund_id
+        in: path
+        required: true
+        description: Fund identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fund_id:
+                    type: string
+                    description: Fund identifier
+                    format: uuid
+                    example: mf-a1b2c3d4
+                  as_of_date:
+                    type: string
+                    description: Holdings date
+                    format: date
+                    example: '2025-03-31'
+                  top_holdings:
+                    type: array
+                    description: Top 10 holdings by portfolio weight
+                    items:
+                      type: object
+                  sector_allocation:
+                    type: array
+                    description: Sector allocation breakdown
+                    items:
+                      type: object
+                  asset_allocation:
+                    type: object
+                    description: Asset class allocation
+                    properties:
+                      equity_pct:
+                        type: number
+                        description: Equity allocation
+                        format: double
+                        example: 92.5
+                      fixed_income_pct:
+                        type: number
+                        description: Fixed income allocation
+                        format: double
+                        example: 4.2
+                      cash_pct:
+                        type: number
+                        description: Cash allocation
+                        format: double
+                        example: 3.3
+                required:
+                - fund_id
+                - top_holdings
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

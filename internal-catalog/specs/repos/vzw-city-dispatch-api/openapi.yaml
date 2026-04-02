@@ -1,0 +1,1768 @@
+openapi: 3.0.3
+info:
+  title: VZW City Dispatch API
+  description: >-
+    Provides incident lifecycle management, multi-unit assignment, dispatch command orchestration,
+    escalation workflows, and telemetry subscription controls for Verizon city operations. This API is
+    designed for command center operators, regional dispatch supervisors, and downstream responder systems
+    coordinating emergency response activity in the San Francisco metropolitan area.
+  version: 1.0.0
+  contact:
+    name: Verizon Dispatch Platform Team
+    email: dispatch-api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/
+  x-catalog-id: vzw-city-dispatch-api
+  x-domain: dispatch
+servers:
+  - url: https://vzw-city-dispatch-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-city-dispatch-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Incidents
+    description: Incident intake, retrieval, and lifecycle state management
+  - name: Dispatch
+    description: Assignment and dispatch order workflows for responder units
+  - name: Units
+    description: Unit availability and capability visibility by district
+  - name: Telemetry
+    description: Subscription management for live command center telemetry feeds
+  - name: Escalation
+    description: Regional command escalation and oversight controls
+paths:
+  /v1/incidents:
+    post:
+      operationId: createIncident
+      summary: Create incident
+      description: >-
+        Creates a new incident in the dispatch system and starts the incident lifecycle. The request captures
+        severity, incident type, reporting channel, geospatial location, and caller details. Newly created incidents
+        are initialized in `intake` status and become available for unit assignment immediately.
+      tags:
+        - Incidents
+      requestBody:
+        required: true
+        description: Incident creation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIncidentRequest"
+            examples:
+              downtownMedical:
+                summary: Medical incident near SoMa
+                value:
+                  external_reference: "sf-911-20260327-000312"
+                  severity: critical
+                  incident_type: medical_emergency
+                  reported_channel: phone_911
+                  priority: p1
+                  district: SOMA
+                  summary: "Unconscious person, no pulse, CPR started"
+                  location:
+                    address_line_1: "201 3rd St"
+                    city: "San Francisco"
+                    state: "CA"
+                    postal_code: "94103"
+                    latitude: 37.785892
+                    longitude: -122.400612
+                  reporter:
+                    name: "Taylor Kim"
+                    callback_number: "+14155550123"
+                  metadata:
+                    source_system: "city-psap-core"
+                    language: "en-US"
+      responses:
+        "201":
+          description: Incident created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentCreateResponse"
+              examples:
+                created:
+                  value:
+                    incident:
+                      incident_id: "inc-8f3f95b2"
+                      external_reference: "sf-911-20260327-000312"
+                      severity: critical
+                      incident_type: medical_emergency
+                      reported_channel: phone_911
+                      priority: p1
+                      status: intake
+                      district: SOMA
+                      summary: "Unconscious person, no pulse, CPR started"
+                      location:
+                        address_line_1: "201 3rd St"
+                        city: "San Francisco"
+                        state: "CA"
+                        postal_code: "94103"
+                        latitude: 37.785892
+                        longitude: -122.400612
+                      reporter:
+                        name: "Taylor Kim"
+                        callback_number: "+14155550123"
+                      responders: []
+                      timeline:
+                        - event_id: "evt-a001"
+                          event_type: incident_created
+                          message: "Incident created from PSAP intake"
+                          recorded_at: "2026-03-27T16:08:43Z"
+                          actor: "city-psap-core"
+                      audit:
+                        created_at: "2026-03-27T16:08:43Z"
+                        updated_at: "2026-03-27T16:08:43Z"
+                        created_by: "system-psap-ingest"
+                        updated_by: "system-psap-ingest"
+                    trace_id: "38b4ee06-73fb-45cd-9ddf-2fd73e0ab8e9"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listIncidents
+      summary: List incidents
+      description: >-
+        Returns a cursor-paginated list of incidents with optional filtering by status and priority.
+        Use this endpoint to power active command board views and incident queue monitoring.
+      tags:
+        - Incidents
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/IncidentStatus"
+        - $ref: "#/components/parameters/IncidentPriority"
+      responses:
+        "200":
+          description: Incident list retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentListResponse"
+              examples:
+                activeQueue:
+                  value:
+                    data:
+                      - incident_id: "inc-8f3f95b2"
+                        external_reference: "sf-911-20260327-000312"
+                        severity: critical
+                        incident_type: medical_emergency
+                        reported_channel: phone_911
+                        priority: p1
+                        status: units_assigned
+                        district: SOMA
+                        summary: "Unconscious person, no pulse, CPR started"
+                        location:
+                          address_line_1: "201 3rd St"
+                          city: "San Francisco"
+                          state: "CA"
+                          postal_code: "94103"
+                          latitude: 37.785892
+                          longitude: -122.400612
+                        audit:
+                          created_at: "2026-03-27T16:08:43Z"
+                          updated_at: "2026-03-27T16:11:10Z"
+                          created_by: "system-psap-ingest"
+                          updated_by: "dispatcher-ops-12"
+                      - incident_id: "inc-b3a92e4d"
+                        external_reference: "sf-911-20260327-000299"
+                        severity: high
+                        incident_type: structure_fire
+                        reported_channel: mobile_app
+                        priority: p2
+                        status: dispatch_in_progress
+                        district: MISSION
+                        summary: "Smoke visible from 3rd-floor residential unit"
+                        location:
+                          address_line_1: "3130 Mission St"
+                          city: "San Francisco"
+                          state: "CA"
+                          postal_code: "94110"
+                          latitude: 37.747871
+                          longitude: -122.418246
+                        audit:
+                          created_at: "2026-03-27T15:58:04Z"
+                          updated_at: "2026-03-27T16:09:57Z"
+                          created_by: "mobile-reporter-gateway"
+                          updated_by: "dispatcher-ops-07"
+                    meta:
+                      next_cursor: "eyJvZmZzZXQiOjIwfQ=="
+                      limit: 20
+                      has_more: true
+                    trace_id: "750054b8-34d4-4bdb-ab4e-c388f4bfd5a8"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/{incidentId}:
+    get:
+      operationId: getIncident
+      summary: Get incident details
+      description: >-
+        Returns the full incident document, including timeline entries, linked responder units,
+        active dispatches, and escalation history.
+      tags:
+        - Incidents
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      responses:
+        "200":
+          description: Incident details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentDetailResponse"
+              examples:
+                fullIncident:
+                  value:
+                    incident:
+                      incident_id: "inc-8f3f95b2"
+                      external_reference: "sf-911-20260327-000312"
+                      severity: critical
+                      incident_type: medical_emergency
+                      reported_channel: phone_911
+                      priority: p1
+                      status: dispatch_in_progress
+                      district: SOMA
+                      summary: "Unconscious person, no pulse, CPR started"
+                      location:
+                        address_line_1: "201 3rd St"
+                        city: "San Francisco"
+                        state: "CA"
+                        postal_code: "94103"
+                        latitude: 37.785892
+                        longitude: -122.400612
+                      reporter:
+                        name: "Taylor Kim"
+                        callback_number: "+14155550123"
+                      responders:
+                        - unit_id: "medic-42"
+                          call_sign: "MED42"
+                          capability_profile:
+                            - als
+                            - cardiac
+                          assigned_at: "2026-03-27T16:10:33Z"
+                          assignment_status: active
+                        - unit_id: "engine-11"
+                          call_sign: "E11"
+                          capability_profile:
+                            - fire_suppression
+                            - rescue
+                          assigned_at: "2026-03-27T16:10:33Z"
+                          assignment_status: active
+                      dispatches:
+                        - dispatch_id: "dsp-77511"
+                          incident_id: "inc-8f3f95b2"
+                          route:
+                            eta_minutes: 4
+                            origin:
+                              latitude: 37.779258
+                              longitude: -122.419281
+                            destination:
+                              latitude: 37.785892
+                              longitude: -122.400612
+                          qod_intent: life_safety_priority
+                          status: en_route
+                          issued_at: "2026-03-27T16:11:12Z"
+                      timeline:
+                        - event_id: "evt-a001"
+                          event_type: incident_created
+                          message: "Incident created from PSAP intake"
+                          recorded_at: "2026-03-27T16:08:43Z"
+                          actor: "city-psap-core"
+                        - event_id: "evt-a002"
+                          event_type: units_assigned
+                          message: "Units medic-42 and engine-11 assigned"
+                          recorded_at: "2026-03-27T16:10:33Z"
+                          actor: "dispatcher-ops-12"
+                        - event_id: "evt-a003"
+                          event_type: dispatch_created
+                          message: "Dispatch order dsp-77511 issued"
+                          recorded_at: "2026-03-27T16:11:12Z"
+                          actor: "dispatcher-ops-12"
+                      escalations: []
+                      audit:
+                        created_at: "2026-03-27T16:08:43Z"
+                        updated_at: "2026-03-27T16:11:12Z"
+                        created_by: "system-psap-ingest"
+                        updated_by: "dispatcher-ops-12"
+                    trace_id: "f181f5df-6dbe-486b-b5a7-c0dc70f56f5c"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/{incidentId}/units:assign:
+    post:
+      operationId: assignUnitsToIncident
+      summary: Assign units to incident
+      description: >-
+        Assigns one or more units to an incident with capability constraints. The assignment engine validates
+        district proximity, required skill coverage, and current unit state before confirming.
+      tags:
+        - Dispatch
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      requestBody:
+        required: true
+        description: Unit assignment command
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignUnitsRequest"
+            examples:
+              assignCriticalResponse:
+                value:
+                  required_capabilities:
+                    - als
+                    - cardiac
+                  district_preference: SOMA
+                  max_units: 2
+                  candidate_units:
+                    - unit_id: "medic-42"
+                      justification: "Closest ALS-capable medic unit"
+                    - unit_id: "engine-11"
+                      justification: "Dual-role rescue backup"
+      responses:
+        "200":
+          description: Units assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitAssignmentResponse"
+              examples:
+                assignmentCreated:
+                  value:
+                    incident_id: "inc-8f3f95b2"
+                    assignment_batch_id: "asg-00191"
+                    assignments:
+                      - unit_id: "medic-42"
+                        call_sign: "MED42"
+                        assignment_status: active
+                        assigned_at: "2026-03-27T16:10:33Z"
+                      - unit_id: "engine-11"
+                        call_sign: "E11"
+                        assignment_status: active
+                        assigned_at: "2026-03-27T16:10:33Z"
+                    unmet_capabilities: []
+                    trace_id: "77f705ef-b5a1-4b31-825f-7f92fa498f1a"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/{incidentId}/dispatches:
+    post:
+      operationId: createDispatchOrder
+      summary: Create dispatch order
+      description: >-
+        Creates a dispatch order for assigned units, including route intent and QoD (quality-of-dispatch)
+        objective. Use this endpoint once assignment has been confirmed and route planning is complete.
+      tags:
+        - Dispatch
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      requestBody:
+        required: true
+        description: Dispatch command payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDispatchRequest"
+            examples:
+              routeWithIntent:
+                value:
+                  unit_ids:
+                    - "medic-42"
+                    - "engine-11"
+                  qod_intent: life_safety_priority
+                  route:
+                    origin:
+                      latitude: 37.779258
+                      longitude: -122.419281
+                    destination:
+                      latitude: 37.785892
+                      longitude: -122.400612
+                    eta_minutes: 4
+                  command_notes: "Stage engine one block south until medic confirms scene safety"
+      responses:
+        "201":
+          description: Dispatch order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchResponse"
+              examples:
+                dispatchCreated:
+                  value:
+                    dispatch:
+                      dispatch_id: "dsp-77511"
+                      incident_id: "inc-8f3f95b2"
+                      unit_ids:
+                        - "medic-42"
+                        - "engine-11"
+                      qod_intent: life_safety_priority
+                      route:
+                        origin:
+                          latitude: 37.779258
+                          longitude: -122.419281
+                        destination:
+                          latitude: 37.785892
+                          longitude: -122.400612
+                        eta_minutes: 4
+                      status: en_route
+                      command_notes: "Stage engine one block south until medic confirms scene safety"
+                      issued_at: "2026-03-27T16:11:12Z"
+                    trace_id: "56e62de7-1284-4f54-8079-b20368de24cc"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/dispatches/{dispatchId}:
+    patch:
+      operationId: updateDispatchStatus
+      summary: Update dispatch status
+      description: >-
+        Updates dispatch progression status as field units progress through the response workflow.
+        Allowed transitions include `en_route`, `on_scene`, and `transporting`.
+      tags:
+        - Dispatch
+      parameters:
+        - $ref: "#/components/parameters/DispatchId"
+      requestBody:
+        required: true
+        description: Dispatch status update payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDispatchStatusRequest"
+            examples:
+              arriveScene:
+                value:
+                  status: on_scene
+                  status_note: "Medic-42 arrived and initiated patient assessment"
+                  updated_by_unit: "medic-42"
+      responses:
+        "200":
+          description: Dispatch status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DispatchResponse"
+              examples:
+                updatedStatus:
+                  value:
+                    dispatch:
+                      dispatch_id: "dsp-77511"
+                      incident_id: "inc-8f3f95b2"
+                      unit_ids:
+                        - "medic-42"
+                        - "engine-11"
+                      qod_intent: life_safety_priority
+                      route:
+                        origin:
+                          latitude: 37.779258
+                          longitude: -122.419281
+                        destination:
+                          latitude: 37.785892
+                          longitude: -122.400612
+                        eta_minutes: 4
+                      status: on_scene
+                      command_notes: "Stage engine one block south until medic confirms scene safety"
+                      issued_at: "2026-03-27T16:11:12Z"
+                    trace_id: "22746d3a-8f36-4857-a56b-046721a45091"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/{incidentId}/escalations:
+    post:
+      operationId: escalateIncident
+      summary: Escalate incident
+      description: >-
+        Escalates an incident to regional command when local coverage is insufficient or cross-district
+        coordination is required. Escalations are appended to incident history and trigger command notifications.
+      tags:
+        - Escalation
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      requestBody:
+        required: true
+        description: Escalation request payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEscalationRequest"
+            examples:
+              regionalEscalation:
+                value:
+                  escalation_level: regional_command
+                  reason_code: resource_shortage
+                  reason_detail: "No additional ALS units available in district within 10-minute SLA"
+                  requested_by: "dispatcher-ops-12"
+                  notify_channels:
+                    - command_console
+                    - sms_bridge
+      responses:
+        "201":
+          description: Escalation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EscalationResponse"
+              examples:
+                escalated:
+                  value:
+                    escalation:
+                      escalation_id: "esc-5100"
+                      incident_id: "inc-8f3f95b2"
+                      escalation_level: regional_command
+                      reason_code: resource_shortage
+                      reason_detail: "No additional ALS units available in district within 10-minute SLA"
+                      requested_by: "dispatcher-ops-12"
+                      status: open
+                      opened_at: "2026-03-27T16:12:45Z"
+                    trace_id: "79361f4a-67fe-4a10-9af0-56a1b2e8f1ef"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/units/availability:
+    get:
+      operationId: getUnitAvailability
+      summary: Get unit availability
+      description: >-
+        Retrieves current unit availability across districts, including capability profile and readiness status.
+        Optional filters enable command center users to locate units by district and skill.
+      tags:
+        - Units
+      parameters:
+        - $ref: "#/components/parameters/UnitDistrict"
+        - $ref: "#/components/parameters/UnitSkill"
+      responses:
+        "200":
+          description: Unit availability retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitAvailabilityResponse"
+              examples:
+                somaAls:
+                  value:
+                    data:
+                      - unit_id: "medic-42"
+                        call_sign: "MED42"
+                        district: SOMA
+                        status: available
+                        capabilities:
+                          - als
+                          - cardiac
+                        last_known_location:
+                          latitude: 37.779258
+                          longitude: -122.419281
+                        available_since: "2026-03-27T16:00:10Z"
+                      - unit_id: "medic-27"
+                        call_sign: "MED27"
+                        district: SOMA
+                        status: available
+                        capabilities:
+                          - als
+                          - pediatric
+                        last_known_location:
+                          latitude: 37.788143
+                          longitude: -122.407121
+                        available_since: "2026-03-27T15:54:50Z"
+                    trace_id: "4ad2bc58-a9ba-4a64-9e62-baf0ca02f8f5"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/{incidentId}/telemetry/subscriptions:
+    post:
+      operationId: createTelemetrySubscription
+      summary: Subscribe to incident telemetry
+      description: >-
+        Subscribes a command center endpoint to live telemetry feeds for the incident, such as unit GPS,
+        vitals monitors, and radio transcription streams. Subscription policies enforce authorization and
+        feed retention constraints.
+      tags:
+        - Telemetry
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      requestBody:
+        required: true
+        description: Telemetry subscription payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTelemetrySubscriptionRequest"
+            examples:
+              commandCenterFeed:
+                value:
+                  subscriber_id: "cmd-west-01"
+                  callback_url: "https://dispatch-console.verizon.com/hooks/incident-telemetry"
+                  feed_types:
+                    - unit_position
+                    - patient_vitals
+                    - radio_transcript
+                  qos_profile: high_reliability
+                  expires_at: "2026-03-27T20:12:00Z"
+      responses:
+        "201":
+          description: Telemetry subscription created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelemetrySubscriptionResponse"
+              examples:
+                subscriptionCreated:
+                  value:
+                    subscription:
+                      subscription_id: "sub-99102"
+                      incident_id: "inc-8f3f95b2"
+                      subscriber_id: "cmd-west-01"
+                      callback_url: "https://dispatch-console.verizon.com/hooks/incident-telemetry"
+                      feed_types:
+                        - unit_position
+                        - patient_vitals
+                        - radio_transcript
+                      qos_profile: high_reliability
+                      status: active
+                      created_at: "2026-03-27T16:12:00Z"
+                      expires_at: "2026-03-27T20:12:00Z"
+                    trace_id: "4f913f06-0ffd-4c1f-b0f5-2637917f0b67"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    IncidentId:
+      name: incidentId
+      in: path
+      required: true
+      description: Unique incident identifier
+      schema:
+        type: string
+        example: "inc-8f3f95b2"
+    DispatchId:
+      name: dispatchId
+      in: path
+      required: true
+      description: Unique dispatch identifier
+      schema:
+        type: string
+        example: "dsp-77511"
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from prior paginated response
+      schema:
+        type: string
+        example: "eyJvZmZzZXQiOjIwfQ=="
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Number of records to return, maximum 100
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+        example: 20
+    IncidentStatus:
+      name: status
+      in: query
+      required: false
+      description: Filter by incident lifecycle status
+      schema:
+        $ref: "#/components/schemas/IncidentStatus"
+    IncidentPriority:
+      name: priority
+      in: query
+      required: false
+      description: Filter by dispatch priority level
+      schema:
+        $ref: "#/components/schemas/IncidentPriority"
+    UnitDistrict:
+      name: district
+      in: query
+      required: false
+      description: District filter for availability search
+      schema:
+        $ref: "#/components/schemas/DistrictCode"
+    UnitSkill:
+      name: skill
+      in: query
+      required: false
+      description: Capability filter for availability search
+      schema:
+        $ref: "#/components/schemas/UnitCapability"
+  schemas:
+    CreateIncidentRequest:
+      type: object
+      description: Command intake payload for opening an incident
+      properties:
+        external_reference:
+          type: string
+          description: External source ticket or PSAP reference identifier
+          example: "sf-911-20260327-000312"
+        severity:
+          $ref: "#/components/schemas/IncidentSeverity"
+        incident_type:
+          $ref: "#/components/schemas/IncidentType"
+        reported_channel:
+          $ref: "#/components/schemas/ReportedChannel"
+        priority:
+          $ref: "#/components/schemas/IncidentPriority"
+        district:
+          $ref: "#/components/schemas/DistrictCode"
+        summary:
+          type: string
+          description: Human-readable concise incident summary
+          maxLength: 220
+          example: "Unconscious person, no pulse, CPR started"
+        location:
+          $ref: "#/components/schemas/GeoAddress"
+        reporter:
+          $ref: "#/components/schemas/Reporter"
+        metadata:
+          type: object
+          description: Additional source metadata retained for auditing
+          additionalProperties:
+            type: string
+          example:
+            source_system: city-psap-core
+            language: en-US
+      required:
+        - severity
+        - incident_type
+        - reported_channel
+        - priority
+        - district
+        - summary
+        - location
+    IncidentCreateResponse:
+      type: object
+      description: Incident creation result envelope
+      properties:
+        incident:
+          $ref: "#/components/schemas/IncidentDetail"
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed tracing identifier for request correlation
+          example: "38b4ee06-73fb-45cd-9ddf-2fd73e0ab8e9"
+      required:
+        - incident
+        - trace_id
+    IncidentListResponse:
+      type: object
+      description: Cursor-paginated incident list
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentSummary"
+        meta:
+          $ref: "#/components/schemas/CursorMeta"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - data
+        - meta
+        - trace_id
+    IncidentDetailResponse:
+      type: object
+      description: Detailed incident response envelope
+      properties:
+        incident:
+          $ref: "#/components/schemas/IncidentDetail"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - incident
+        - trace_id
+    AssignUnitsRequest:
+      type: object
+      description: Unit assignment command payload
+      properties:
+        required_capabilities:
+          type: array
+          description: Required capabilities that must be satisfied by selected units
+          items:
+            $ref: "#/components/schemas/UnitCapability"
+          minItems: 1
+        district_preference:
+          $ref: "#/components/schemas/DistrictCode"
+        max_units:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 2
+          description: Maximum number of units to assign for this command
+          example: 2
+        candidate_units:
+          type: array
+          description: Optional pre-selected candidates to prioritize
+          items:
+            $ref: "#/components/schemas/UnitCandidate"
+          minItems: 1
+      required:
+        - required_capabilities
+    UnitAssignmentResponse:
+      type: object
+      description: Unit assignment command result
+      properties:
+        incident_id:
+          type: string
+          example: "inc-8f3f95b2"
+        assignment_batch_id:
+          type: string
+          example: "asg-00191"
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssignedResponder"
+        unmet_capabilities:
+          type: array
+          description: Required capabilities not covered by confirmed assignments
+          items:
+            $ref: "#/components/schemas/UnitCapability"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - incident_id
+        - assignment_batch_id
+        - assignments
+        - unmet_capabilities
+        - trace_id
+    CreateDispatchRequest:
+      type: object
+      description: Dispatch order creation payload
+      properties:
+        unit_ids:
+          type: array
+          description: Assigned units receiving this dispatch command
+          items:
+            type: string
+          minItems: 1
+          example:
+            - "medic-42"
+            - "engine-11"
+        qod_intent:
+          $ref: "#/components/schemas/QodIntent"
+        route:
+          $ref: "#/components/schemas/DispatchRoute"
+        command_notes:
+          type: string
+          description: Operator notes attached to dispatch command
+          maxLength: 500
+          example: "Stage engine one block south until medic confirms scene safety"
+      required:
+        - unit_ids
+        - qod_intent
+        - route
+    UpdateDispatchStatusRequest:
+      type: object
+      description: Patch payload for dispatch workflow updates
+      properties:
+        status:
+          $ref: "#/components/schemas/DispatchStatus"
+        status_note:
+          type: string
+          description: Optional note describing field status change
+          maxLength: 280
+          example: "Medic-42 arrived and initiated patient assessment"
+        updated_by_unit:
+          type: string
+          description: Unit identifier issuing status update
+          example: "medic-42"
+      required:
+        - status
+    DispatchResponse:
+      type: object
+      description: Dispatch response envelope
+      properties:
+        dispatch:
+          $ref: "#/components/schemas/DispatchOrder"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - dispatch
+        - trace_id
+    CreateEscalationRequest:
+      type: object
+      description: Request payload to escalate incident to higher command authority
+      properties:
+        escalation_level:
+          $ref: "#/components/schemas/EscalationLevel"
+        reason_code:
+          $ref: "#/components/schemas/EscalationReasonCode"
+        reason_detail:
+          type: string
+          description: Human-readable escalation rationale
+          maxLength: 500
+          example: "No additional ALS units available in district within 10-minute SLA"
+        requested_by:
+          type: string
+          description: User or system id requesting escalation
+          example: "dispatcher-ops-12"
+        notify_channels:
+          type: array
+          description: Notification channels for escalation alerting
+          items:
+            $ref: "#/components/schemas/EscalationNotifyChannel"
+          minItems: 1
+      required:
+        - escalation_level
+        - reason_code
+        - reason_detail
+        - requested_by
+    EscalationResponse:
+      type: object
+      description: Escalation response envelope
+      properties:
+        escalation:
+          $ref: "#/components/schemas/EscalationRecord"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - escalation
+        - trace_id
+    CreateTelemetrySubscriptionRequest:
+      type: object
+      description: Payload for creating telemetry stream subscription
+      properties:
+        subscriber_id:
+          type: string
+          description: Command center subscriber identifier
+          example: "cmd-west-01"
+        callback_url:
+          type: string
+          format: uri
+          description: HTTPS endpoint receiving telemetry events
+          example: "https://dispatch-console.verizon.com/hooks/incident-telemetry"
+        feed_types:
+          type: array
+          description: Telemetry stream categories to deliver
+          items:
+            $ref: "#/components/schemas/TelemetryFeedType"
+          minItems: 1
+        qos_profile:
+          $ref: "#/components/schemas/TelemetryQosProfile"
+        expires_at:
+          type: string
+          format: date-time
+          description: Timestamp when subscription auto-expires
+          example: "2026-03-27T20:12:00Z"
+      required:
+        - subscriber_id
+        - callback_url
+        - feed_types
+        - qos_profile
+    TelemetrySubscriptionResponse:
+      type: object
+      description: Telemetry subscription response envelope
+      properties:
+        subscription:
+          $ref: "#/components/schemas/TelemetrySubscription"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - subscription
+        - trace_id
+    UnitAvailabilityResponse:
+      type: object
+      description: Current availability view for response units
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnitAvailability"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - data
+        - trace_id
+    IncidentSummary:
+      type: object
+      description: Incident summary optimized for queue listings
+      properties:
+        incident_id:
+          type: string
+        external_reference:
+          type: string
+        severity:
+          $ref: "#/components/schemas/IncidentSeverity"
+        incident_type:
+          $ref: "#/components/schemas/IncidentType"
+        reported_channel:
+          $ref: "#/components/schemas/ReportedChannel"
+        priority:
+          $ref: "#/components/schemas/IncidentPriority"
+        status:
+          $ref: "#/components/schemas/IncidentStatus"
+        district:
+          $ref: "#/components/schemas/DistrictCode"
+        summary:
+          type: string
+        location:
+          $ref: "#/components/schemas/GeoAddress"
+        audit:
+          $ref: "#/components/schemas/AuditInfo"
+      required:
+        - incident_id
+        - severity
+        - incident_type
+        - reported_channel
+        - priority
+        - status
+        - district
+        - summary
+        - location
+        - audit
+    IncidentDetail:
+      allOf:
+        - $ref: "#/components/schemas/IncidentSummary"
+        - type: object
+          properties:
+            reporter:
+              $ref: "#/components/schemas/Reporter"
+            responders:
+              type: array
+              items:
+                $ref: "#/components/schemas/AssignedResponder"
+            dispatches:
+              type: array
+              items:
+                $ref: "#/components/schemas/DispatchOrder"
+            timeline:
+              type: array
+              items:
+                $ref: "#/components/schemas/IncidentTimelineEvent"
+            escalations:
+              type: array
+              items:
+                $ref: "#/components/schemas/EscalationRecord"
+    Reporter:
+      type: object
+      description: Reporter identity and callback details
+      properties:
+        name:
+          type: string
+          example: "Taylor Kim"
+        callback_number:
+          type: string
+          description: Reporter callback in E.164 format
+          example: "+14155550123"
+      required:
+        - callback_number
+    GeoAddress:
+      type: object
+      description: Incident geospatial address details
+      properties:
+        address_line_1:
+          type: string
+          example: "201 3rd St"
+        city:
+          type: string
+          example: "San Francisco"
+        state:
+          type: string
+          minLength: 2
+          maxLength: 2
+          example: "CA"
+        postal_code:
+          type: string
+          example: "94103"
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 37.785892
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: -122.400612
+      required:
+        - address_line_1
+        - city
+        - state
+        - postal_code
+        - latitude
+        - longitude
+    DispatchRoute:
+      type: object
+      description: Route intent used for dispatching units to incident location
+      properties:
+        origin:
+          $ref: "#/components/schemas/GeoPoint"
+        destination:
+          $ref: "#/components/schemas/GeoPoint"
+        eta_minutes:
+          type: integer
+          minimum: 1
+          maximum: 180
+          example: 4
+      required:
+        - origin
+        - destination
+        - eta_minutes
+    GeoPoint:
+      type: object
+      description: Geographic coordinate
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 37.779258
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: -122.419281
+      required:
+        - latitude
+        - longitude
+    UnitCandidate:
+      type: object
+      description: Candidate unit details supplied during assignment command
+      properties:
+        unit_id:
+          type: string
+          example: "medic-42"
+        justification:
+          type: string
+          example: "Closest ALS-capable medic unit"
+      required:
+        - unit_id
+    AssignedResponder:
+      type: object
+      description: Unit responder assignment record
+      properties:
+        unit_id:
+          type: string
+          example: "medic-42"
+        call_sign:
+          type: string
+          example: "MED42"
+        capability_profile:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnitCapability"
+        assigned_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T16:10:33Z"
+        assignment_status:
+          type: string
+          enum:
+            - active
+            - released
+            - completed
+          example: active
+      required:
+        - unit_id
+        - call_sign
+        - assigned_at
+        - assignment_status
+    DispatchOrder:
+      type: object
+      description: Dispatch order record
+      properties:
+        dispatch_id:
+          type: string
+        incident_id:
+          type: string
+        unit_ids:
+          type: array
+          items:
+            type: string
+        qod_intent:
+          $ref: "#/components/schemas/QodIntent"
+        route:
+          $ref: "#/components/schemas/DispatchRoute"
+        status:
+          $ref: "#/components/schemas/DispatchStatus"
+        command_notes:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
+      required:
+        - dispatch_id
+        - incident_id
+        - unit_ids
+        - qod_intent
+        - route
+        - status
+        - issued_at
+    IncidentTimelineEvent:
+      type: object
+      description: Chronological incident event record
+      properties:
+        event_id:
+          type: string
+          example: "evt-a002"
+        event_type:
+          type: string
+          enum:
+            - incident_created
+            - units_assigned
+            - dispatch_created
+            - dispatch_updated
+            - escalated
+            - closed
+          example: units_assigned
+        message:
+          type: string
+          example: "Units medic-42 and engine-11 assigned"
+        recorded_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T16:10:33Z"
+        actor:
+          type: string
+          example: "dispatcher-ops-12"
+      required:
+        - event_id
+        - event_type
+        - message
+        - recorded_at
+        - actor
+    EscalationRecord:
+      type: object
+      description: Incident escalation record
+      properties:
+        escalation_id:
+          type: string
+          example: "esc-5100"
+        incident_id:
+          type: string
+          example: "inc-8f3f95b2"
+        escalation_level:
+          $ref: "#/components/schemas/EscalationLevel"
+        reason_code:
+          $ref: "#/components/schemas/EscalationReasonCode"
+        reason_detail:
+          type: string
+        requested_by:
+          type: string
+        status:
+          type: string
+          enum:
+            - open
+            - acknowledged
+            - resolved
+          example: open
+        opened_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T16:12:45Z"
+      required:
+        - escalation_id
+        - incident_id
+        - escalation_level
+        - reason_code
+        - reason_detail
+        - requested_by
+        - status
+        - opened_at
+    UnitAvailability:
+      type: object
+      description: Current unit readiness snapshot
+      properties:
+        unit_id:
+          type: string
+          example: "medic-42"
+        call_sign:
+          type: string
+          example: "MED42"
+        district:
+          $ref: "#/components/schemas/DistrictCode"
+        status:
+          type: string
+          enum:
+            - available
+            - assigned
+            - en_route
+            - off_shift
+            - maintenance
+          example: available
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnitCapability"
+        last_known_location:
+          $ref: "#/components/schemas/GeoPoint"
+        available_since:
+          type: string
+          format: date-time
+          example: "2026-03-27T16:00:10Z"
+      required:
+        - unit_id
+        - call_sign
+        - district
+        - status
+        - capabilities
+    TelemetrySubscription:
+      type: object
+      description: Telemetry subscription record for incident feed distribution
+      properties:
+        subscription_id:
+          type: string
+          example: "sub-99102"
+        incident_id:
+          type: string
+          example: "inc-8f3f95b2"
+        subscriber_id:
+          type: string
+          example: "cmd-west-01"
+        callback_url:
+          type: string
+          format: uri
+          example: "https://dispatch-console.verizon.com/hooks/incident-telemetry"
+        feed_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/TelemetryFeedType"
+        qos_profile:
+          $ref: "#/components/schemas/TelemetryQosProfile"
+        status:
+          type: string
+          enum:
+            - active
+            - paused
+            - expired
+            - revoked
+          example: active
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T16:12:00Z"
+        expires_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T20:12:00Z"
+      required:
+        - subscription_id
+        - incident_id
+        - subscriber_id
+        - callback_url
+        - feed_types
+        - qos_profile
+        - status
+        - created_at
+    CursorMeta:
+      type: object
+      description: Cursor pagination metadata
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+          example: "eyJvZmZzZXQiOjIwfQ=="
+        limit:
+          type: integer
+          example: 20
+        has_more:
+          type: boolean
+          example: true
+      required:
+        - limit
+        - has_more
+    AuditInfo:
+      type: object
+      description: Audit trail metadata for resource mutation and ownership
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T16:08:43Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T16:11:12Z"
+        created_by:
+          type: string
+          example: "system-psap-ingest"
+        updated_by:
+          type: string
+          example: "dispatcher-ops-12"
+      required:
+        - created_at
+        - updated_at
+        - created_by
+        - updated_by
+    Error:
+      type: object
+      description: Standardized API error structure
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed validation or business rule errors
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    example: reported_channel
+                  reason:
+                    type: string
+                    example: Must be one of phone_911, radio, mobile_app, sensor_auto
+            request_id:
+              type: string
+              format: uuid
+              description: Request correlation id for operational support
+              example: "ac9ea3db-5675-4fa3-b4d8-1b7e036fa8c5"
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    IncidentSeverity:
+      type: string
+      description: Severity level based on potential impact and urgency
+      enum:
+        - low
+        - moderate
+        - high
+        - critical
+      example: critical
+    IncidentType:
+      type: string
+      description: Classification of incident category
+      enum:
+        - medical_emergency
+        - structure_fire
+        - traffic_collision
+        - hazmat_release
+        - public_safety
+        - utility_failure
+      example: medical_emergency
+    ReportedChannel:
+      type: string
+      description: Channel through which incident was reported
+      enum:
+        - phone_911
+        - radio
+        - mobile_app
+        - sensor_auto
+      example: phone_911
+    IncidentPriority:
+      type: string
+      description: Priority queue level used by dispatch command
+      enum:
+        - p1
+        - p2
+        - p3
+        - p4
+      example: p1
+    IncidentStatus:
+      type: string
+      description: Incident lifecycle status
+      enum:
+        - intake
+        - units_assigned
+        - dispatch_in_progress
+        - on_scene
+        - resolved
+        - closed
+      example: dispatch_in_progress
+    DispatchStatus:
+      type: string
+      description: Current status of dispatch order workflow
+      enum:
+        - en_route
+        - on_scene
+        - transporting
+      example: en_route
+    QodIntent:
+      type: string
+      description: Quality-of-dispatch intent guiding route and response behavior
+      enum:
+        - life_safety_priority
+        - balanced_response
+        - containment_priority
+      example: life_safety_priority
+    DistrictCode:
+      type: string
+      description: San Francisco dispatch district code
+      enum:
+        - SOMA
+        - MISSION
+        - RICHMOND
+        - SUNSET
+        - BAYVIEW
+        - FINANCIAL
+      example: SOMA
+    UnitCapability:
+      type: string
+      description: Unit capability label used for assignment constraints
+      enum:
+        - als
+        - bls
+        - cardiac
+        - fire_suppression
+        - rescue
+        - hazmat
+        - pediatric
+      example: als
+    EscalationLevel:
+      type: string
+      description: Escalation authority level
+      enum:
+        - district_command
+        - regional_command
+        - multi_agency
+      example: regional_command
+    EscalationReasonCode:
+      type: string
+      description: Canonical reason for escalation workflow
+      enum:
+        - resource_shortage
+        - cross_district_impact
+        - hazardous_conditions
+        - prolonged_response_time
+      example: resource_shortage
+    EscalationNotifyChannel:
+      type: string
+      description: Escalation notification channel
+      enum:
+        - command_console
+        - sms_bridge
+        - secure_email
+        - radio_override
+      example: command_console
+    TelemetryFeedType:
+      type: string
+      description: Live telemetry feed category
+      enum:
+        - unit_position
+        - patient_vitals
+        - radio_transcript
+        - bodycam_status
+      example: unit_position
+    TelemetryQosProfile:
+      type: string
+      description: Delivery reliability profile for telemetry streams
+      enum:
+        - low_latency
+        - balanced
+        - high_reliability
+      example: high_reliability
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by Verizon identity platform
+  responses:
+    "400":
+      description: Bad Request — Request payload or query parameters are malformed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: reported_channel
+                  reason: Must be one of phone_911, radio, mobile_app, sensor_auto
+              request_id: "ac9ea3db-5675-4fa3-b4d8-1b7e036fa8c5"
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired bearer token.
+              request_id: "9a881451-dfc1-408d-8da8-c2a650da6af0"
+    "403":
+      description: Forbidden — Caller lacks required role permissions for this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: Dispatch supervisor role required for escalation commands.
+              request_id: "9acbcf50-4d0b-4718-868c-2c95f2bce612"
+    "404":
+      description: Not Found — Requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: Incident inc-8f3f95b2 was not found.
+              request_id: "29eff99f-b2d5-4a32-9c74-035ac7f33cf1"
+    "409":
+      description: Conflict — Request conflicts with current state of resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: Dispatch status transition from transporting to en_route is not allowed.
+              request_id: "b7fe5209-ee13-4275-bb1f-17a05ff9c6ab"
+    "422":
+      description: Unprocessable Entity — Business rules prevent processing this request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: No candidate unit satisfies required capabilities [als, cardiac].
+              request_id: "fef0588f-37e2-4b80-a5a5-f02266043d9a"
+    "429":
+      description: Too Many Requests — Rate limit exceeded for this caller.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Rate limit exceeded. Retry after 30 seconds.
+              request_id: "aa7e5865-c5b6-4f13-bf31-b604c553ca56"
+    "500":
+      description: Internal Server Error — Unexpected backend error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please retry.
+              request_id: "76674967-ce9d-4491-988f-bff26b7bb6dd"

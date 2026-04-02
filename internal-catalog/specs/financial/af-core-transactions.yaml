@@ -1,0 +1,2321 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Core Transactions API
+  description: >-
+    Comprehensive transaction processing and inquiry service for all deposit account activity. Supports debit,
+    credit, memo-post, and authorization transactions across all channels including branch, ATM, POS, ACH, wire,
+    and digital banking. Provides advanced search with full-text description matching, transaction categorization
+    for PFM integration, dispute management per Regulation E timelines, and bulk export for reporting and
+    analytics. All transactions post to the Core Ledger as double-entry journal entries.
+  version: 3.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-core-transactions
+  x-acme-domain: core
+servers:
+  - url: https://af-core-transactions.api.acmefin.com/v1
+    description: Production
+  - url: https://af-core-transactions.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Transactions
+    description: Transaction posting, inquiry, and lifecycle management
+  - name: Disputes
+    description: Transaction dispute filing and resolution per Regulation E
+  - name: Categorization
+    description: Transaction categorization for personal finance management
+  - name: Export
+    description: Bulk transaction export for reporting and analytics
+paths:
+  /transactions:
+    get:
+      operationId: listTransactions
+      summary: List transactions
+      description: >-
+        Retrieve a paginated list of transactions with comprehensive filtering. Supports date ranges, amount
+        ranges, transaction type, category, channel, and free-text description search. Results include
+        running balances and are ordered by posted_at descending by default.
+      tags:
+        - Transactions
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: account_id
+          in: query
+          required: false
+          description: Filter by account
+          schema:
+            type: "string"
+        - name: transaction_type
+          in: query
+          required: false
+          description: Filter by type
+          schema:
+            type: "string"
+            enum:
+              - DEBIT
+              - CREDIT
+              - MEMO_DEBIT
+              - MEMO_CREDIT
+        - name: category
+          in: query
+          required: false
+          description: Filter by category
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+            enum:
+              - AUTHORIZED
+              - PENDING
+              - POSTED
+              - REVERSED
+              - DISPUTED
+        - name: from_date
+          in: query
+          required: false
+          description: Start date (YYYY-MM-DD)
+          schema:
+            type: "string"
+            format: "date"
+        - name: to_date
+          in: query
+          required: false
+          description: End date (YYYY-MM-DD)
+          schema:
+            type: "string"
+            format: "date"
+        - name: min_amount
+          in: query
+          required: false
+          description: Minimum transaction amount
+          schema:
+            type: "number"
+        - name: max_amount
+          in: query
+          required: false
+          description: Maximum transaction amount
+          schema:
+            type: "number"
+        - name: search
+          in: query
+          required: false
+          description: Free-text search in description field
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transaction_id:
+                          type: string
+                          description: Unique transaction identifier
+                          example: "txn-88210045"
+                        account_id:
+                          type: string
+                          description: Account involved in the transaction
+                          example: "acct-10045892"
+                        transaction_type:
+                          type: string
+                          description: Transaction classification
+                          enum:
+                            - DEBIT
+                            - CREDIT
+                            - MEMO_DEBIT
+                            - MEMO_CREDIT
+                        category:
+                          type: string
+                          description: Transaction category
+                          enum:
+                            - DEPOSIT
+                            - WITHDRAWAL
+                            - TRANSFER
+                            - PAYMENT
+                            - FEE
+                            - INTEREST
+                            - ADJUSTMENT
+                            - ATM
+                            - POS
+                            - ACH
+                            - WIRE
+                        amount:
+                          type: number
+                          description: Transaction amount
+                          format: double
+                          example: 150.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                        running_balance:
+                          type: number
+                          description: Account balance after this transaction
+                          format: double
+                          example: 24439.47
+                        status:
+                          type: string
+                          description: Transaction lifecycle status
+                          enum:
+                            - AUTHORIZED
+                            - PENDING
+                            - POSTED
+                            - REVERSED
+                            - DISPUTED
+                            - VOIDED
+                        description:
+                          type: string
+                          description: Transaction description or merchant name
+                          example: "AMAZON.COM AMZN.COM/BILL WA"
+                        reference_number:
+                          type: string
+                          description: External reference or trace number
+                          example: "REF-20250610-00482"
+                        effective_date:
+                          type: string
+                          description: Date transaction affects the balance
+                          format: date
+                          example: "2025-06-10"
+                        posted_at:
+                          type: string
+                          description: Timestamp when transaction was posted
+                          format: date-time
+                          example: "2025-06-10T14:30:00Z"
+                        channel:
+                          type: string
+                          description: Origination channel
+                          enum:
+                            - BRANCH
+                            - ATM
+                            - ONLINE
+                            - MOBILE
+                            - ACH
+                            - WIRE
+                            - POS
+                            - INTERNAL
+                        merchant_category_code:
+                          type: string
+                          description: MCC code for POS transactions
+                          example: "5411"
+                        check_number:
+                          type: string
+                          description: Check number if applicable
+                          example: "1042"
+                      required:
+                        - transaction_id
+                        - account_id
+                        - transaction_type
+                        - amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTransaction
+      summary: Post a transaction
+      description: >-
+        Post a new transaction to an account. The transaction is validated against account status, available
+        balance (for debits), and applicable transaction limits before posting. A corresponding journal
+        entry is created in the Core Ledger. Memo-post transactions are reflected in pending balances but do
+        not affect the ledger balance until posted.
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        description: Post a transaction request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    account_id:
+                      type: string
+                      description: Account involved in the transaction
+                      example: "acct-10045892"
+                    transaction_type:
+                      type: string
+                      description: Transaction classification
+                      enum:
+                        - DEBIT
+                        - CREDIT
+                        - MEMO_DEBIT
+                        - MEMO_CREDIT
+                    category:
+                      type: string
+                      description: Transaction category
+                      enum:
+                        - DEPOSIT
+                        - WITHDRAWAL
+                        - TRANSFER
+                        - PAYMENT
+                        - FEE
+                        - INTEREST
+                        - ADJUSTMENT
+                        - ATM
+                        - POS
+                        - ACH
+                        - WIRE
+                    amount:
+                      type: number
+                      description: Transaction amount
+                      format: double
+                      example: 150.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                    description:
+                      type: string
+                      description: Transaction description or merchant name
+                      example: "AMAZON.COM AMZN.COM/BILL WA"
+                    reference_number:
+                      type: string
+                      description: External reference or trace number
+                      example: "REF-20250610-00482"
+                    effective_date:
+                      type: string
+                      description: Date transaction affects the balance
+                      format: date
+                      example: "2025-06-10"
+                    channel:
+                      type: string
+                      description: Origination channel
+                      enum:
+                        - BRANCH
+                        - ATM
+                        - ONLINE
+                        - MOBILE
+                        - ACH
+                        - WIRE
+                        - POS
+                        - INTERNAL
+              required:
+                - account_id
+                - transaction_type
+                - amount
+                - currency
+                - description
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: Unique transaction identifier
+                    example: "txn-88210045"
+                  account_id:
+                    type: string
+                    description: Account involved in the transaction
+                    example: "acct-10045892"
+                  transaction_type:
+                    type: string
+                    description: Transaction classification
+                    enum:
+                      - DEBIT
+                      - CREDIT
+                      - MEMO_DEBIT
+                      - MEMO_CREDIT
+                  category:
+                    type: string
+                    description: Transaction category
+                    enum:
+                      - DEPOSIT
+                      - WITHDRAWAL
+                      - TRANSFER
+                      - PAYMENT
+                      - FEE
+                      - INTEREST
+                      - ADJUSTMENT
+                      - ATM
+                      - POS
+                      - ACH
+                      - WIRE
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 150.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                  running_balance:
+                    type: number
+                    description: Account balance after this transaction
+                    format: double
+                    example: 24439.47
+                  status:
+                    type: string
+                    description: Transaction lifecycle status
+                    enum:
+                      - AUTHORIZED
+                      - PENDING
+                      - POSTED
+                      - REVERSED
+                      - DISPUTED
+                      - VOIDED
+                  description:
+                    type: string
+                    description: Transaction description or merchant name
+                    example: "AMAZON.COM AMZN.COM/BILL WA"
+                  reference_number:
+                    type: string
+                    description: External reference or trace number
+                    example: "REF-20250610-00482"
+                  effective_date:
+                    type: string
+                    description: Date transaction affects the balance
+                    format: date
+                    example: "2025-06-10"
+                  posted_at:
+                    type: string
+                    description: Timestamp when transaction was posted
+                    format: date-time
+                    example: "2025-06-10T14:30:00Z"
+                  channel:
+                    type: string
+                    description: Origination channel
+                    enum:
+                      - BRANCH
+                      - ATM
+                      - ONLINE
+                      - MOBILE
+                      - ACH
+                      - WIRE
+                      - POS
+                      - INTERNAL
+                  merchant_category_code:
+                    type: string
+                    description: MCC code for POS transactions
+                    example: "5411"
+                  check_number:
+                    type: string
+                    description: Check number if applicable
+                    example: "1042"
+                required:
+                  - transaction_id
+                  - status
+                  - running_balance
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/{transaction_id}:
+    get:
+      operationId: getTransaction
+      summary: Get transaction details
+      description: >-
+        Retrieve complete details of a specific transaction including the running balance at the time of
+        posting, origination channel, merchant information for POS transactions, and any associated dispute
+        or reversal references.
+      tags:
+        - Transactions
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          description: Unique transaction id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: Unique transaction identifier
+                    example: "txn-88210045"
+                  account_id:
+                    type: string
+                    description: Account involved in the transaction
+                    example: "acct-10045892"
+                  transaction_type:
+                    type: string
+                    description: Transaction classification
+                    enum:
+                      - DEBIT
+                      - CREDIT
+                      - MEMO_DEBIT
+                      - MEMO_CREDIT
+                  category:
+                    type: string
+                    description: Transaction category
+                    enum:
+                      - DEPOSIT
+                      - WITHDRAWAL
+                      - TRANSFER
+                      - PAYMENT
+                      - FEE
+                      - INTEREST
+                      - ADJUSTMENT
+                      - ATM
+                      - POS
+                      - ACH
+                      - WIRE
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 150.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                  running_balance:
+                    type: number
+                    description: Account balance after this transaction
+                    format: double
+                    example: 24439.47
+                  status:
+                    type: string
+                    description: Transaction lifecycle status
+                    enum:
+                      - AUTHORIZED
+                      - PENDING
+                      - POSTED
+                      - REVERSED
+                      - DISPUTED
+                      - VOIDED
+                  description:
+                    type: string
+                    description: Transaction description or merchant name
+                    example: "AMAZON.COM AMZN.COM/BILL WA"
+                  reference_number:
+                    type: string
+                    description: External reference or trace number
+                    example: "REF-20250610-00482"
+                  effective_date:
+                    type: string
+                    description: Date transaction affects the balance
+                    format: date
+                    example: "2025-06-10"
+                  posted_at:
+                    type: string
+                    description: Timestamp when transaction was posted
+                    format: date-time
+                    example: "2025-06-10T14:30:00Z"
+                  channel:
+                    type: string
+                    description: Origination channel
+                    enum:
+                      - BRANCH
+                      - ATM
+                      - ONLINE
+                      - MOBILE
+                      - ACH
+                      - WIRE
+                      - POS
+                      - INTERNAL
+                  merchant_category_code:
+                    type: string
+                    description: MCC code for POS transactions
+                    example: "5411"
+                  check_number:
+                    type: string
+                    description: Check number if applicable
+                    example: "1042"
+                required:
+                  - transaction_id
+                  - account_id
+                  - amount
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /transactions/{transaction_id}/reverse:
+    post:
+      operationId: reverseTransaction
+      summary: Reverse a transaction
+      description: >-
+        Reverse a posted transaction by creating an offsetting entry. The reversal amount equals the
+        original transaction amount. Partial reversals are not supported — use a new adjustment transaction
+        for partial corrections. The original and reversal transactions are cross-referenced for audit
+        trail.
+      tags:
+        - Transactions
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          description: Unique transaction id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Reverse a transaction request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reversal_reason:
+                      type: string
+                      description: Reason for the reversal
+                      enum:
+                        - BANK_ERROR
+                        - DUPLICATE
+                        - CUSTOMER_REQUEST
+                        - FRAUD
+                        - DISPUTE_RESOLUTION
+                    notes:
+                      type: string
+                      description: Additional details
+                      example: "Duplicate ACH debit — originator confirmed error"
+              required:
+                - reversal_reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  original_transaction_id:
+                    type: string
+                    description: Unique transaction identifier
+                    example: "txn-88210045"
+                  reversal_transaction_id:
+                    type: string
+                    description: New reversal transaction ID
+                    example: "txn-88210046"
+                  reversal_amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 150.0
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/{transaction_id}/authorize:
+    post:
+      operationId: authorizeTransaction
+      summary: Authorize a transaction
+      description: >-
+        Create a pre-authorization hold against an account's available balance. Used for debit card, POS,
+        and real-time payment authorizations. The authorization reduces available balance without affecting
+        the ledger. Authorizations expire after the configured timeout period if not captured or voided.
+      tags:
+        - Transactions
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          description: Unique transaction id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Authorize a transaction request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    authorization_amount:
+                      type: number
+                      description: Amount to authorize
+                      format: double
+                      example: 75.0
+                    merchant_name:
+                      type: string
+                      description: Merchant name
+                      example: "Shell Gas Station #4421"
+                    merchant_category_code:
+                      type: string
+                      description: MCC code
+                      example: "5541"
+                    expiry_hours:
+                      type: integer
+                      description: Authorization expiry in hours
+                      example: 72
+                      default: 72
+              required:
+                - authorization_amount
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Authorization reference
+                    example: "auth-20250610-00482"
+                  available_balance_after:
+                    type: number
+                    description: Available balance after auth hold
+                    format: double
+                    example: 23025.0
+                  expires_at:
+                    type: string
+                    description: Authorization expiration
+                    format: date-time
+                    example: "2025-06-13T14:30:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/{transaction_id}/capture:
+    post:
+      operationId: captureTransaction
+      summary: Capture an authorization
+      description: >-
+        Capture (settle) a previously authorized transaction for the final amount. The capture amount may be
+        less than or equal to the authorization amount. If less, the remaining authorization hold is
+        released. Captures exceeding the original authorization are rejected.
+      tags:
+        - Transactions
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          description: Unique transaction id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Capture an authorization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    capture_amount:
+                      type: number
+                      description: Final settlement amount
+                      format: double
+                      example: 62.5
+                    authorization_id:
+                      type: string
+                      description: Original authorization reference
+                      example: "auth-20250610-00482"
+              required:
+                - capture_amount
+                - authorization_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: Unique transaction identifier
+                    example: "txn-88210045"
+                  status:
+                    type: string
+                    description: Transaction lifecycle status
+                    enum:
+                      - AUTHORIZED
+                      - PENDING
+                      - POSTED
+                      - REVERSED
+                      - DISPUTED
+                      - VOIDED
+                  captured_amount:
+                    type: number
+                    description: Amount captured
+                    format: double
+                    example: 62.5
+                  running_balance:
+                    type: number
+                    description: Account balance after this transaction
+                    format: double
+                    example: 24439.47
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/{transaction_id}/void:
+    post:
+      operationId: voidAuthorization
+      summary: Void an authorization
+      description: >-
+        Void a pending authorization that has not been captured. The authorization hold is released
+        immediately and the available balance is restored. Cannot void transactions that have already been
+        captured or posted.
+      tags:
+        - Transactions
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          description: Unique transaction id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Void an authorization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    void_reason:
+                      type: string
+                      description: Reason for voiding
+                      example: "Customer cancelled purchase"
+              required:
+                - void_reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: Unique transaction identifier
+                    example: "txn-88210045"
+                  status:
+                    type: string
+                    description: Transaction lifecycle status
+                    enum:
+                      - AUTHORIZED
+                      - PENDING
+                      - POSTED
+                      - REVERSED
+                      - DISPUTED
+                      - VOIDED
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/search:
+    post:
+      operationId: searchTransactions
+      summary: Advanced transaction search
+      description: >-
+        Perform an advanced search across transactions with complex criteria including multiple accounts,
+        date ranges, amount ranges, merchant name patterns, and MCC codes. Supports boolean operators for
+        combining search terms. Results are scored by relevance when free-text search is used.
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        description: Advanced transaction search request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    account_ids:
+                      type: array
+                      description: Accounts to search across
+                      items:
+                        type: string
+                    query:
+                      type: string
+                      description: Free-text search query
+                      example: "Amazon OR AWS"
+                    date_range:
+                      type: object
+                      description: Date range filter
+                      properties:
+                        from:
+                          type: string
+                          format: date
+                        to:
+                          type: string
+                          format: date
+                    amount_range:
+                      type: object
+                      description: Amount range filter
+                      properties:
+                        min:
+                          type: number
+                        max:
+                          type: number
+                    categories:
+                      type: array
+                      description: Filter by categories
+                      items:
+                        type: string
+                    channels:
+                      type: array
+                      description: Filter by channels
+                      items:
+                        type: string
+              required:
+                - date_range
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    description: Matching transactions
+                    items:
+                      type: object
+                  total_results:
+                    type: integer
+                    description: Total matches
+                    example: 142
+                required:
+                  - results
+                  - total_results
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/by-reference/{reference_number}:
+    get:
+      operationId: getTransactionByReference
+      summary: Get transaction by reference
+      description: >-
+        Look up a transaction by its external reference number, check number, or trace number. Useful for
+        cross-referencing transactions from external systems, processing ACH returns, or locating specific
+        check payments.
+      tags:
+        - Transactions
+      parameters:
+        - name: reference_number
+          in: path
+          required: true
+          description: Unique reference number
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: Unique transaction identifier
+                    example: "txn-88210045"
+                  account_id:
+                    type: string
+                    description: Account involved in the transaction
+                    example: "acct-10045892"
+                  transaction_type:
+                    type: string
+                    description: Transaction classification
+                    enum:
+                      - DEBIT
+                      - CREDIT
+                      - MEMO_DEBIT
+                      - MEMO_CREDIT
+                  category:
+                    type: string
+                    description: Transaction category
+                    enum:
+                      - DEPOSIT
+                      - WITHDRAWAL
+                      - TRANSFER
+                      - PAYMENT
+                      - FEE
+                      - INTEREST
+                      - ADJUSTMENT
+                      - ATM
+                      - POS
+                      - ACH
+                      - WIRE
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 150.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                  running_balance:
+                    type: number
+                    description: Account balance after this transaction
+                    format: double
+                    example: 24439.47
+                  status:
+                    type: string
+                    description: Transaction lifecycle status
+                    enum:
+                      - AUTHORIZED
+                      - PENDING
+                      - POSTED
+                      - REVERSED
+                      - DISPUTED
+                      - VOIDED
+                  description:
+                    type: string
+                    description: Transaction description or merchant name
+                    example: "AMAZON.COM AMZN.COM/BILL WA"
+                  reference_number:
+                    type: string
+                    description: External reference or trace number
+                    example: "REF-20250610-00482"
+                  effective_date:
+                    type: string
+                    description: Date transaction affects the balance
+                    format: date
+                    example: "2025-06-10"
+                  posted_at:
+                    type: string
+                    description: Timestamp when transaction was posted
+                    format: date-time
+                    example: "2025-06-10T14:30:00Z"
+                  channel:
+                    type: string
+                    description: Origination channel
+                    enum:
+                      - BRANCH
+                      - ATM
+                      - ONLINE
+                      - MOBILE
+                      - ACH
+                      - WIRE
+                      - POS
+                      - INTERNAL
+                  merchant_category_code:
+                    type: string
+                    description: MCC code for POS transactions
+                    example: "5411"
+                  check_number:
+                    type: string
+                    description: Check number if applicable
+                    example: "1042"
+                required:
+                  - transaction_id
+                  - reference_number
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /transactions/{transaction_id}/memo:
+    post:
+      operationId: addTransactionMemo
+      summary: Add memo to transaction
+      description: >-
+        Add or update an internal memo or note on a transaction. Memos are visible to bank staff and can
+        include investigation notes, customer communication references, or processing instructions. Memos do
+        not affect the transaction itself.
+      tags:
+        - Transactions
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          description: Unique transaction id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Add memo to transaction request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    memo_text:
+                      type: string
+                      description: Memo content
+                      example: "Customer called regarding this charge — confirmed legitimate"
+                    visibility:
+                      type: string
+                      description: Who can see the memo
+                      enum:
+                        - INTERNAL
+                        - CUSTOMER_VISIBLE
+              required:
+                - memo_text
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: Unique transaction identifier
+                    example: "txn-88210045"
+                  memo_text:
+                    type: string
+                    description: Updated memo
+                    example: "Customer called regarding this charge — confirmed legitimate"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /disputes:
+    get:
+      operationId: listDisputes
+      summary: List transaction disputes
+      description: >-
+        Retrieve filed transaction disputes with filtering by account, status, or filing date. Each dispute
+        shows the Regulation E timeline including the 10-business-day provisional credit deadline and the
+        45-day investigation resolution deadline.
+      tags:
+        - Disputes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: account_id
+          in: query
+          required: false
+          description: Filter by account
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by dispute status
+          schema:
+            type: "string"
+            enum:
+              - OPENED
+              - INVESTIGATING
+              - PROVISIONAL_CREDIT
+              - RESOLVED_CUSTOMER
+              - RESOLVED_MERCHANT
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        dispute_id:
+                          type: string
+                          description: Dispute case identifier
+                          example: "disp-30021"
+                        transaction_id:
+                          type: string
+                          description: Disputed transaction
+                          example: "txn-88210045"
+                        account_id:
+                          type: string
+                          description: Account involved
+                          example: "acct-10045892"
+                        dispute_reason:
+                          type: string
+                          description: Reason for the dispute
+                          enum:
+                            - UNAUTHORIZED
+                            - DUPLICATE_CHARGE
+                            - AMOUNT_INCORRECT
+                            - MERCHANDISE_NOT_RECEIVED
+                            - SERVICE_NOT_PROVIDED
+                            - FRAUDULENT
+                        dispute_amount:
+                          type: number
+                          description: Amount being disputed
+                          format: double
+                          example: 150.0
+                        status:
+                          type: string
+                          description: Dispute resolution status
+                          enum:
+                            - OPENED
+                            - INVESTIGATING
+                            - PROVISIONAL_CREDIT
+                            - RESOLVED_CUSTOMER
+                            - RESOLVED_MERCHANT
+                            - CLOSED
+                        provisional_credit_amount:
+                          type: number
+                          description: Provisional credit issued to customer
+                          format: double
+                          example: 150.0
+                          nullable: true
+                        opened_at:
+                          type: string
+                          description: When dispute was filed
+                          format: date-time
+                          example: "2025-06-10T14:30:00Z"
+                        resolution_deadline:
+                          type: string
+                          description: Regulation E resolution deadline
+                          format: date
+                          example: "2025-07-20"
+                        resolution_notes:
+                          type: string
+                          description: Resolution details
+                          example: "Merchant refund received — provisional credit reversed"
+                      required:
+                        - dispute_id
+                        - transaction_id
+                        - dispute_reason
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: fileDispute
+      summary: File a transaction dispute
+      description: >-
+        File a new dispute on a posted transaction per Regulation E requirements. For unauthorized
+        transactions reported within 2 business days, provisional credit must be issued within 10 business
+        days. The system automatically calculates and tracks all regulatory deadlines based on the filing
+        date and dispute reason.
+      tags:
+        - Disputes
+      requestBody:
+        required: true
+        description: File a transaction dispute request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    transaction_id:
+                      type: string
+                      description: Disputed transaction
+                      example: "txn-88210045"
+                    dispute_reason:
+                      type: string
+                      description: Reason for the dispute
+                      enum:
+                        - UNAUTHORIZED
+                        - DUPLICATE_CHARGE
+                        - AMOUNT_INCORRECT
+                        - MERCHANDISE_NOT_RECEIVED
+                        - SERVICE_NOT_PROVIDED
+                        - FRAUDULENT
+                    dispute_amount:
+                      type: number
+                      description: Amount being disputed
+                      format: double
+                      example: 150.0
+              required:
+                - transaction_id
+                - dispute_reason
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Dispute case identifier
+                    example: "disp-30021"
+                  transaction_id:
+                    type: string
+                    description: Disputed transaction
+                    example: "txn-88210045"
+                  account_id:
+                    type: string
+                    description: Account involved
+                    example: "acct-10045892"
+                  dispute_reason:
+                    type: string
+                    description: Reason for the dispute
+                    enum:
+                      - UNAUTHORIZED
+                      - DUPLICATE_CHARGE
+                      - AMOUNT_INCORRECT
+                      - MERCHANDISE_NOT_RECEIVED
+                      - SERVICE_NOT_PROVIDED
+                      - FRAUDULENT
+                  dispute_amount:
+                    type: number
+                    description: Amount being disputed
+                    format: double
+                    example: 150.0
+                  status:
+                    type: string
+                    description: Dispute resolution status
+                    enum:
+                      - OPENED
+                      - INVESTIGATING
+                      - PROVISIONAL_CREDIT
+                      - RESOLVED_CUSTOMER
+                      - RESOLVED_MERCHANT
+                      - CLOSED
+                  provisional_credit_amount:
+                    type: number
+                    description: Provisional credit issued to customer
+                    format: double
+                    example: 150.0
+                    nullable: true
+                  opened_at:
+                    type: string
+                    description: When dispute was filed
+                    format: date-time
+                    example: "2025-06-10T14:30:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: Regulation E resolution deadline
+                    format: date
+                    example: "2025-07-20"
+                  resolution_notes:
+                    type: string
+                    description: Resolution details
+                    example: "Merchant refund received — provisional credit reversed"
+                required:
+                  - dispute_id
+                  - status
+                  - resolution_deadline
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /disputes/{dispute_id}:
+    get:
+      operationId: getDispute
+      summary: Get dispute details
+      description: >-
+        Retrieve complete dispute case details including the original transaction, dispute amount,
+        provisional credit status, investigation timeline, and resolution outcome. Includes all Regulation E
+        deadline dates and compliance status indicators.
+      tags:
+        - Disputes
+      parameters:
+        - name: dispute_id
+          in: path
+          required: true
+          description: Unique dispute id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Dispute case identifier
+                    example: "disp-30021"
+                  transaction_id:
+                    type: string
+                    description: Disputed transaction
+                    example: "txn-88210045"
+                  account_id:
+                    type: string
+                    description: Account involved
+                    example: "acct-10045892"
+                  dispute_reason:
+                    type: string
+                    description: Reason for the dispute
+                    enum:
+                      - UNAUTHORIZED
+                      - DUPLICATE_CHARGE
+                      - AMOUNT_INCORRECT
+                      - MERCHANDISE_NOT_RECEIVED
+                      - SERVICE_NOT_PROVIDED
+                      - FRAUDULENT
+                  dispute_amount:
+                    type: number
+                    description: Amount being disputed
+                    format: double
+                    example: 150.0
+                  status:
+                    type: string
+                    description: Dispute resolution status
+                    enum:
+                      - OPENED
+                      - INVESTIGATING
+                      - PROVISIONAL_CREDIT
+                      - RESOLVED_CUSTOMER
+                      - RESOLVED_MERCHANT
+                      - CLOSED
+                  provisional_credit_amount:
+                    type: number
+                    description: Provisional credit issued to customer
+                    format: double
+                    example: 150.0
+                    nullable: true
+                  opened_at:
+                    type: string
+                    description: When dispute was filed
+                    format: date-time
+                    example: "2025-06-10T14:30:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: Regulation E resolution deadline
+                    format: date
+                    example: "2025-07-20"
+                  resolution_notes:
+                    type: string
+                    description: Resolution details
+                    example: "Merchant refund received — provisional credit reversed"
+                required:
+                  - dispute_id
+                  - status
+                  - resolution_deadline
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateDispute
+      summary: Update dispute status
+      description: >-
+        Update the dispute investigation status or record resolution details. Transitions to
+        PROVISIONAL_CREDIT status trigger automatic credit posting to the customer's account. Resolution in
+        favor of the merchant triggers reversal of any provisional credit.
+      tags:
+        - Disputes
+      parameters:
+        - name: dispute_id
+          in: path
+          required: true
+          description: Unique dispute id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update dispute status request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    status:
+                      type: string
+                      description: Dispute resolution status
+                      enum:
+                        - OPENED
+                        - INVESTIGATING
+                        - PROVISIONAL_CREDIT
+                        - RESOLVED_CUSTOMER
+                        - RESOLVED_MERCHANT
+                        - CLOSED
+                    provisional_credit_amount:
+                      type: number
+                      description: Provisional credit issued to customer
+                      format: double
+                      example: 150.0
+                      nullable: true
+                    resolution_notes:
+                      type: string
+                      description: Resolution details
+                      example: "Merchant refund received — provisional credit reversed"
+              required:
+                - status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Dispute case identifier
+                    example: "disp-30021"
+                  transaction_id:
+                    type: string
+                    description: Disputed transaction
+                    example: "txn-88210045"
+                  account_id:
+                    type: string
+                    description: Account involved
+                    example: "acct-10045892"
+                  dispute_reason:
+                    type: string
+                    description: Reason for the dispute
+                    enum:
+                      - UNAUTHORIZED
+                      - DUPLICATE_CHARGE
+                      - AMOUNT_INCORRECT
+                      - MERCHANDISE_NOT_RECEIVED
+                      - SERVICE_NOT_PROVIDED
+                      - FRAUDULENT
+                  dispute_amount:
+                    type: number
+                    description: Amount being disputed
+                    format: double
+                    example: 150.0
+                  status:
+                    type: string
+                    description: Dispute resolution status
+                    enum:
+                      - OPENED
+                      - INVESTIGATING
+                      - PROVISIONAL_CREDIT
+                      - RESOLVED_CUSTOMER
+                      - RESOLVED_MERCHANT
+                      - CLOSED
+                  provisional_credit_amount:
+                    type: number
+                    description: Provisional credit issued to customer
+                    format: double
+                    example: 150.0
+                    nullable: true
+                  opened_at:
+                    type: string
+                    description: When dispute was filed
+                    format: date-time
+                    example: "2025-06-10T14:30:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: Regulation E resolution deadline
+                    format: date
+                    example: "2025-07-20"
+                  resolution_notes:
+                    type: string
+                    description: Resolution details
+                    example: "Merchant refund received — provisional credit reversed"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/{transaction_id}/categorize:
+    post:
+      operationId: categorizeTransaction
+      summary: Categorize a transaction
+      description: >-
+        Assign or update the PFM (personal finance management) category for a transaction. Categories are
+        used by the mobile app's spending insights and budgeting features. System-assigned categories based
+        on MCC codes can be overridden by the customer.
+      tags:
+        - Categorization
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          description: Unique transaction id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Categorize a transaction request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    category:
+                      type: string
+                      description: PFM spending category
+                      enum:
+                        - GROCERIES
+                        - DINING
+                        - TRANSPORTATION
+                        - UTILITIES
+                        - HEALTHCARE
+                        - ENTERTAINMENT
+                        - SHOPPING
+                        - TRAVEL
+                        - EDUCATION
+                        - OTHER
+                    subcategory:
+                      type: string
+                      description: Optional subcategory
+                      example: "Gas Stations"
+              required:
+                - category
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: Unique transaction identifier
+                    example: "txn-88210045"
+                  category:
+                    type: string
+                    description: Transaction category
+                    enum:
+                      - DEPOSIT
+                      - WITHDRAWAL
+                      - TRANSFER
+                      - PAYMENT
+                      - FEE
+                      - INTEREST
+                      - ADJUSTMENT
+                      - ATM
+                      - POS
+                      - ACH
+                      - WIRE
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/bulk-categorize:
+    post:
+      operationId: bulkCategorize
+      summary: Bulk categorize transactions
+      description: >-
+        Apply category labels to multiple transactions in a single request. Accepts up to 500 transaction-
+        category pairs. Used by the ML-powered auto-categorization engine and bulk customer recategorization
+        workflows.
+      tags:
+        - Categorization
+      requestBody:
+        required: true
+        description: Bulk categorize transactions request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    categorizations:
+                      type: array
+                      description: Array of transaction-category pairs
+                      items:
+                        type: object
+              required:
+                - categorizations
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated_count:
+                    type: integer
+                    description: Transactions successfully categorized
+                    example: 498
+                  failed_count:
+                    type: integer
+                    description: Categorizations that failed
+                    example: 2
+                required:
+                  - updated_count
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/export:
+    post:
+      operationId: exportTransactions
+      summary: Export transactions
+      description: >-
+        Generate a transaction export file in CSV, OFX, QFX, or QBO format for a specified account and date
+        range. Exports are queued and the download URL is returned when ready. Maximum export range is 24
+        months per request. Used for accounting software integration and regulatory reporting.
+      tags:
+        - Export
+      requestBody:
+        required: true
+        description: Export transactions request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    account_id:
+                      type: string
+                      description: Account to export
+                      example: "acct-10045892"
+                    from_date:
+                      type: string
+                      description: Export start date
+                      format: date
+                      example: "2025-01-01"
+                    to_date:
+                      type: string
+                      description: Export end date
+                      format: date
+                      example: "2025-06-30"
+                    format:
+                      type: string
+                      description: Export file format
+                      enum:
+                        - CSV
+                        - OFX
+                        - QFX
+                        - QBO
+                    include_pending:
+                      type: boolean
+                      description: Include pending transactions
+                      default: false
+              required:
+                - account_id
+                - from_date
+                - to_date
+                - format
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  export_id:
+                    type: string
+                    description: Export job identifier
+                    example: "exp-20250610-001"
+                  status:
+                    type: string
+                    description: Export status
+                    example: "PROCESSING"
+                  estimated_ready_at:
+                    type: string
+                    description: Estimated availability
+                    format: date-time
+                    example: "2025-06-10T14:35:00Z"
+                required:
+                  - export_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transactions/export/{export_id}:
+    get:
+      operationId: getExportStatus
+      summary: Get export status
+      description: >-
+        Check the status of a transaction export job and retrieve the download URL when the export is
+        complete. Export files are available for download for 24 hours.
+      tags:
+        - Export
+      parameters:
+        - name: export_id
+          in: path
+          required: true
+          description: Export job identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  export_id:
+                    type: string
+                    description: Export job ID
+                    example: "exp-20250610-001"
+                  status:
+                    type: string
+                    description: Export status
+                    enum:
+                      - PROCESSING
+                      - COMPLETED
+                      - FAILED
+                  download_url:
+                    type: string
+                    description: Signed download URL (when completed)
+                    example: "https://exports.acmefin.com/exp-20250610-001.csv?sig=abc"
+                  file_size_bytes:
+                    type: integer
+                    description: Export file size
+                    example: 1048576
+                  transaction_count:
+                    type: integer
+                    description: Number of transactions exported
+                    example: 1247
+                required:
+                  - export_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /transactions/analytics:
+    get:
+      operationId: getTransactionAnalytics
+      summary: Get transaction analytics
+      description: >-
+        Retrieve aggregate transaction analytics for an account including spending by category, income vs.
+        expenses trend, average transaction size, and channel distribution. Powers the mobile app's
+        financial insights dashboard.
+      tags:
+        - Transactions
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          description: Account identifier
+          schema:
+            type: "string"
+        - name: period
+          in: query
+          required: false
+          description: Period in YYYY-MM format
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Account identifier
+                    example: "acct-10045892"
+                  period:
+                    type: string
+                    description: Analysis period
+                    example: "2025-06"
+                  total_income:
+                    type: number
+                    description: Total credits
+                    format: double
+                    example: 8500.0
+                  total_spending:
+                    type: number
+                    description: Total debits
+                    format: double
+                    example: 6010.53
+                  by_category:
+                    type: array
+                    description: Spending by PFM category
+                    items:
+                      type: object
+                  by_channel:
+                    type: array
+                    description: Transactions by channel
+                    items:
+                      type: object
+                  avg_transaction_amount:
+                    type: number
+                    description: Average transaction amount
+                    format: double
+                    example: 127.88
+                required:
+                  - account_id
+                  - total_income
+                  - total_spending
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

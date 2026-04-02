@@ -1,0 +1,827 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance PEP Screening API
+  description: >-
+    Politically Exposed Person (PEP) screening platform for identifying current and former government officials,
+    their family members, and close associates as required by FATF Recommendation 12. Supports individual and
+    batch screening against global PEP databases, match resolution workflows, and ongoing monitoring for changes
+    in PEP status. Covers domestic and foreign PEPs, international organization heads, and senior political
+    figures.
+  version: 2.0.1
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-risk-pep-screening
+  x-acme-domain: risk
+servers:
+  - url: https://af-risk-pep-screening.api.acmefin.com/v1
+    description: Production
+  - url: https://af-risk-pep-screening.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: PEP Screening
+    description: PEP identification, batch screening, and ongoing monitoring
+paths:
+  /pep/screen:
+    post:
+      operationId: screenForPep
+      summary: Screen individual for PEP status
+      description: >-
+        Screen an individual against global PEP databases to determine if they are a current or former
+        Politically Exposed Person, a family member of a PEP, or a close associate. Implements FATF
+        Recommendation 12 requirements. Covers heads of state, senior politicians, judicial officials,
+        military officers, and senior executives of state-owned enterprises.
+      tags:
+        - PEP Screening
+      requestBody:
+        required: true
+        description: Screen individual for PEP status request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    full_name:
+                      type: string
+                      description: "Individual full name"
+                      example: "Maria Elena Vasquez"
+                    date_of_birth:
+                      type: string
+                      description: "Date of birth"
+                      format: date
+                      example: "1968-05-14"
+                    country:
+                      type: string
+                      description: "Country of nationality or residence"
+                      example: "CO"
+                    gender:
+                      type: string
+                      description: "Gender for disambiguation"
+                      example: "female"
+                      enum:
+                        - male
+                        - female
+                        - unknown
+                    additional_names:
+                      type: array
+                      description: "Aliases or alternate names"
+                      items:
+                        type: string
+                    customer_id:
+                      type: string
+                      description: "Customer identifier for record linkage"
+                      example: "CUST-18290"
+              required:
+                - full_name
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  screening_id:
+                    type: string
+                    description: "Screening identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  is_pep:
+                    type: boolean
+                    description: "Whether individual is identified as PEP"
+                    example: true
+                  pep_level:
+                    type: string
+                    description: "PEP classification level"
+                    example: "foreign_pep"
+                    enum:
+                      - not_pep
+                      - domestic_pep
+                      - foreign_pep
+                      - international_org
+                      - family_member
+                      - close_associate
+                  match_count:
+                    type: integer
+                    description: "Number of PEP database matches"
+                    example: 1
+                  matches:
+                    type: array
+                    description: "PEP match details"
+                    items:
+                      type: object
+                  position:
+                    type: string
+                    description: "Identified PEP position"
+                    example: "Former Minister of Finance"
+                  country:
+                    type: string
+                    description: "PEP jurisdiction"
+                    example: "CO"
+                  screened_at:
+                    type: string
+                    description: "Screening timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - screening_id
+                  - is_pep
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /pep/batch:
+    post:
+      operationId: batchScreenPep
+      summary: Batch PEP screening
+      description: >-
+        Submit a batch of individuals for asynchronous PEP screening. Suitable for periodic customer
+        portfolio rescreening, new customer cohort onboarding, and correspondent banking due diligence.
+        Returns a batch ID for status tracking and result retrieval.
+      tags:
+        - PEP Screening
+      requestBody:
+        required: true
+        description: Batch PEP screening request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    batch_name:
+                      type: string
+                      description: "Batch identifier name"
+                      example: "Q2-2025-customer-rescreen"
+                    individuals:
+                      type: array
+                      description: "List of individuals to screen"
+                      items:
+                        type: object
+                    priority:
+                      type: string
+                      description: "Processing priority"
+                      example: "standard"
+                      enum:
+                        - standard
+                        - expedited
+              required:
+                - individuals
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: "Batch job identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  total_individuals:
+                    type: integer
+                    description: "Total individuals submitted"
+                    example: 8420
+                  status:
+                    type: string
+                    description: "Batch status"
+                    example: "queued"
+                    enum:
+                      - queued
+                      - processing
+                      - complete
+                      - failed
+                  submitted_at:
+                    type: string
+                    description: "Submission timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  estimated_completion:
+                    type: string
+                    description: "Estimated completion time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - batch_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /pep/matches/{match_id}/resolve:
+    post:
+      operationId: resolvePepMatch
+      summary: Resolve PEP match
+      description: >-
+        Record the disposition for a PEP screening match. Confirmed PEP matches trigger enhanced due
+        diligence requirements and senior management approval for onboarding per FATF Recommendation 12.
+        False positive dispositions require justification and are subject to quality assurance review.
+      tags:
+        - PEP Screening
+      parameters:
+        - name: match_id
+          in: path
+          required: true
+          description: Unique match id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Resolve PEP match request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    resolution:
+                      type: string
+                      description: "Match resolution"
+                      example: "confirmed_pep"
+                      enum:
+                        - confirmed_pep
+                        - false_positive
+                        - escalated
+                        - requires_edd
+                    resolution_reason:
+                      type: string
+                      description: "Justification for resolution"
+                    reviewer:
+                      type: string
+                      description: "Reviewing analyst"
+                      example: "pep-analyst-08"
+                    edd_required:
+                      type: boolean
+                      description: "EDD triggered by PEP confirmation"
+                      example: true
+                    senior_approval_obtained:
+                      type: boolean
+                      description: "Senior management approval for PEP relationship"
+                      example: false
+              required:
+                - resolution
+                - resolution_reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  match_id:
+                    type: string
+                    description: "Match identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  resolution:
+                    type: string
+                    description: "Recorded resolution"
+                    example: "confirmed_pep"
+                  resolved_at:
+                    type: string
+                    description: "Resolution timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  edd_initiated:
+                    type: boolean
+                    description: "EDD workflow initiated"
+                    example: true
+                required:
+                  - match_id
+                  - resolution
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /pep/monitoring:
+    get:
+      operationId: listPepMonitoring
+      summary: List PEP ongoing monitoring
+      description: >-
+        Retrieve individuals under ongoing PEP monitoring including status change alerts, rescreen
+        schedules, and EDD review dates. Ongoing monitoring is required for confirmed PEP relationships to
+        detect changes in political exposure status per FATF guidance.
+      tags:
+        - PEP Screening
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: pep_level
+          in: query
+          required: false
+          description: Filter by PEP level
+          schema:
+            type: "string"
+        - name: rescreen_due
+          in: query
+          required: false
+          description: Filter for rescreens due before date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        monitoring_id:
+                          type: string
+                          description: "Monitoring record identifier"
+                          format: uuid
+                          example: "550e8400-e29b-41d4-a716-446655440000"
+                        customer_id:
+                          type: string
+                          description: "Customer identifier"
+                          example: "CUST-18290"
+                        customer_name:
+                          type: string
+                          description: "Customer name"
+                          example: "Maria Elena Vasquez"
+                        pep_level:
+                          type: string
+                          description: "Current PEP level"
+                          example: "foreign_pep"
+                          enum:
+                            - domestic_pep
+                            - foreign_pep
+                            - international_org
+                            - family_member
+                            - close_associate
+                        position:
+                          type: string
+                          description: "Known PEP position"
+                          example: "Former Minister of Finance"
+                        next_rescreen:
+                          type: string
+                          description: "Next scheduled rescreen date"
+                          format: date
+                          example: "2025-09-15"
+                        last_status_change:
+                          type: string
+                          description: "Last detected PEP status change"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        edd_review_due:
+                          type: string
+                          description: "Next EDD review date"
+                          format: date
+                          example: "2025-12-15"
+                      required:
+                        - monitoring_id
+                        - customer_id
+                        - pep_level
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /pep/sources:
+    get:
+      operationId: listPepSources
+      summary: List PEP data sources
+      description: >-
+        Retrieve the inventory of PEP data sources configured in the screening system. Shows source coverage
+        by region, update frequency, total PEP entries, and data quality metrics.
+      tags:
+        - PEP Screening
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source_id:
+                          type: string
+                          description: "Data source identifier"
+                          example: "SRC-WORLD-CHECK"
+                        source_name:
+                          type: string
+                          description: "Source display name"
+                          example: "World-Check by Refinitiv"
+                        provider:
+                          type: string
+                          description: "Data provider"
+                          example: "Refinitiv"
+                        coverage_regions:
+                          type: array
+                          description: "Geographic regions covered"
+                          items:
+                            type: string
+                            example: "Global"
+                        total_pep_entries:
+                          type: integer
+                          description: "Total PEP records in source"
+                          example: 1840000
+                        last_updated:
+                          type: string
+                          description: "Last data feed update"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        update_frequency:
+                          type: string
+                          description: "Data update frequency"
+                          example: "Daily"
+                      required:
+                        - source_id
+                        - source_name
+                        - total_pep_entries
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

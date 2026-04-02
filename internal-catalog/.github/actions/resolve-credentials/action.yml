@@ -1,0 +1,70 @@
+name: 'Resolve Tenant Credentials'
+description: 'Provider-neutral composite action for fetching Postman tenant credentials'
+
+inputs:
+  provider:
+    description: 'The secret provider to use (aws-secrets-manager, 1password)'
+    required: false
+    default: 'aws-secrets-manager'
+  postman_team_slug:
+    description: 'The slug of the Postman team whose credentials should be resolved'
+    required: true
+  provider_ref_prefix:
+    description: 'Provider-specific root or naming prefix (e.g., /postman/tenants for AWS)'
+    required: false
+    default: '/postman/tenants'
+  aws_region:
+    description: 'AWS region for AWS Secrets Manager'
+    required: false
+    default: 'eu-central-1'
+  aws_role_arn:
+    description: 'AWS IAM Role ARN for OIDC federation (required if using aws-secrets-manager via OIDC)'
+    required: false
+  op_service_account_token:
+    description: '1Password Service Account Token (required if using 1password)'
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure AWS credentials
+      if: inputs.provider == 'aws-secrets-manager' && inputs.aws_role_arn != ''
+      uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4
+      with:
+        role-to-assume: ${{ inputs.aws_role_arn }}
+        aws-region: ${{ inputs.aws_region }}
+
+    - name: Set AWS region (non-OIDC fallback)
+      if: inputs.provider == 'aws-secrets-manager' && inputs.aws_role_arn == ''
+      shell: bash
+      run: |
+        echo "AWS_REGION=${{ inputs.aws_region }}" >> $GITHUB_ENV
+        echo "AWS_DEFAULT_REGION=${{ inputs.aws_region }}" >> $GITHUB_ENV
+
+    - name: Fetch from AWS Secrets Manager
+      if: inputs.provider == 'aws-secrets-manager'
+      uses: aws-actions/aws-secretsmanager-get-secrets@15e2ccc3baa5897afe06e76f44bf3af820899377 # v2
+      with:
+        secret-ids: |
+          POSTMAN_API_KEY, ${{ inputs.provider_ref_prefix }}/${{ inputs.postman_team_slug }}/api-key
+          POSTMAN_ACCESS_TOKEN, ${{ inputs.provider_ref_prefix }}/${{ inputs.postman_team_slug }}/access-token
+
+    - name: Configure 1Password
+      if: inputs.provider == '1password'
+      uses: 1password/load-secrets-action/configure@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0 # v2
+      with:
+        service-account-token: ${{ inputs.op_service_account_token }}
+
+    - name: Fetch from 1Password
+      if: inputs.provider == '1password'
+      uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0 # v2
+      with:
+        export-env: true
+      env:
+        POSTMAN_API_KEY: "op://${{ inputs.provider_ref_prefix }}/${{ inputs.postman_team_slug }}/api-key"
+        POSTMAN_ACCESS_TOKEN: "op://${{ inputs.provider_ref_prefix }}/${{ inputs.postman_team_slug }}/access-token"
+
+    - name: Export Team Slug
+      shell: bash
+      run: |
+        echo "POSTMAN_TEAM_SLUG=${{ inputs.postman_team_slug }}" >> $GITHUB_ENV

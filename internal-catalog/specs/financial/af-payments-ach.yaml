@@ -1,0 +1,1512 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance ACH Payments API
+  description: >-
+    Process ACH payments including same-day and standard settlement via the Automated Clearing House network.
+    Supports NACHA-compliant origination, batch file submission, return handling, prenote verification, and
+    Notification of Change (NOC) processing. Implements SEC codes PPD, CCD, WEB, TEL, and CTX per NACHA Operating
+    Rules.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-payments-ach
+  x-acme-domain: payments
+servers:
+  - url: https://af-payments-ach.api.acmefin.com/v1
+    description: Production
+  - url: https://af-payments-ach.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: ACH Origination
+    description: Originate, submit, and track ACH debit and credit entries
+  - name: ACH Returns
+    description: Process ACH returns, NOC entries, and dishonored return contests
+paths:
+  /ach-transfers:
+    get:
+      operationId: listAchTransfers
+      summary: List ACH transfers
+      description: >-
+        Retrieve a paginated list of ACH origination entries with filtering by SEC code, status, settlement
+        date, and direction. Supports same-day and standard ACH entries per NACHA Operating Rules.
+      tags:
+        - ACH Origination
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: sec_code
+          in: query
+          required: false
+          description: Filter by NACHA SEC code
+          schema:
+            type: "string"
+            enum:
+              - PPD
+              - CCD
+              - WEB
+              - TEL
+              - CTX
+        - name: status
+          in: query
+          required: false
+          description: Filter by transfer status
+          schema:
+            type: "string"
+        - name: direction
+          in: query
+          required: false
+          description: Filter by debit or credit
+          schema:
+            type: "string"
+            enum:
+              - debit
+              - credit
+        - name: settlement_date_from
+          in: query
+          required: false
+          description: Settlement date range start (ISO 8601)
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ach_transfer_id:
+                          type: string
+                          description: Unique ACH transfer identifier
+                          format: uuid
+                          example: "ach-a1b2c3d4"
+                        sec_code:
+                          type: string
+                          description: Standard Entry Class code per NACHA rules
+                          example: "PPD"
+                          enum:
+                            - PPD
+                            - CCD
+                            - WEB
+                            - TEL
+                            - CTX
+                        originator_name:
+                          type: string
+                          description: Company name of the originating party
+                          example: "Acme Corp"
+                        receiver_name:
+                          type: string
+                          description: Name of the receiving party
+                          example: "Jane Doe"
+                        routing_number:
+                          type: string
+                          description: ABA routing transit number
+                          example: "021000021"
+                          pattern: '^\d{9}$'
+                        account_number:
+                          type: string
+                          description: Receiver deposit account number
+                          example: "1234567890"
+                        account_type:
+                          type: string
+                          description: Deposit account type
+                          enum:
+                            - checking
+                            - savings
+                        amount:
+                          type: number
+                          description: Transaction amount
+                          format: double
+                          example: 1500.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        direction:
+                          type: string
+                          description: Debit or credit direction
+                          enum:
+                            - debit
+                            - credit
+                        status:
+                          type: string
+                          description: Current transfer lifecycle status
+                          enum:
+                            - pending
+                            - submitted
+                            - settled
+                            - returned
+                            - reversed
+                        settlement_date:
+                          type: string
+                          description: Expected settlement date
+                          format: date
+                          example: "2025-06-15"
+                        effective_entry_date:
+                          type: string
+                          description: NACHA effective entry date
+                          format: date
+                          example: "2025-06-14"
+                      required:
+                        - ach_transfer_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: originateAchTransfer
+      summary: Originate ACH transfer
+      description: >-
+        Submit a new ACH origination entry. Validates routing number via the Federal Reserve E-Payments
+        directory. Entries are queued for the next available NACHA processing window; use same_day_ach flag
+        to request same-day settlement where eligible.
+      tags:
+        - ACH Origination
+      requestBody:
+        required: true
+        description: Originate ACH transfer request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    sec_code:
+                      type: string
+                      description: Standard Entry Class code per NACHA rules
+                      example: "PPD"
+                      enum:
+                        - PPD
+                        - CCD
+                        - WEB
+                        - TEL
+                        - CTX
+                    originator_name:
+                      type: string
+                      description: Company name of the originating party
+                      example: "Acme Corp"
+                    receiver_name:
+                      type: string
+                      description: Name of the receiving party
+                      example: "Jane Doe"
+                    routing_number:
+                      type: string
+                      description: ABA routing transit number
+                      example: "021000021"
+                      pattern: '^\d{9}$'
+                    account_number:
+                      type: string
+                      description: Receiver deposit account number
+                      example: "1234567890"
+                    account_type:
+                      type: string
+                      description: Deposit account type
+                      enum:
+                        - checking
+                        - savings
+                    amount:
+                      type: number
+                      description: Transaction amount
+                      format: double
+                      example: 1500.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    direction:
+                      type: string
+                      description: Debit or credit direction
+                      enum:
+                        - debit
+                        - credit
+                    same_day_ach:
+                      type: boolean
+                      description: Request same-day ACH processing (additional fee applies)
+                      default: false
+                    addenda:
+                      type: string
+                      description: Optional addenda record content (up to 80 chars)
+                      maxLength: 80
+              required:
+                - sec_code
+                - originator_name
+                - receiver_name
+                - routing_number
+                - account_number
+                - account_type
+                - amount
+                - currency
+                - direction
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ach_transfer_id:
+                    type: string
+                    description: Unique ACH transfer identifier
+                    format: uuid
+                    example: "ach-a1b2c3d4"
+                  sec_code:
+                    type: string
+                    description: Standard Entry Class code per NACHA rules
+                    example: "PPD"
+                    enum:
+                      - PPD
+                      - CCD
+                      - WEB
+                      - TEL
+                      - CTX
+                  originator_name:
+                    type: string
+                    description: Company name of the originating party
+                    example: "Acme Corp"
+                  receiver_name:
+                    type: string
+                    description: Name of the receiving party
+                    example: "Jane Doe"
+                  routing_number:
+                    type: string
+                    description: ABA routing transit number
+                    example: "021000021"
+                    pattern: '^\d{9}$'
+                  account_number:
+                    type: string
+                    description: Receiver deposit account number
+                    example: "1234567890"
+                  account_type:
+                    type: string
+                    description: Deposit account type
+                    enum:
+                      - checking
+                      - savings
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  direction:
+                    type: string
+                    description: Debit or credit direction
+                    enum:
+                      - debit
+                      - credit
+                  status:
+                    type: string
+                    description: Current transfer lifecycle status
+                    enum:
+                      - pending
+                      - submitted
+                      - settled
+                      - returned
+                      - reversed
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-15"
+                  effective_entry_date:
+                    type: string
+                    description: NACHA effective entry date
+                    format: date
+                    example: "2025-06-14"
+                required:
+                  - ach_transfer_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /ach-transfers/{ach_transfer_id}:
+    get:
+      operationId: getAchTransfer
+      summary: Get ACH transfer
+      description: >-
+        Retrieve detailed information for a single ACH transfer including NACHA trace number, settlement
+        timeline, and any associated addenda records.
+      tags:
+        - ACH Origination
+      parameters:
+        - name: ach_transfer_id
+          in: path
+          required: true
+          description: Unique ach transfer id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ach_transfer_id:
+                    type: string
+                    description: Unique ACH transfer identifier
+                    format: uuid
+                    example: "ach-a1b2c3d4"
+                  sec_code:
+                    type: string
+                    description: Standard Entry Class code per NACHA rules
+                    example: "PPD"
+                    enum:
+                      - PPD
+                      - CCD
+                      - WEB
+                      - TEL
+                      - CTX
+                  originator_name:
+                    type: string
+                    description: Company name of the originating party
+                    example: "Acme Corp"
+                  receiver_name:
+                    type: string
+                    description: Name of the receiving party
+                    example: "Jane Doe"
+                  routing_number:
+                    type: string
+                    description: ABA routing transit number
+                    example: "021000021"
+                    pattern: '^\d{9}$'
+                  account_number:
+                    type: string
+                    description: Receiver deposit account number
+                    example: "1234567890"
+                  account_type:
+                    type: string
+                    description: Deposit account type
+                    enum:
+                      - checking
+                      - savings
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  direction:
+                    type: string
+                    description: Debit or credit direction
+                    enum:
+                      - debit
+                      - credit
+                  status:
+                    type: string
+                    description: Current transfer lifecycle status
+                    enum:
+                      - pending
+                      - submitted
+                      - settled
+                      - returned
+                      - reversed
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-15"
+                  effective_entry_date:
+                    type: string
+                    description: NACHA effective entry date
+                    format: date
+                    example: "2025-06-14"
+                required:
+                  - ach_transfer_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /ach-transfers/{ach_transfer_id}/cancel:
+    post:
+      operationId: cancelAchTransfer
+      summary: Cancel ACH transfer
+      description: >-
+        Request cancellation of a pending ACH entry before the NACHA processing window closes. Returns 409
+        Conflict if the entry has already been submitted to the Federal Reserve.
+      tags:
+        - ACH Origination
+      parameters:
+        - name: ach_transfer_id
+          in: path
+          required: true
+          description: Unique ach transfer id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ach_transfer_id:
+                    type: string
+                    description: Unique ACH transfer identifier
+                    format: uuid
+                    example: "ach-a1b2c3d4"
+                  status:
+                    type: string
+                    example: "cancelled"
+                  cancelled_at:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /ach-transfers/prenote:
+    post:
+      operationId: sendPrenote
+      summary: Send prenote
+      description: >-
+        Submit a zero-dollar prenotification entry to verify receiver account and routing information before
+        originating live ACH transactions. Prenotes settle on standard ACH timelines.
+      tags:
+        - ACH Origination
+      requestBody:
+        required: true
+        description: Send prenote request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    routing_number:
+                      type: string
+                      description: ABA routing transit number
+                      example: "021000021"
+                      pattern: '^\d{9}$'
+                    account_number:
+                      type: string
+                      description: Receiver deposit account number
+                      example: "1234567890"
+                    account_type:
+                      type: string
+                      description: Deposit account type
+                      enum:
+                        - checking
+                        - savings
+                    sec_code:
+                      type: string
+                      description: Standard Entry Class code per NACHA rules
+                      example: "PPD"
+                      enum:
+                        - PPD
+                        - CCD
+                        - WEB
+                        - TEL
+                        - CTX
+                    receiver_name:
+                      type: string
+                      description: Name of the receiving party
+                      example: "Jane Doe"
+              required:
+                - routing_number
+                - account_number
+                - account_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prenote_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: "submitted"
+                  expected_response_date:
+                    type: string
+                    format: date
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /ach-batches:
+    get:
+      operationId: listAchBatches
+      summary: List ACH batches
+      description: >-
+        Retrieve submitted ACH batch headers. Each batch groups entries by SEC code and settlement date per
+        NACHA file structure requirements.
+      tags:
+        - ACH Origination
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by batch status
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        batch_id:
+                          type: string
+                          description: Batch identifier
+                          format: uuid
+                        batch_count:
+                          type: integer
+                          description: Number of entries in the batch
+                          example: 150
+                        total_debit:
+                          type: number
+                          description: Total debit amount
+                          format: double
+                          example: 75000.0
+                        total_credit:
+                          type: number
+                          description: Total credit amount
+                          format: double
+                          example: 75000.0
+                        status:
+                          type: string
+                          enum:
+                            - created
+                            - submitted
+                            - accepted
+                            - rejected
+                      required:
+                        - batch_id
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: submitAchBatch
+      summary: Submit ACH batch
+      description: >-
+        Submit a batch of ACH entries for processing. Entries are validated against NACHA formatting rules
+        and grouped into a compliant ACH file. Maximum 5,000 entries per batch.
+      tags:
+        - ACH Origination
+      requestBody:
+        required: true
+        description: Submit ACH batch request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    entries:
+                      type: array
+                      description: List of ACH entry identifiers to include in the batch
+                      items:
+                        type: string
+                    settlement_date:
+                      type: string
+                      description: Requested settlement date
+                      format: date
+                    same_day_ach:
+                      type: boolean
+                      default: false
+              required:
+                - entries
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: Batch identifier
+                    format: uuid
+                  batch_count:
+                    type: integer
+                    description: Number of entries in the batch
+                    example: 150
+                  total_debit:
+                    type: number
+                    description: Total debit amount
+                    format: double
+                    example: 75000.0
+                  total_credit:
+                    type: number
+                    description: Total credit amount
+                    format: double
+                    example: 75000.0
+                  status:
+                    type: string
+                    enum:
+                      - created
+                      - submitted
+                      - accepted
+                      - rejected
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /ach-batches/{batch_id}:
+    get:
+      operationId: getAchBatch
+      summary: Get ACH batch
+      description: >-
+        Retrieve batch details including entry counts, debit/credit totals, and submission status.
+      tags:
+        - ACH Origination
+      parameters:
+        - name: batch_id
+          in: path
+          required: true
+          description: Unique batch id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: Batch identifier
+                    format: uuid
+                  batch_count:
+                    type: integer
+                    description: Number of entries in the batch
+                    example: 150
+                  total_debit:
+                    type: number
+                    description: Total debit amount
+                    format: double
+                    example: 75000.0
+                  total_credit:
+                    type: number
+                    description: Total credit amount
+                    format: double
+                    example: 75000.0
+                  status:
+                    type: string
+                    enum:
+                      - created
+                      - submitted
+                      - accepted
+                      - rejected
+                required:
+                  - batch_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /ach-returns:
+    get:
+      operationId: listAchReturns
+      summary: List ACH returns
+      description: >-
+        Retrieve ACH return entries received from the RDFI. Returns include NACHA return reason codes
+        (R01-R85) and dishonored return information.
+      tags:
+        - ACH Returns
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: return_code
+          in: query
+          required: false
+          description: Filter by NACHA return reason code
+          schema:
+            type: "string"
+        - name: date_from
+          in: query
+          required: false
+          description: Return date range start
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        return_id:
+                          type: string
+                          description: ACH return identifier
+                          format: uuid
+                        ach_transfer_id:
+                          type: string
+                          description: Unique ACH transfer identifier
+                          format: uuid
+                          example: "ach-a1b2c3d4"
+                        return_code:
+                          type: string
+                          description: NACHA return reason code
+                          example: "R01"
+                          enum:
+                            - R01
+                            - R02
+                            - R03
+                            - R04
+                            - R05
+                            - R06
+                            - R07
+                            - R08
+                            - R10
+                            - R29
+                        return_reason:
+                          type: string
+                          description: Human-readable reason
+                          example: "Insufficient funds"
+                        status:
+                          type: string
+                          enum:
+                            - received
+                            - accepted
+                            - contested
+                            - resolved
+                      required:
+                        - return_id
+                        - return_code
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /ach-returns/{return_id}:
+    get:
+      operationId: getAchReturn
+      summary: Get ACH return
+      description: >-
+        Retrieve detailed return information including the original entry, return reason, and
+        contest/dishonor status.
+      tags:
+        - ACH Returns
+      parameters:
+        - name: return_id
+          in: path
+          required: true
+          description: Unique return id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  return_id:
+                    type: string
+                    description: ACH return identifier
+                    format: uuid
+                  ach_transfer_id:
+                    type: string
+                    description: Unique ACH transfer identifier
+                    format: uuid
+                    example: "ach-a1b2c3d4"
+                  return_code:
+                    type: string
+                    description: NACHA return reason code
+                    example: "R01"
+                    enum:
+                      - R01
+                      - R02
+                      - R03
+                      - R04
+                      - R05
+                      - R06
+                      - R07
+                      - R08
+                      - R10
+                      - R29
+                  return_reason:
+                    type: string
+                    description: Human-readable reason
+                    example: "Insufficient funds"
+                  status:
+                    type: string
+                    enum:
+                      - received
+                      - accepted
+                      - contested
+                      - resolved
+                required:
+                  - return_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /ach-returns/{return_id}/contest:
+    post:
+      operationId: contestAchReturn
+      summary: Contest ACH return
+      description: >-
+        Submit a dishonored return or contested return entry when the ODFI believes the original return was
+        improper, per NACHA Operating Rules Section 8.
+      tags:
+        - ACH Returns
+      parameters:
+        - name: return_id
+          in: path
+          required: true
+          description: Unique return id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Contest ACH return request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: Reason for contesting the return
+                    supporting_documentation:
+                      type: string
+                      description: Reference to uploaded evidence
+              required:
+                - reason
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /ach-noc:
+    get:
+      operationId: listNocEntries
+      summary: List NOC entries
+      description: >-
+        Retrieve Notifications of Change (NOC) received from RDFIs indicating account information
+        corrections. NOC entries should be applied before the next origination to avoid returns.
+      tags:
+        - ACH Returns
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        noc_id:
+                          type: string
+                          description: Notification of change identifier
+                          format: uuid
+                        change_code:
+                          type: string
+                          description: NACHA change code
+                          example: "C01"
+                          enum:
+                            - C01
+                            - C02
+                            - C03
+                            - C05
+                            - C06
+                            - C07
+                        original_data:
+                          type: string
+                          description: Original field value
+                        corrected_data:
+                          type: string
+                          description: Corrected field value
+                      required:
+                        - noc_id
+                        - change_code
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /ach-noc/{noc_id}/acknowledge:
+    post:
+      operationId: acknowledgeNoc
+      summary: Acknowledge NOC
+      description: >-
+        Mark a Notification of Change as acknowledged and apply the corrected information to the receiver's
+        stored account data.
+      tags:
+        - ACH Returns
+      parameters:
+        - name: noc_id
+          in: path
+          required: true
+          description: Unique noc id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Acknowledge NOC request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    apply_correction:
+                      type: boolean
+                      description: Automatically update stored account details
+                      default: true
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

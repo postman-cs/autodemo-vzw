@@ -1,0 +1,1042 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Core Deposits API
+  description: >-
+    Process and track deposit transactions across all channels including teller, ATM, mobile check capture, ACH,
+    and wire transfers. Enforces Regulation CC availability schedules, manages deposit holds for large or
+    exception items, and supports check image storage for remote deposit capture. Integrates with the Holds
+    service for automatic hold placement based on configurable risk-based rules.
+  version: 2.7.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-core-deposits
+  x-acme-domain: core
+servers:
+  - url: https://af-core-deposits.api.acmefin.com/v1
+    description: Production
+  - url: https://af-core-deposits.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Deposits
+    description: Deposit transaction operations
+  - name: Availability
+    description: Funds availability schedules and policies
+paths:
+  /deposits:
+    get:
+      operationId: listDeposits
+      summary: List deposits
+      description: >-
+        Retrieve a paginated list of deposit transactions filterable by account, deposit type, status, or
+        date range. Results include hold amounts and availability dates for each item. Use the sort_by
+        parameter to order by deposited_at, amount, or available_at.
+      tags:
+        - Deposits
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: account_id
+          in: query
+          required: false
+          description: Filter by destination account
+          schema:
+            type: "string"
+        - name: deposit_type
+          in: query
+          required: false
+          description: Filter by deposit channel
+          schema:
+            type: "string"
+            enum:
+              - CASH
+              - CHECK
+              - ACH
+              - WIRE
+              - MOBILE_CHECK
+              - ATM
+        - name: status
+          in: query
+          required: false
+          description: Filter by processing status
+          schema:
+            type: "string"
+            enum:
+              - PENDING
+              - CLEARING
+              - POSTED
+              - RETURNED
+              - VOIDED
+        - name: from_date
+          in: query
+          required: false
+          description: Start date filter (YYYY-MM-DD)
+          schema:
+            type: "string"
+            format: "date"
+        - name: to_date
+          in: query
+          required: false
+          description: End date filter (YYYY-MM-DD)
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        deposit_id:
+                          type: string
+                          description: Unique deposit transaction identifier
+                          example: "dep-80042"
+                        account_id:
+                          type: string
+                          description: Destination account
+                          example: "acct-10045892"
+                        deposit_type:
+                          type: string
+                          description: Deposit channel
+                          enum:
+                            - CASH
+                            - CHECK
+                            - ACH
+                            - WIRE
+                            - MOBILE_CHECK
+                            - ATM
+                        amount:
+                          type: number
+                          description: Deposit amount in account currency
+                          format: double
+                          example: 2500.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                        status:
+                          type: string
+                          description: Deposit processing status
+                          enum:
+                            - PENDING
+                            - CLEARING
+                            - POSTED
+                            - RETURNED
+                            - VOIDED
+                        reference_number:
+                          type: string
+                          description: External reference or check number
+                          example: "CHK-004821"
+                        deposited_at:
+                          type: string
+                          description: Timestamp of deposit submission
+                          format: date-time
+                          example: "2025-06-10T09:15:00Z"
+                        available_at:
+                          type: string
+                          description: When funds become available per Reg CC
+                          format: date-time
+                          example: "2025-06-11T00:00:00Z"
+                        teller_id:
+                          type: string
+                          description: Teller or ATM identifier that accepted the deposit
+                          example: "TLR-0088"
+                        branch_code:
+                          type: string
+                          description: Branch where deposit was made
+                          example: "BR-0042"
+                        hold_amount:
+                          type: number
+                          description: Amount placed on hold per availability policy
+                          format: double
+                          example: 500.0
+                        memo:
+                          type: string
+                          description: Customer or teller memo
+                          example: "Rent payment from tenant"
+                      required:
+                        - deposit_id
+                        - account_id
+                        - deposit_type
+                        - amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createDeposit
+      summary: Create a deposit
+      description: >-
+        Record a new deposit transaction. For check deposits, the system applies Regulation CC availability
+        rules based on check type, amount, and account history. Deposits exceeding $5,525 on next-day items
+        or $225 on local checks trigger extended hold placement. Cash deposits at staffed branches are
+        available immediately.
+      tags:
+        - Deposits
+      requestBody:
+        required: true
+        description: Create a deposit request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    account_id:
+                      type: string
+                      description: Destination account
+                      example: "acct-10045892"
+                    deposit_type:
+                      type: string
+                      description: Deposit channel
+                      enum:
+                        - CASH
+                        - CHECK
+                        - ACH
+                        - WIRE
+                        - MOBILE_CHECK
+                        - ATM
+                    amount:
+                      type: number
+                      description: Deposit amount in account currency
+                      format: double
+                      example: 2500.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                    reference_number:
+                      type: string
+                      description: External reference or check number
+                      example: "CHK-004821"
+                    teller_id:
+                      type: string
+                      description: Teller or ATM identifier that accepted the deposit
+                      example: "TLR-0088"
+                    branch_code:
+                      type: string
+                      description: Branch where deposit was made
+                      example: "BR-0042"
+                    memo:
+                      type: string
+                      description: Customer or teller memo
+                      example: "Rent payment from tenant"
+              required:
+                - account_id
+                - deposit_type
+                - amount
+                - currency
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deposit_id:
+                    type: string
+                    description: Unique deposit transaction identifier
+                    example: "dep-80042"
+                  account_id:
+                    type: string
+                    description: Destination account
+                    example: "acct-10045892"
+                  deposit_type:
+                    type: string
+                    description: Deposit channel
+                    enum:
+                      - CASH
+                      - CHECK
+                      - ACH
+                      - WIRE
+                      - MOBILE_CHECK
+                      - ATM
+                  amount:
+                    type: number
+                    description: Deposit amount in account currency
+                    format: double
+                    example: 2500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                  status:
+                    type: string
+                    description: Deposit processing status
+                    enum:
+                      - PENDING
+                      - CLEARING
+                      - POSTED
+                      - RETURNED
+                      - VOIDED
+                  reference_number:
+                    type: string
+                    description: External reference or check number
+                    example: "CHK-004821"
+                  deposited_at:
+                    type: string
+                    description: Timestamp of deposit submission
+                    format: date-time
+                    example: "2025-06-10T09:15:00Z"
+                  available_at:
+                    type: string
+                    description: When funds become available per Reg CC
+                    format: date-time
+                    example: "2025-06-11T00:00:00Z"
+                  teller_id:
+                    type: string
+                    description: Teller or ATM identifier that accepted the deposit
+                    example: "TLR-0088"
+                  branch_code:
+                    type: string
+                    description: Branch where deposit was made
+                    example: "BR-0042"
+                  hold_amount:
+                    type: number
+                    description: Amount placed on hold per availability policy
+                    format: double
+                    example: 500.0
+                  memo:
+                    type: string
+                    description: Customer or teller memo
+                    example: "Rent payment from tenant"
+                required:
+                  - deposit_id
+                  - status
+                  - available_at
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /deposits/{deposit_id}:
+    get:
+      operationId: getDeposit
+      summary: Get deposit details
+      description: >-
+        Retrieve complete details of a deposit including processing status, availability schedule, hold
+        information, and the depositing channel. For check deposits, includes the check number and image
+        reference. For ACH deposits, includes the originating bank routing number and trace number.
+      tags:
+        - Deposits
+      parameters:
+        - name: deposit_id
+          in: path
+          required: true
+          description: Unique deposit id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deposit_id:
+                    type: string
+                    description: Unique deposit transaction identifier
+                    example: "dep-80042"
+                  account_id:
+                    type: string
+                    description: Destination account
+                    example: "acct-10045892"
+                  deposit_type:
+                    type: string
+                    description: Deposit channel
+                    enum:
+                      - CASH
+                      - CHECK
+                      - ACH
+                      - WIRE
+                      - MOBILE_CHECK
+                      - ATM
+                  amount:
+                    type: number
+                    description: Deposit amount in account currency
+                    format: double
+                    example: 2500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                  status:
+                    type: string
+                    description: Deposit processing status
+                    enum:
+                      - PENDING
+                      - CLEARING
+                      - POSTED
+                      - RETURNED
+                      - VOIDED
+                  reference_number:
+                    type: string
+                    description: External reference or check number
+                    example: "CHK-004821"
+                  deposited_at:
+                    type: string
+                    description: Timestamp of deposit submission
+                    format: date-time
+                    example: "2025-06-10T09:15:00Z"
+                  available_at:
+                    type: string
+                    description: When funds become available per Reg CC
+                    format: date-time
+                    example: "2025-06-11T00:00:00Z"
+                  teller_id:
+                    type: string
+                    description: Teller or ATM identifier that accepted the deposit
+                    example: "TLR-0088"
+                  branch_code:
+                    type: string
+                    description: Branch where deposit was made
+                    example: "BR-0042"
+                  hold_amount:
+                    type: number
+                    description: Amount placed on hold per availability policy
+                    format: double
+                    example: 500.0
+                  memo:
+                    type: string
+                    description: Customer or teller memo
+                    example: "Rent payment from tenant"
+                required:
+                  - deposit_id
+                  - account_id
+                  - amount
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deposits/{deposit_id}/void:
+    post:
+      operationId: voidDeposit
+      summary: Void a deposit
+      description: >-
+        Void a deposit that has not yet been posted. Only deposits in PENDING or CLEARING status can be
+        voided. Posted deposits must be reversed through the Transactions API. Voiding a deposit
+        automatically releases any associated holds.
+      tags:
+        - Deposits
+      parameters:
+        - name: deposit_id
+          in: path
+          required: true
+          description: Unique deposit id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Void a deposit request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    void_reason:
+                      type: string
+                      description: Reason for voiding the deposit
+                      example: "Duplicate entry"
+              required:
+                - void_reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deposit_id:
+                    type: string
+                    description: Unique deposit transaction identifier
+                    example: "dep-80042"
+                  status:
+                    type: string
+                    description: Deposit processing status
+                    enum:
+                      - PENDING
+                      - CLEARING
+                      - POSTED
+                      - RETURNED
+                      - VOIDED
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /deposits/{deposit_id}/hold:
+    post:
+      operationId: adjustDepositHold
+      summary: Adjust deposit hold
+      description: >-
+        Modify the hold amount or release date on a pending deposit. Branch managers may reduce holds for
+        established customers with good deposit history. Extending holds beyond the standard Reg CC schedule
+        requires an exception reason code and supervisor approval.
+      tags:
+        - Deposits
+      parameters:
+        - name: deposit_id
+          in: path
+          required: true
+          description: Unique deposit id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Adjust deposit hold request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    new_hold_amount:
+                      type: number
+                      description: Revised hold amount
+                      format: double
+                      example: 250.0
+                    new_release_date:
+                      type: string
+                      description: Revised hold release date
+                      format: date
+                      example: "2025-06-13"
+                    reason:
+                      type: string
+                      description: Reason for hold adjustment
+                      example: "Established customer — reduced hold per policy"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deposit_id:
+                    type: string
+                    description: Unique deposit transaction identifier
+                    example: "dep-80042"
+                  hold_amount:
+                    type: number
+                    description: Amount placed on hold per availability policy
+                    format: double
+                    example: 500.0
+                  available_at:
+                    type: string
+                    description: When funds become available per Reg CC
+                    format: date-time
+                    example: "2025-06-11T00:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /deposits/{deposit_id}/check-image:
+    get:
+      operationId: getCheckImage
+      summary: Get check image
+      description: >-
+        Retrieve the front and back images of a deposited check captured via mobile deposit or branch
+        scanner. Images are returned as signed URLs valid for 15 minutes. Check images are retained for 7
+        years per institution record retention policy.
+      tags:
+        - Deposits
+      parameters:
+        - name: deposit_id
+          in: path
+          required: true
+          description: Deposit identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deposit_id:
+                    type: string
+                    description: Unique deposit transaction identifier
+                    example: "dep-80042"
+                  front_image_url:
+                    type: string
+                    description: Signed URL for check front image
+                    example: "https://images.acmefin.com/checks/dep-80042/front.png?sig=xyz"
+                  back_image_url:
+                    type: string
+                    description: Signed URL for check back image
+                    example: "https://images.acmefin.com/checks/dep-80042/back.png?sig=xyz"
+                  captured_at:
+                    type: string
+                    description: Image capture timestamp
+                    format: date-time
+                    example: "2025-06-10T09:15:30Z"
+                required:
+                  - front_image_url
+                  - back_image_url
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /availability-schedule:
+    get:
+      operationId: getAvailabilitySchedule
+      summary: Get funds availability schedule
+      description: >-
+        Retrieve the institution's current Regulation CC funds availability schedule showing hold periods by
+        deposit type, amount tier, and account age. This schedule determines when deposited funds become
+        available for withdrawal.
+      tags:
+        - Availability
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  effective_date:
+                    type: string
+                    description: Date schedule became effective
+                    format: date
+                    example: "2025-01-01"
+                  rules:
+                    type: array
+                    description: Availability rules by deposit type and tier
+                    items:
+                      type: object
+                required:
+                  - effective_date
+                  - rules
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deposits/bulk:
+    post:
+      operationId: createBulkDeposit
+      summary: Create bulk deposits
+      description: >-
+        Submit multiple deposit transactions in a single request for batch teller operations or bulk ACH
+        credit posting. Maximum 500 items per request. Each item is validated independently — partial
+        success is possible with per-item status in the response.
+      tags:
+        - Deposits
+      requestBody:
+        required: true
+        description: Create bulk deposits request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    deposits:
+                      type: array
+                      description: Array of deposit records to process
+                      items:
+                        type: object
+              required:
+                - deposits
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted_count:
+                    type: integer
+                    description: Items accepted for processing
+                    example: 498
+                  rejected_count:
+                    type: integer
+                    description: Items rejected during validation
+                    example: 2
+                  batch_reference:
+                    type: string
+                    description: Reference for the bulk operation
+                    example: "bulk-dep-20250610-001"
+                required:
+                  - accepted_count
+                  - batch_reference
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

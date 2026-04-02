@@ -1,0 +1,1611 @@
+openapi: 3.0.3
+info:
+  title: VZW Dispatch Workflow Engine API
+  description: >-
+    Stateful dispatch workflow orchestration API for coordinating incident response across
+    network operations, field service teams, and partner agencies. The API supports workflow
+    creation from incidents, step-level execution tracking, SLA breach forecasting, escalation
+    management, and controlled inter-agency handoff.
+  version: 1.0.0
+  contact:
+    name: Verizon Dispatch Platform API Team
+    email: dispatch-api-support@vzw.example.com
+    url: https://developer.vzw.example.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms
+  x-catalog-id: vzw-dispatch-workflow-engine-api
+  x-domain: workflow
+servers:
+  - url: https://vzw-dispatch-workflow-engine-api.api.vzw.example.com
+    description: Production
+  - url: https://vzw-dispatch-workflow-engine-api.staging.vzw.example.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Workflows
+    description: Workflow lifecycle and execution operations
+  - name: SLA
+    description: SLA visibility, breach risk, and response-time governance
+  - name: Escalation Policies
+    description: Configured escalation policy discovery
+
+paths:
+  /v1/workflows:
+    post:
+      operationId: createDispatchWorkflow
+      summary: Create dispatch workflow from incident
+      description: >-
+        Creates a new workflow instance from an incident context. The engine calculates initial
+        priority, selects a default escalation policy, and derives the first executable workflow
+        steps. The returned workflow starts in `ACTIVE` status unless the request is flagged for
+        deferred activation.
+      tags:
+        - Workflows
+      requestBody:
+        required: true
+        description: Dispatch workflow creation payload derived from an upstream incident
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowRequest'
+            examples:
+              networkOutage:
+                summary: Critical outage requiring multi-team coordination
+                value:
+                  incidentId: inc-20260327-4478
+                  correlationId: 35a7be3f-b39b-4b11-b7f7-4444b84bcb6a
+                  incidentType: NETWORK_OUTAGE
+                  title: Regional 5G core packet loss spike
+                  description: >-
+                    Packet loss above 20 percent detected in multiple edge gateways affecting
+                    enterprise traffic.
+                  priority: P1
+                  severity: CRITICAL
+                  region: us-east-1
+                  market: nyc-metro
+                  agencies:
+                    - agencyId: noc-east
+                      role: PRIMARY
+                    - agencyId: field-ops-ny
+                      role: SUPPORT
+                  escalationPolicyId: esc-pol-p1-default
+                  metadata:
+                    sourceSystem: vzw-event-mesh
+                    sourceAlertId: alert-90011
+                    customerImpactTier: TIER_1
+      responses:
+        '201':
+          description: Workflow created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowCreatedResponse'
+              examples:
+                created:
+                  summary: Created active workflow
+                  value:
+                    workflowId: wf-7b8ef4b6
+                    status: ACTIVE
+                    priority: P1
+                    escalationPolicyId: esc-pol-p1-default
+                    currentStepId: step-triage
+                    sla:
+                      targetResolutionAt: '2026-03-27T20:30:00Z'
+                      projectedBreach: false
+                    createdAt: '2026-03-27T16:30:02Z'
+                    traceId: 77e89605-1980-44b2-9bfc-9faf01dd7c10
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+
+    get:
+      operationId: listActiveWorkflows
+      summary: List active workflows
+      description: >-
+        Returns a paginated list of active workflow instances. Results can be filtered by
+        workflow status, priority, assigned agency, and region. Pagination uses cursor-based
+        navigation to maintain consistency during high-volume incident periods.
+      tags:
+        - Workflows
+      parameters:
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/PriorityFilter'
+        - $ref: '#/components/parameters/RegionFilter'
+        - $ref: '#/components/parameters/AgencyFilter'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageCursor'
+      responses:
+        '200':
+          description: Active workflows retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowListResponse'
+              examples:
+                list:
+                  summary: Paginated active workflows response
+                  value:
+                    data:
+                      - workflowId: wf-7b8ef4b6
+                        incidentId: inc-20260327-4478
+                        status: ACTIVE
+                        priority: P1
+                        currentStepId: step-dispatch-field
+                        assignedAgencyIds:
+                          - noc-east
+                          - field-ops-ny
+                        region: us-east-1
+                        startedAt: '2026-03-27T16:30:02Z'
+                        targetResolutionAt: '2026-03-27T20:30:00Z'
+                      - workflowId: wf-9139df20
+                        incidentId: inc-20260327-4529
+                        status: ESCALATED
+                        priority: P2
+                        currentStepId: step-vendor-bridge
+                        assignedAgencyIds:
+                          - noc-west
+                          - peering-ops
+                        region: us-west-2
+                        startedAt: '2026-03-27T16:34:19Z'
+                        targetResolutionAt: '2026-03-27T22:00:00Z'
+                    pagination:
+                      nextCursor: eyJvZmZzZXQiOjIwfQ==
+                      pageSize: 20
+                      hasMore: true
+                    traceId: 4f50cff4-8689-4977-aa2e-f5de9ffc8cc4
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /v1/workflows/{workflowId}:
+    get:
+      operationId: getWorkflowById
+      summary: Get workflow state and timeline
+      description: >-
+        Returns the full workflow state, including currently active step, completed and pending
+        steps, timeline events, agency assignments, and escalation history.
+      tags:
+        - Workflows
+      parameters:
+        - $ref: '#/components/parameters/WorkflowIdPath'
+      responses:
+        '200':
+          description: Workflow state retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDetailsResponse'
+              examples:
+                details:
+                  summary: Workflow details with step timeline
+                  value:
+                    workflowId: wf-7b8ef4b6
+                    incident:
+                      incidentId: inc-20260327-4478
+                      type: NETWORK_OUTAGE
+                      title: Regional 5G core packet loss spike
+                    status: ACTIVE
+                    priority: P1
+                    escalationPolicyId: esc-pol-p1-default
+                    currentStepId: step-dispatch-field
+                    assignedAgencies:
+                      - agencyId: noc-east
+                        role: PRIMARY
+                      - agencyId: field-ops-ny
+                        role: SUPPORT
+                    stepTimeline:
+                      - stepId: step-triage
+                        name: Incident triage
+                        status: COMPLETED
+                        startedAt: '2026-03-27T16:30:05Z'
+                        completedAt: '2026-03-27T16:34:00Z'
+                        completedBy:
+                          actorId: u-2041
+                          actorType: USER
+                      - stepId: step-dispatch-field
+                        name: Field dispatch
+                        status: IN_PROGRESS
+                        startedAt: '2026-03-27T16:34:10Z'
+                    escalationHistory:
+                      - escalationId: esc-23ad1
+                        level: L1
+                        reason: SLA_AT_RISK
+                        triggeredAt: '2026-03-27T16:50:00Z'
+                        triggeredBy:
+                          actorId: system-sla-monitor
+                          actorType: SYSTEM
+                    createdAt: '2026-03-27T16:30:02Z'
+                    updatedAt: '2026-03-27T16:50:00Z'
+                    traceId: 6f0a2e04-b4b2-4cd6-a960-9f6a412f1954
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /v1/workflows/{workflowId}/steps/{stepId}:complete:
+    post:
+      operationId: completeWorkflowStep
+      summary: Mark workflow step completed
+      description: >-
+        Marks a workflow step as completed and advances execution to the next eligible step.
+        The engine validates dependency order, actor authorization, and step-specific completion
+        requirements before transition.
+      tags:
+        - Workflows
+      parameters:
+        - $ref: '#/components/parameters/WorkflowIdPath'
+        - $ref: '#/components/parameters/StepIdPath'
+      requestBody:
+        required: true
+        description: Step completion payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteStepRequest'
+            examples:
+              complete:
+                summary: Successful completion of triage step
+                value:
+                  completedBy:
+                    actorId: u-2041
+                    actorType: USER
+                  completionNotes: Confirmed outage scope and assigned field response crew
+                  output:
+                    impactedSites: 14
+                    bridgeTicket: BRG-93922
+                    nextRecommendedAction: dispatch_field_team
+      responses:
+        '200':
+          description: Step completed and workflow advanced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompleteStepResponse'
+              examples:
+                completed:
+                  summary: Step completed response
+                  value:
+                    workflowId: wf-7b8ef4b6
+                    completedStepId: step-triage
+                    nextStepId: step-dispatch-field
+                    workflowStatus: ACTIVE
+                    updatedAt: '2026-03-27T16:34:10Z'
+                    traceId: aa1bf2e0-df7b-4214-a605-9f1b392db968
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /v1/workflows/{workflowId}:escalate:
+    post:
+      operationId: escalateWorkflow
+      summary: Trigger workflow escalation
+      description: >-
+        Triggers manual or automated escalation for a workflow. Escalation can increase priority,
+        notify additional agencies, and apply policy-specific timers. Duplicate escalation attempts
+        for the same policy window are rejected.
+      tags:
+        - Workflows
+      parameters:
+        - $ref: '#/components/parameters/WorkflowIdPath'
+      requestBody:
+        required: true
+        description: Escalation trigger payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EscalateWorkflowRequest'
+            examples:
+              escalate:
+                summary: Escalate due to SLA risk and partner dependency
+                value:
+                  reasonCode: SLA_AT_RISK
+                  reasonDetail: No field acknowledgment after 18 minutes
+                  escalationLevel: L2
+                  requestedBy:
+                    actorId: u-9922
+                    actorType: USER
+                  notifyAgencies:
+                    - command-center-east
+                    - peering-ops
+      responses:
+        '202':
+          description: Escalation accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EscalateWorkflowResponse'
+              examples:
+                accepted:
+                  summary: Escalation accepted
+                  value:
+                    workflowId: wf-7b8ef4b6
+                    escalationId: esc-23ad1
+                    escalationLevel: L2
+                    status: ACCEPTED
+                    acceptedAt: '2026-03-27T16:50:00Z'
+                    traceId: d8474ff8-0110-42f7-a08f-e7735c9ac46b
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /v1/workflows/{workflowId}/sla:
+    get:
+      operationId: getWorkflowSlaStatus
+      summary: Get SLA status and breach forecast
+      description: >-
+        Returns SLA contract details, elapsed and remaining time windows, current compliance status,
+        and breach forecast based on progress velocity, unresolved dependencies, and escalation level.
+      tags:
+        - SLA
+      parameters:
+        - $ref: '#/components/parameters/WorkflowIdPath'
+      responses:
+        '200':
+          description: SLA status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlaStatusResponse'
+              examples:
+                sla:
+                  summary: SLA status with breach forecast
+                  value:
+                    workflowId: wf-7b8ef4b6
+                    objective:
+                      resolutionTargetMinutes: 240
+                      acknowledgmentTargetMinutes: 10
+                    clock:
+                      startedAt: '2026-03-27T16:30:02Z'
+                      elapsedMinutes: 24
+                      remainingMinutes: 216
+                    complianceState: AT_RISK
+                    breachForecast:
+                      projectedBreach: false
+                      confidence: 0.82
+                      projectedResolutionAt: '2026-03-27T20:08:00Z'
+                      keyDrivers:
+                        - type: PENDING_FIELD_CONFIRMATION
+                          impactMinutes: 18
+                        - type: MULTI_AGENCY_HANDOFF
+                          impactMinutes: 11
+                    updatedAt: '2026-03-27T16:54:00Z'
+                    traceId: c1006987-b2c9-42f4-a0d8-0e7bb78f0b99
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /v1/workflows/{workflowId}/handoff:
+    post:
+      operationId: handoffWorkflow
+      summary: Execute inter-agency handoff
+      description: >-
+        Transfers workflow ownership or execution responsibility from one agency to another.
+        Handoffs record audit context, expected acceptance SLA, and required artifacts for the
+        receiving agency. A handoff may be synchronous or pending explicit acceptance.
+      tags:
+        - Workflows
+      parameters:
+        - $ref: '#/components/parameters/WorkflowIdPath'
+      requestBody:
+        required: true
+        description: Handoff request payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HandoffWorkflowRequest'
+            examples:
+              handoff:
+                summary: Handoff from NOC to field ops
+                value:
+                  fromAgencyId: noc-east
+                  toAgencyId: field-ops-ny
+                  handoffReason: ONSITE_REMEDIATION_REQUIRED
+                  contextSummary: Site diagnostics complete, dispatching on-site network engineer
+                  requiredArtifacts:
+                    - topology_snapshot
+                    - site_ticket
+                    - bridge_log
+                  initiatedBy:
+                    actorId: u-3012
+                    actorType: USER
+                  expectedAcceptanceBy: '2026-03-27T17:05:00Z'
+      responses:
+        '202':
+          description: Handoff accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandoffWorkflowResponse'
+              examples:
+                accepted:
+                  summary: Handoff accepted and awaiting receiving agency acknowledgment
+                  value:
+                    workflowId: wf-7b8ef4b6
+                    handoffId: hof-88922
+                    status: PENDING_ACCEPTANCE
+                    fromAgencyId: noc-east
+                    toAgencyId: field-ops-ny
+                    acceptedAt: null
+                    createdAt: '2026-03-27T16:56:00Z'
+                    traceId: fa9e93bb-cbe9-4b2f-b26c-b9bfb13c8adc
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+
+  /v1/escalation-policies:
+    get:
+      operationId: listEscalationPolicies
+      summary: List configured escalation policies
+      description: >-
+        Returns active escalation policies available to the workflow engine. Policies define
+        escalation levels, trigger rules, responder groups, and timing thresholds by priority
+        tier and incident class.
+      tags:
+        - Escalation Policies
+      parameters:
+        - in: query
+          name: activeOnly
+          required: false
+          description: If true, excludes disabled policy versions
+          schema:
+            type: boolean
+            default: true
+        - in: query
+          name: priority
+          required: false
+          description: Restrict policies to a priority class
+          schema:
+            $ref: '#/components/schemas/Priority'
+      responses:
+        '200':
+          description: Escalation policies retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EscalationPolicyListResponse'
+              examples:
+                policies:
+                  summary: Escalation policy catalog
+                  value:
+                    data:
+                      - policyId: esc-pol-p1-default
+                        name: P1 Core Network Escalation
+                        priority: P1
+                        incidentTypes:
+                          - NETWORK_OUTAGE
+                          - CORE_DEGRADATION
+                        levels:
+                          - level: L1
+                            triggerAfterMinutes: 10
+                            notifyAgencies:
+                              - command-center-east
+                          - level: L2
+                            triggerAfterMinutes: 20
+                            notifyAgencies:
+                              - executive-noc
+                              - vendor-ops
+                        active: true
+                        updatedAt: '2026-03-20T13:00:00Z'
+                    traceId: d14058f6-2fe5-46fe-bd10-ef1b797928d1
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    WorkflowIdPath:
+      name: workflowId
+      in: path
+      required: true
+      description: Unique workflow instance identifier
+      schema:
+        $ref: '#/components/schemas/WorkflowId'
+    StepIdPath:
+      name: stepId
+      in: path
+      required: true
+      description: Unique step identifier within the workflow definition
+      schema:
+        $ref: '#/components/schemas/StepId'
+    StatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Filter workflows by lifecycle status
+      schema:
+        $ref: '#/components/schemas/WorkflowStatus'
+    PriorityFilter:
+      name: priority
+      in: query
+      required: false
+      description: Filter workflows by calculated operational priority
+      schema:
+        $ref: '#/components/schemas/Priority'
+    RegionFilter:
+      name: region
+      in: query
+      required: false
+      description: Filter workflows by operating region code
+      schema:
+        type: string
+        example: us-east-1
+    AgencyFilter:
+      name: agencyId
+      in: query
+      required: false
+      description: Filter workflows assigned to or owned by an agency
+      schema:
+        type: string
+        example: noc-east
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: Maximum number of records to return per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      description: Cursor token from a previous page response
+      schema:
+        type: string
+
+  responses:
+    '400':
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidRequest:
+              value:
+                error:
+                  code: BAD_REQUEST
+                  message: Request payload failed schema validation
+                  details:
+                    - field: priority
+                      issue: Unsupported enum value P0
+                traceId: e1f3a743-6943-4f2c-a64a-a28f2fe9ad5f
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Missing or invalid bearer token
+                traceId: 0683b9f6-c5d0-4eff-bc01-13fa64a2678f
+    '403':
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: Caller is not allowed to manage this workflow scope
+                traceId: b4f11c1d-0305-4f0f-b07e-890b56b8c954
+    '404':
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            notFound:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Workflow wf-unknown was not found
+                traceId: 53dc35e6-e0c4-4de3-96d8-b425dc88ec4d
+    '409':
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            stateConflict:
+              value:
+                error:
+                  code: STATE_CONFLICT
+                  message: Step cannot be completed because it is already COMPLETED
+                traceId: ff1f6a69-6934-4982-be22-44db8f4a64d5
+    '422':
+      description: Unprocessable entity
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            businessRuleViolation:
+              value:
+                error:
+                  code: BUSINESS_RULE_VIOLATION
+                  message: Handoff requires topology_snapshot artifact for this incident type
+                traceId: 53aa80fe-6239-4382-af39-b0b57cc8a05e
+    '429':
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds until retry is allowed
+          schema:
+            type: integer
+            example: 30
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            throttled:
+              value:
+                error:
+                  code: RATE_LIMITED
+                  message: Too many requests for tenant dispatch-east
+                traceId: fd45baa0-cc6a-4fd8-aee7-f4fb8f8fd9cb
+    '500':
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internal:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: Unexpected error while processing workflow transition
+                traceId: e60d4e25-ccdb-4179-9d4f-514c0adf5938
+    '503':
+      description: Service unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unavailable:
+              value:
+                error:
+                  code: SERVICE_UNAVAILABLE
+                  message: Workflow persistence backend temporarily unavailable
+                traceId: ef1e0af4-a08e-4d37-a6c6-d53b860c0d58
+
+  schemas:
+    WorkflowId:
+      type: string
+      pattern: '^wf-[a-z0-9]{8,20}$'
+      example: wf-7b8ef4b6
+    StepId:
+      type: string
+      pattern: '^step-[a-z0-9-]{3,64}$'
+      example: step-triage
+
+    Priority:
+      type: string
+      description: Operational priority assigned by incident impact and policy
+      enum:
+        - P1
+        - P2
+        - P3
+        - P4
+      example: P1
+
+    WorkflowStatus:
+      type: string
+      description: Lifecycle status of a workflow instance
+      enum:
+        - ACTIVE
+        - ESCALATED
+        - BLOCKED
+        - COMPLETED
+        - CANCELLED
+      example: ACTIVE
+
+    StepStatus:
+      type: string
+      enum:
+        - PENDING
+        - IN_PROGRESS
+        - COMPLETED
+        - SKIPPED
+        - BLOCKED
+      example: IN_PROGRESS
+
+    ActorType:
+      type: string
+      enum:
+        - USER
+        - SYSTEM
+        - AGENCY
+      example: USER
+
+    EscalationLevel:
+      type: string
+      enum:
+        - L1
+        - L2
+        - L3
+      example: L2
+
+    ComplianceState:
+      type: string
+      enum:
+        - ON_TRACK
+        - AT_RISK
+        - BREACHED
+      example: AT_RISK
+
+    IncidentAgencyAssignment:
+      type: object
+      description: Agency role assignment provided during workflow creation
+      properties:
+        agencyId:
+          type: string
+          example: noc-east
+        role:
+          type: string
+          enum:
+            - PRIMARY
+            - SUPPORT
+            - OBSERVER
+          example: PRIMARY
+      required:
+        - agencyId
+        - role
+
+    Actor:
+      type: object
+      description: User, service, or agency actor that performed an action
+      properties:
+        actorId:
+          type: string
+          example: u-2041
+        actorType:
+          $ref: '#/components/schemas/ActorType'
+      required:
+        - actorId
+        - actorType
+
+    TimelineStep:
+      type: object
+      description: A step event in workflow timeline order
+      properties:
+        stepId:
+          $ref: '#/components/schemas/StepId'
+        name:
+          type: string
+          example: Incident triage
+        status:
+          $ref: '#/components/schemas/StepStatus'
+        startedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:30:05Z'
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-27T16:34:00Z'
+        completedBy:
+          allOf:
+            - $ref: '#/components/schemas/Actor'
+          nullable: true
+      required:
+        - stepId
+        - name
+        - status
+
+    EscalationEvent:
+      type: object
+      description: Escalation entry associated with a workflow
+      properties:
+        escalationId:
+          type: string
+          example: esc-23ad1
+        level:
+          $ref: '#/components/schemas/EscalationLevel'
+        reason:
+          type: string
+          example: SLA_AT_RISK
+        triggeredAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:50:00Z'
+        triggeredBy:
+          $ref: '#/components/schemas/Actor'
+      required:
+        - escalationId
+        - level
+        - reason
+        - triggeredAt
+        - triggeredBy
+
+    SlaSnapshot:
+      type: object
+      description: Snapshot of key SLA values at workflow creation time
+      properties:
+        targetResolutionAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T20:30:00Z'
+        projectedBreach:
+          type: boolean
+          example: false
+      required:
+        - targetResolutionAt
+        - projectedBreach
+
+    CreateWorkflowRequest:
+      type: object
+      description: Request payload to instantiate workflow from incident data
+      properties:
+        incidentId:
+          type: string
+          description: Unique incident identifier from source system
+          example: inc-20260327-4478
+        correlationId:
+          type: string
+          format: uuid
+          description: Correlation id propagated across dependent services
+          example: 35a7be3f-b39b-4b11-b7f7-4444b84bcb6a
+        incidentType:
+          type: string
+          description: Incident classification used for policy and step templates
+          enum:
+            - NETWORK_OUTAGE
+            - CORE_DEGRADATION
+            - BACKHAUL_FAILURE
+            - RAN_CONGESTION
+            - POWER_FAILURE
+          example: NETWORK_OUTAGE
+        title:
+          type: string
+          maxLength: 200
+          example: Regional 5G core packet loss spike
+        description:
+          type: string
+          maxLength: 4000
+          example: Packet loss above 20 percent in multiple edge gateways.
+        priority:
+          $ref: '#/components/schemas/Priority'
+        severity:
+          type: string
+          enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+            - CRITICAL
+          example: CRITICAL
+        region:
+          type: string
+          example: us-east-1
+        market:
+          type: string
+          example: nyc-metro
+        agencies:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/IncidentAgencyAssignment'
+        escalationPolicyId:
+          type: string
+          description: Explicit policy override, if omitted default policy is selected
+          example: esc-pol-p1-default
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - incidentId
+        - incidentType
+        - title
+        - priority
+        - severity
+        - region
+        - agencies
+
+    WorkflowCreatedResponse:
+      type: object
+      properties:
+        workflowId:
+          $ref: '#/components/schemas/WorkflowId'
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        escalationPolicyId:
+          type: string
+          example: esc-pol-p1-default
+        currentStepId:
+          $ref: '#/components/schemas/StepId'
+        sla:
+          $ref: '#/components/schemas/SlaSnapshot'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:30:02Z'
+        traceId:
+          type: string
+          format: uuid
+          example: 77e89605-1980-44b2-9bfc-9faf01dd7c10
+      required:
+        - workflowId
+        - status
+        - priority
+        - currentStepId
+        - createdAt
+        - traceId
+
+    WorkflowListItem:
+      type: object
+      properties:
+        workflowId:
+          $ref: '#/components/schemas/WorkflowId'
+        incidentId:
+          type: string
+          example: inc-20260327-4478
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        currentStepId:
+          $ref: '#/components/schemas/StepId'
+        assignedAgencyIds:
+          type: array
+          items:
+            type: string
+          example:
+            - noc-east
+            - field-ops-ny
+        region:
+          type: string
+          example: us-east-1
+        startedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:30:02Z'
+        targetResolutionAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T20:30:00Z'
+      required:
+        - workflowId
+        - incidentId
+        - status
+        - priority
+        - currentStepId
+        - startedAt
+
+    Pagination:
+      type: object
+      properties:
+        nextCursor:
+          type: string
+          nullable: true
+          example: eyJvZmZzZXQiOjIwfQ==
+        pageSize:
+          type: integer
+          example: 20
+        hasMore:
+          type: boolean
+          example: true
+      required:
+        - pageSize
+        - hasMore
+
+    WorkflowListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowListItem'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        traceId:
+          type: string
+          format: uuid
+      required:
+        - data
+        - pagination
+        - traceId
+
+    IncidentSummary:
+      type: object
+      properties:
+        incidentId:
+          type: string
+          example: inc-20260327-4478
+        type:
+          type: string
+          example: NETWORK_OUTAGE
+        title:
+          type: string
+          example: Regional 5G core packet loss spike
+      required:
+        - incidentId
+        - type
+        - title
+
+    AgencyAssignment:
+      type: object
+      properties:
+        agencyId:
+          type: string
+          example: noc-east
+        role:
+          type: string
+          enum:
+            - PRIMARY
+            - SUPPORT
+            - OBSERVER
+          example: PRIMARY
+      required:
+        - agencyId
+        - role
+
+    WorkflowDetailsResponse:
+      type: object
+      properties:
+        workflowId:
+          $ref: '#/components/schemas/WorkflowId'
+        incident:
+          $ref: '#/components/schemas/IncidentSummary'
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        escalationPolicyId:
+          type: string
+        currentStepId:
+          $ref: '#/components/schemas/StepId'
+        assignedAgencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgencyAssignment'
+        stepTimeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineStep'
+        escalationHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/EscalationEvent'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        traceId:
+          type: string
+          format: uuid
+      required:
+        - workflowId
+        - incident
+        - status
+        - priority
+        - currentStepId
+        - stepTimeline
+        - createdAt
+        - updatedAt
+        - traceId
+
+    CompleteStepRequest:
+      type: object
+      properties:
+        completedBy:
+          $ref: '#/components/schemas/Actor'
+        completionNotes:
+          type: string
+          maxLength: 4000
+          example: Confirmed outage scope and assigned field response crew
+        output:
+          type: object
+          additionalProperties: true
+          description: Step-specific output payload consumed by downstream steps
+      required:
+        - completedBy
+
+    CompleteStepResponse:
+      type: object
+      properties:
+        workflowId:
+          $ref: '#/components/schemas/WorkflowId'
+        completedStepId:
+          $ref: '#/components/schemas/StepId'
+        nextStepId:
+          allOf:
+            - $ref: '#/components/schemas/StepId'
+          nullable: true
+        workflowStatus:
+          $ref: '#/components/schemas/WorkflowStatus'
+        updatedAt:
+          type: string
+          format: date-time
+        traceId:
+          type: string
+          format: uuid
+      required:
+        - workflowId
+        - completedStepId
+        - workflowStatus
+        - updatedAt
+        - traceId
+
+    EscalateWorkflowRequest:
+      type: object
+      properties:
+        reasonCode:
+          type: string
+          enum:
+            - SLA_AT_RISK
+            - SLA_BREACHED
+            - EXTERNAL_DEPENDENCY_BLOCKED
+            - MANUAL_OVERRIDE
+          example: SLA_AT_RISK
+        reasonDetail:
+          type: string
+          maxLength: 1000
+          example: No field acknowledgment after 18 minutes
+        escalationLevel:
+          $ref: '#/components/schemas/EscalationLevel'
+        requestedBy:
+          $ref: '#/components/schemas/Actor'
+        notifyAgencies:
+          type: array
+          items:
+            type: string
+          example:
+            - command-center-east
+            - peering-ops
+      required:
+        - reasonCode
+        - escalationLevel
+        - requestedBy
+
+    EscalateWorkflowResponse:
+      type: object
+      properties:
+        workflowId:
+          $ref: '#/components/schemas/WorkflowId'
+        escalationId:
+          type: string
+          example: esc-23ad1
+        escalationLevel:
+          $ref: '#/components/schemas/EscalationLevel'
+        status:
+          type: string
+          enum:
+            - ACCEPTED
+            - DUPLICATE_SUPPRESSED
+          example: ACCEPTED
+        acceptedAt:
+          type: string
+          format: date-time
+        traceId:
+          type: string
+          format: uuid
+      required:
+        - workflowId
+        - escalationId
+        - escalationLevel
+        - status
+        - acceptedAt
+        - traceId
+
+    SlaObjective:
+      type: object
+      properties:
+        resolutionTargetMinutes:
+          type: integer
+          minimum: 1
+          example: 240
+        acknowledgmentTargetMinutes:
+          type: integer
+          minimum: 1
+          example: 10
+      required:
+        - resolutionTargetMinutes
+        - acknowledgmentTargetMinutes
+
+    SlaClock:
+      type: object
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+        elapsedMinutes:
+          type: integer
+          minimum: 0
+          example: 24
+        remainingMinutes:
+          type: integer
+          minimum: 0
+          example: 216
+      required:
+        - startedAt
+        - elapsedMinutes
+        - remainingMinutes
+
+    ForecastDriver:
+      type: object
+      properties:
+        type:
+          type: string
+          example: PENDING_FIELD_CONFIRMATION
+        impactMinutes:
+          type: integer
+          example: 18
+      required:
+        - type
+        - impactMinutes
+
+    BreachForecast:
+      type: object
+      properties:
+        projectedBreach:
+          type: boolean
+          example: false
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.82
+        projectedResolutionAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-27T20:08:00Z'
+        keyDrivers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ForecastDriver'
+      required:
+        - projectedBreach
+        - confidence
+        - keyDrivers
+
+    SlaStatusResponse:
+      type: object
+      properties:
+        workflowId:
+          $ref: '#/components/schemas/WorkflowId'
+        objective:
+          $ref: '#/components/schemas/SlaObjective'
+        clock:
+          $ref: '#/components/schemas/SlaClock'
+        complianceState:
+          $ref: '#/components/schemas/ComplianceState'
+        breachForecast:
+          $ref: '#/components/schemas/BreachForecast'
+        updatedAt:
+          type: string
+          format: date-time
+        traceId:
+          type: string
+          format: uuid
+      required:
+        - workflowId
+        - objective
+        - clock
+        - complianceState
+        - breachForecast
+        - updatedAt
+        - traceId
+
+    HandoffWorkflowRequest:
+      type: object
+      properties:
+        fromAgencyId:
+          type: string
+          example: noc-east
+        toAgencyId:
+          type: string
+          example: field-ops-ny
+        handoffReason:
+          type: string
+          enum:
+            - ONSITE_REMEDIATION_REQUIRED
+            - SPECIALIST_SKILL_REQUIRED
+            - REGION_TRANSFER
+            - THIRD_PARTY_DEPENDENCY
+          example: ONSITE_REMEDIATION_REQUIRED
+        contextSummary:
+          type: string
+          maxLength: 2000
+          example: Site diagnostics complete, dispatching on-site network engineer
+        requiredArtifacts:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          example:
+            - topology_snapshot
+            - site_ticket
+            - bridge_log
+        initiatedBy:
+          $ref: '#/components/schemas/Actor'
+        expectedAcceptanceBy:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:05:00Z'
+      required:
+        - fromAgencyId
+        - toAgencyId
+        - handoffReason
+        - contextSummary
+        - requiredArtifacts
+        - initiatedBy
+
+    HandoffWorkflowResponse:
+      type: object
+      properties:
+        workflowId:
+          $ref: '#/components/schemas/WorkflowId'
+        handoffId:
+          type: string
+          example: hof-88922
+        status:
+          type: string
+          enum:
+            - PENDING_ACCEPTANCE
+            - ACCEPTED
+            - REJECTED
+          example: PENDING_ACCEPTANCE
+        fromAgencyId:
+          type: string
+        toAgencyId:
+          type: string
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        traceId:
+          type: string
+          format: uuid
+      required:
+        - workflowId
+        - handoffId
+        - status
+        - fromAgencyId
+        - toAgencyId
+        - createdAt
+        - traceId
+
+    EscalationPolicyLevel:
+      type: object
+      properties:
+        level:
+          $ref: '#/components/schemas/EscalationLevel'
+        triggerAfterMinutes:
+          type: integer
+          minimum: 1
+          example: 10
+        notifyAgencies:
+          type: array
+          items:
+            type: string
+          example:
+            - command-center-east
+      required:
+        - level
+        - triggerAfterMinutes
+        - notifyAgencies
+
+    EscalationPolicy:
+      type: object
+      properties:
+        policyId:
+          type: string
+          example: esc-pol-p1-default
+        name:
+          type: string
+          example: P1 Core Network Escalation
+        priority:
+          $ref: '#/components/schemas/Priority'
+        incidentTypes:
+          type: array
+          items:
+            type: string
+          example:
+            - NETWORK_OUTAGE
+            - CORE_DEGRADATION
+        levels:
+          type: array
+          items:
+            $ref: '#/components/schemas/EscalationPolicyLevel'
+        active:
+          type: boolean
+          example: true
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-20T13:00:00Z'
+      required:
+        - policyId
+        - name
+        - priority
+        - incidentTypes
+        - levels
+        - active
+        - updatedAt
+
+    EscalationPolicyListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EscalationPolicy'
+        traceId:
+          type: string
+          format: uuid
+      required:
+        - data
+        - traceId
+
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+          example: priority
+        issue:
+          type: string
+          example: Unsupported enum value P0
+      required:
+        - field
+        - issue
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          example: BAD_REQUEST
+        message:
+          type: string
+          example: Request payload failed schema validation
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      required:
+        - code
+        - message
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+        traceId:
+          type: string
+          format: uuid
+          example: e1f3a743-6943-4f2c-a64a-a28f2fe9ad5f
+      required:
+        - error
+        - traceId

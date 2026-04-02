@@ -1,0 +1,1449 @@
+openapi: 3.0.3
+info:
+  title: VZW Edge Policy Enforcement API
+  description: >-
+    Enforces zero-trust edge access, traffic steering, and policy controls across Verizon private
+    network slices. This API manages policy lifecycle, distribution to enforcement points, and
+    auditable decision telemetry required for regulated enterprise operations.
+  version: 1.0.0
+  contact:
+    name: Verizon Network API Team
+    email: network-api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms
+  x-verizon-catalog-id: vzw-edge-policy-enforcement-api
+  x-verizon-domain: policy
+servers:
+  - url: https://vzw-edge-policy-enforcement-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-edge-policy-enforcement-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Policies
+    description: Policy authoring, retrieval, update, and publication operations
+  - name: Enforcement Points
+    description: Edge gateway policy synchronization and health telemetry
+  - name: Audit
+    description: Immutable policy decision and change traceability endpoints
+paths:
+  /v1/policies:
+    post:
+      operationId: createPolicy
+      summary: Create a policy definition
+      description: >-
+        Creates a draft policy with match criteria and zero-trust enforcement controls. Policies
+        are created as a new revision and must be published before they become active on edge
+        gateways.
+      tags:
+        - Policies
+      requestBody:
+        required: true
+        description: Policy creation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePolicyRequest"
+            example:
+              policy_name: "Block unmanaged devices from slice A"
+              description: "Enforce mTLS and deny unmanaged Android devices"
+              campus_id: "campus-nyc-01"
+              enforcement_point_id: "ep-nyc-edge-01"
+              priority: 100
+              enabled: true
+              match:
+                slice_id: "slice-enterprise-core"
+                app_id: "app-video-analytics"
+                device_group: "dg-contractor-devices"
+                source_cidrs:
+                  - "10.14.0.0/16"
+                destination_domains:
+                  - "analytics.internal.corp"
+                protocols:
+                  - "tcp"
+              enforcement:
+                action: "deny"
+                mTLS_required: true
+                device_posture_check: "strict"
+                throttle:
+                  enabled: false
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyDetail"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listPolicies
+      summary: List active policies
+      description: >-
+        Returns paginated active policies filtered by campus and enforcement point. Results are
+        sorted by priority and include effective revision metadata for gateway reconciliation.
+      tags:
+        - Policies
+      parameters:
+        - $ref: "#/components/parameters/CampusIdQuery"
+        - $ref: "#/components/parameters/EnforcementPointIdQuery"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Sort"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyListResponse"
+              example:
+                data:
+                  - policy_id: "pol-2f1b768e"
+                    policy_name: "Allow managed scanners"
+                    campus_id: "campus-nyc-01"
+                    enforcement_point_id: "ep-nyc-edge-01"
+                    enabled: true
+                    priority: 40
+                    status: "active"
+                    current_revision: 7
+                    updated_at: "2026-03-25T15:44:11Z"
+                  - policy_id: "pol-8b76ad45"
+                    policy_name: "Rate limit contractor telemetry"
+                    campus_id: "campus-nyc-01"
+                    enforcement_point_id: "ep-nyc-edge-01"
+                    enabled: true
+                    priority: 75
+                    status: "active"
+                    current_revision: 3
+                    updated_at: "2026-03-23T10:05:07Z"
+                pagination:
+                  page: 1
+                  page_size: 25
+                  total_items: 102
+                  total_pages: 5
+                  has_next_page: true
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/policies/{policyId}:
+    get:
+      operationId: getPolicy
+      summary: Get policy detail and lineage
+      description: >-
+        Retrieves a compiled policy representation, including revision lineage, last publication
+        metadata, and effective enforcement controls resolved for edge runtime execution.
+      tags:
+        - Policies
+      parameters:
+        - $ref: "#/components/parameters/PolicyIdPath"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyDetail"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updatePolicy
+      summary: Update policy enforcement controls
+      description: >-
+        Applies a partial update to allow/deny behavior, traffic throttling, mTLS requirements,
+        and posture checks. Creates a new draft revision while preserving immutable lineage.
+      tags:
+        - Policies
+      parameters:
+        - $ref: "#/components/parameters/PolicyIdPath"
+      requestBody:
+        required: true
+        description: Partial policy update payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePolicyRequest"
+            example:
+              enabled: true
+              priority: 60
+              enforcement:
+                action: "rate_limit"
+                mTLS_required: true
+                device_posture_check: "strict"
+                throttle:
+                  enabled: true
+                  max_requests_per_second: 300
+                  burst_capacity: 900
+              change_reason: "Move from deny to constrained access for approved contractors"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyDetail"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/policies/{policyId}:publish:
+    post:
+      operationId: publishPolicy
+      summary: Publish policy bundle
+      description: >-
+        Publishes the selected policy revision into an immutable bundle and distributes it to all
+        targeted edge gateways for the specified enforcement point. Returns per-gateway
+        distribution status and propagation trace identifiers.
+      tags:
+        - Policies
+      parameters:
+        - $ref: "#/components/parameters/PolicyIdPath"
+      requestBody:
+        required: true
+        description: Publish control payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishPolicyRequest"
+            example:
+              revision: 8
+              rollout_strategy: "canary"
+              dry_run: false
+              target_gateways:
+                - "gw-nyc-edge-a"
+                - "gw-nyc-edge-b"
+              requested_by: "netops-admin@verizon.com"
+      responses:
+        "202":
+          description: Accepted for asynchronous publication
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishPolicyResponse"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/enforcement-points/{epId}/status:
+    get:
+      operationId: getEnforcementPointStatus
+      summary: Get enforcement point policy status
+      description: >-
+        Returns synchronization and health status for an enforcement point, including latest
+        applied policy bundle, gateway heartbeat, drift indicators, and control-plane reachability.
+      tags:
+        - Enforcement Points
+      parameters:
+        - $ref: "#/components/parameters/EnforcementPointIdPath"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnforcementPointStatus"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/audit/events:
+    get:
+      operationId: listAuditEvents
+      summary: List policy audit events
+      description: >-
+        Retrieves policy decision and configuration-change logs for compliance investigations.
+        Supports filtering by time range, policy, action, and decision outcome with cursor-based
+        pagination for large event streams.
+      tags:
+        - Audit
+      parameters:
+        - $ref: "#/components/parameters/StartTime"
+        - $ref: "#/components/parameters/EndTime"
+        - $ref: "#/components/parameters/PolicyIdQuery"
+        - $ref: "#/components/parameters/AuditActionQuery"
+        - $ref: "#/components/parameters/AuditDecisionQuery"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventListResponse"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    PolicyIdPath:
+      name: policyId
+      in: path
+      required: true
+      description: Unique policy identifier
+      schema:
+        type: string
+        pattern: "^pol-[a-z0-9]{8,32}$"
+      example: "pol-2f1b768e"
+    EnforcementPointIdPath:
+      name: epId
+      in: path
+      required: true
+      description: Unique enforcement point identifier
+      schema:
+        type: string
+        pattern: "^ep-[a-z0-9-]{6,64}$"
+      example: "ep-nyc-edge-01"
+    CampusIdQuery:
+      name: campus_id
+      in: query
+      required: false
+      description: Campus identifier filter
+      schema:
+        type: string
+      example: "campus-nyc-01"
+    EnforcementPointIdQuery:
+      name: enforcement_point_id
+      in: query
+      required: false
+      description: Enforcement point identifier filter
+      schema:
+        type: string
+      example: "ep-nyc-edge-01"
+    PolicyIdQuery:
+      name: policy_id
+      in: query
+      required: false
+      description: Policy identifier filter
+      schema:
+        type: string
+      example: "pol-2f1b768e"
+    StartTime:
+      name: start_time
+      in: query
+      required: false
+      description: Lower bound timestamp (inclusive)
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-01T00:00:00Z"
+    EndTime:
+      name: end_time
+      in: query
+      required: false
+      description: Upper bound timestamp (exclusive)
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-31T00:00:00Z"
+    AuditActionQuery:
+      name: action
+      in: query
+      required: false
+      description: Audit action type filter
+      schema:
+        type: string
+        enum:
+          - policy_create
+          - policy_update
+          - policy_publish
+          - access_decision
+    AuditDecisionQuery:
+      name: decision
+      in: query
+      required: false
+      description: Access decision outcome filter
+      schema:
+        type: string
+        enum:
+          - allow
+          - deny
+          - rate_limited
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Number of records per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    Sort:
+      name: sort
+      in: query
+      required: false
+      description: Sort expression
+      schema:
+        type: string
+        enum:
+          - priority:asc
+          - priority:desc
+          - updated_at:asc
+          - updated_at:desc
+        default: priority:asc
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor returned by a previous audit query
+      schema:
+        type: string
+      example: "eyJwYWdlIjoyLCJ0cyI6IjIwMjYtMDMtMjFUMTE6MzE6MjJaIn0"
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of audit events returned
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+  schemas:
+    PolicySummary:
+      type: object
+      description: Lightweight policy projection used in list responses
+      properties:
+        policy_id:
+          type: string
+          description: Stable policy identifier
+          example: "pol-2f1b768e"
+        policy_name:
+          type: string
+          description: Human-readable policy name
+          example: "Allow managed scanners"
+        campus_id:
+          type: string
+          description: Campus where the policy is enforced
+          example: "campus-nyc-01"
+        enforcement_point_id:
+          type: string
+          description: Target enforcement point for this policy
+          example: "ep-nyc-edge-01"
+        enabled:
+          type: boolean
+          description: Whether policy is enabled for evaluation
+          example: true
+        priority:
+          type: integer
+          description: Evaluation order (lower values evaluated first)
+          minimum: 1
+          maximum: 1000
+          example: 40
+        status:
+          type: string
+          description: Effective policy state
+          enum:
+            - draft
+            - active
+            - archived
+          example: active
+        current_revision:
+          type: integer
+          description: Latest revision number
+          minimum: 1
+          example: 7
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-03-25T15:44:11Z"
+      required:
+        - policy_id
+        - policy_name
+        - campus_id
+        - enforcement_point_id
+        - enabled
+        - priority
+        - status
+        - current_revision
+        - updated_at
+    PolicyMatchCriteria:
+      type: object
+      description: Match criteria used to select flows or sessions for policy enforcement
+      properties:
+        slice_id:
+          type: string
+          description: Network slice identifier
+          example: "slice-enterprise-core"
+        app_id:
+          type: string
+          description: Application identifier
+          example: "app-video-analytics"
+        device_group:
+          type: string
+          description: Device cohort reference
+          example: "dg-contractor-devices"
+        source_cidrs:
+          type: array
+          description: Source CIDR list
+          items:
+            type: string
+            example: "10.14.0.0/16"
+        destination_domains:
+          type: array
+          description: Destination FQDN list
+          items:
+            type: string
+            example: "analytics.internal.corp"
+        protocols:
+          type: array
+          description: Transport protocols
+          items:
+            type: string
+            enum:
+              - tcp
+              - udp
+              - quic
+      required:
+        - slice_id
+    PolicyThrottleSettings:
+      type: object
+      description: Optional traffic throttling controls
+      properties:
+        enabled:
+          type: boolean
+          description: Enables request-rate based throttling
+          example: true
+        max_requests_per_second:
+          type: integer
+          description: Sustained request rate cap
+          minimum: 1
+          maximum: 100000
+          example: 300
+        burst_capacity:
+          type: integer
+          description: Temporary burst allowance
+          minimum: 1
+          maximum: 500000
+          example: 900
+      required:
+        - enabled
+    PolicyEnforcementSettings:
+      type: object
+      description: Zero-trust enforcement behavior applied when a match occurs
+      properties:
+        action:
+          type: string
+          description: Primary policy decision
+          enum:
+            - allow
+            - deny
+            - rate_limit
+          example: deny
+        mTLS_required:
+          type: boolean
+          description: Whether mutual TLS is mandatory
+          example: true
+        device_posture_check:
+          type: string
+          description: Required device posture verification level
+          enum:
+            - none
+            - standard
+            - strict
+          example: strict
+        identity_confidence_min:
+          type: integer
+          description: Minimum identity confidence score (0-100)
+          minimum: 0
+          maximum: 100
+          example: 85
+        throttle:
+          $ref: "#/components/schemas/PolicyThrottleSettings"
+      required:
+        - action
+        - mTLS_required
+        - device_posture_check
+    PolicyRevision:
+      type: object
+      description: Revision metadata for policy lineage
+      properties:
+        revision:
+          type: integer
+          description: Monotonic revision number
+          minimum: 1
+          example: 8
+        state:
+          type: string
+          description: Revision lifecycle state
+          enum:
+            - draft
+            - published
+            - superseded
+          example: published
+        bundle_id:
+          type: string
+          description: Published bundle identifier when available
+          example: "bundle-3f944ad0"
+        checksum_sha256:
+          type: string
+          description: Compiled policy checksum
+          example: "e5c4bb5f06f71f5f55f6fbccfd1194f9f41ddca1e7f7f3f105c42ad00f106f40"
+        changed_by:
+          type: string
+          description: Actor initiating the revision
+          example: "netops-admin@verizon.com"
+        change_reason:
+          type: string
+          description: Rationale for the revision
+          example: "Adjust contractor access during overnight maintenance"
+        created_at:
+          type: string
+          format: date-time
+          description: Revision creation timestamp
+          example: "2026-03-25T15:44:11Z"
+      required:
+        - revision
+        - state
+        - changed_by
+        - created_at
+    PublicationStatus:
+      type: object
+      description: Publication delivery status for a single gateway
+      properties:
+        gateway_id:
+          type: string
+          description: Target edge gateway identifier
+          example: "gw-nyc-edge-a"
+        delivery_state:
+          type: string
+          description: Distribution state for this gateway
+          enum:
+            - pending
+            - in_progress
+            - applied
+            - failed
+          example: in_progress
+        last_update_at:
+          type: string
+          format: date-time
+          description: Last state transition timestamp
+          example: "2026-03-26T09:07:33Z"
+        error_message:
+          type: string
+          nullable: true
+          description: Error detail when delivery_state is failed
+          example: null
+      required:
+        - gateway_id
+        - delivery_state
+        - last_update_at
+    CreatePolicyRequest:
+      type: object
+      description: Request schema for creating a draft policy
+      properties:
+        policy_name:
+          type: string
+          description: Display name for the policy
+          minLength: 3
+          maxLength: 120
+          example: "Block unmanaged devices from slice A"
+        description:
+          type: string
+          description: Optional policy description
+          maxLength: 2048
+          example: "Enforce mTLS and deny unmanaged Android devices"
+        campus_id:
+          type: string
+          description: Campus scope for policy distribution
+          example: "campus-nyc-01"
+        enforcement_point_id:
+          type: string
+          description: Enforcement point scope
+          example: "ep-nyc-edge-01"
+        priority:
+          type: integer
+          description: Evaluation priority where lower executes earlier
+          minimum: 1
+          maximum: 1000
+          example: 100
+        enabled:
+          type: boolean
+          description: Whether this policy is enabled when published
+          example: true
+        match:
+          $ref: "#/components/schemas/PolicyMatchCriteria"
+        enforcement:
+          $ref: "#/components/schemas/PolicyEnforcementSettings"
+      required:
+        - policy_name
+        - campus_id
+        - enforcement_point_id
+        - priority
+        - enabled
+        - match
+        - enforcement
+    UpdatePolicyRequest:
+      type: object
+      description: Partial update schema for policy revision changes
+      properties:
+        policy_name:
+          type: string
+          description: Updated display name
+          minLength: 3
+          maxLength: 120
+          example: "Rate limit unmanaged devices from slice A"
+        description:
+          type: string
+          description: Updated policy description
+          maxLength: 2048
+          example: "Shift from full deny to constrained rate-limited access"
+        priority:
+          type: integer
+          description: Updated priority value
+          minimum: 1
+          maximum: 1000
+          example: 60
+        enabled:
+          type: boolean
+          description: Updated enabled state
+          example: true
+        match:
+          $ref: "#/components/schemas/PolicyMatchCriteria"
+        enforcement:
+          $ref: "#/components/schemas/PolicyEnforcementSettings"
+        change_reason:
+          type: string
+          description: Human-auditable rationale for update
+          minLength: 5
+          maxLength: 1024
+          example: "Move from deny to constrained access for approved contractors"
+      minProperties: 1
+    PublishPolicyRequest:
+      type: object
+      description: Request schema for policy publication
+      properties:
+        revision:
+          type: integer
+          description: Specific revision to publish; defaults to latest draft if omitted
+          minimum: 1
+          example: 8
+        rollout_strategy:
+          type: string
+          description: Publication strategy for gateway deployment
+          enum:
+            - immediate
+            - canary
+            - staged
+          default: immediate
+          example: canary
+        dry_run:
+          type: boolean
+          description: Performs validation and simulation without applying
+          default: false
+          example: false
+        target_gateways:
+          type: array
+          description: Optional subset of gateways for scoped rollout
+          items:
+            type: string
+          minItems: 1
+        requested_by:
+          type: string
+          description: User or service identity requesting publication
+          example: "netops-admin@verizon.com"
+      required:
+        - requested_by
+    PolicyDetail:
+      type: object
+      description: Full policy representation with compilation and lineage metadata
+      properties:
+        policy_id:
+          type: string
+          description: Stable policy identifier
+          example: "pol-2f1b768e"
+        policy_name:
+          type: string
+          description: Display name for policy
+          example: "Allow managed scanners"
+        description:
+          type: string
+          description: Policy purpose and operator notes
+          example: "Permit scanner fleet with strict posture checks"
+        campus_id:
+          type: string
+          description: Campus scope for enforcement
+          example: "campus-nyc-01"
+        enforcement_point_id:
+          type: string
+          description: Enforcement point target
+          example: "ep-nyc-edge-01"
+        enabled:
+          type: boolean
+          description: Whether policy is eligible for evaluation
+          example: true
+        priority:
+          type: integer
+          description: Evaluation priority
+          minimum: 1
+          maximum: 1000
+          example: 40
+        status:
+          type: string
+          description: Effective policy lifecycle state
+          enum:
+            - draft
+            - active
+            - archived
+          example: active
+        match:
+          $ref: "#/components/schemas/PolicyMatchCriteria"
+        enforcement:
+          $ref: "#/components/schemas/PolicyEnforcementSettings"
+        compiled_expression:
+          type: string
+          description: Runtime-optimized expression pushed to gateways
+          example: "slice_id == 'slice-enterprise-core' && app_id == 'app-video-analytics'"
+        current_revision:
+          type: integer
+          description: Latest revision number
+          minimum: 1
+          example: 8
+        lineage:
+          type: array
+          description: Historical revision trail ordered newest to oldest
+          items:
+            $ref: "#/components/schemas/PolicyRevision"
+        last_published_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last publication timestamp
+          example: "2026-03-26T09:05:17Z"
+        last_published_bundle_id:
+          type: string
+          nullable: true
+          description: Last published bundle identifier
+          example: "bundle-3f944ad0"
+        audit:
+          $ref: "#/components/schemas/AuditInfo"
+      required:
+        - policy_id
+        - policy_name
+        - campus_id
+        - enforcement_point_id
+        - enabled
+        - priority
+        - status
+        - match
+        - enforcement
+        - compiled_expression
+        - current_revision
+        - lineage
+        - audit
+    PolicyListResponse:
+      type: object
+      description: Paginated active policy response
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicySummary"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+      required:
+        - data
+        - pagination
+    PublishPolicyResponse:
+      type: object
+      description: Asynchronous publication acceptance payload
+      properties:
+        publish_id:
+          type: string
+          description: Publication job identifier
+          example: "pub-7631c9fd"
+        policy_id:
+          type: string
+          description: Policy identifier
+          example: "pol-2f1b768e"
+        revision:
+          type: integer
+          description: Revision queued for distribution
+          minimum: 1
+          example: 8
+        bundle_id:
+          type: string
+          description: Immutable published bundle identifier
+          example: "bundle-3f944ad0"
+        rollout_strategy:
+          type: string
+          description: Applied rollout strategy
+          enum:
+            - immediate
+            - canary
+            - staged
+          example: canary
+        state:
+          type: string
+          description: Publication job state
+          enum:
+            - accepted
+            - in_progress
+            - complete
+            - failed
+          example: in_progress
+        gateway_status:
+          type: array
+          description: Per-gateway distribution details
+          items:
+            $ref: "#/components/schemas/PublicationStatus"
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier for publication workflow
+          example: "6f28f9ff-5c3a-4ccf-8dab-d801a45c8380"
+        accepted_at:
+          type: string
+          format: date-time
+          description: Job acceptance timestamp
+          example: "2026-03-26T09:06:14Z"
+      required:
+        - publish_id
+        - policy_id
+        - revision
+        - bundle_id
+        - rollout_strategy
+        - state
+        - gateway_status
+        - trace_id
+        - accepted_at
+    GatewayHealth:
+      type: object
+      description: Health telemetry for a gateway associated with an enforcement point
+      properties:
+        gateway_id:
+          type: string
+          description: Gateway identifier
+          example: "gw-nyc-edge-a"
+        health_state:
+          type: string
+          description: Gateway health status
+          enum:
+            - healthy
+            - degraded
+            - unreachable
+          example: healthy
+        applied_bundle_id:
+          type: string
+          description: Latest bundle applied by gateway
+          example: "bundle-3f944ad0"
+        applied_revision:
+          type: integer
+          description: Latest revision applied by gateway
+          minimum: 1
+          example: 8
+        last_sync_at:
+          type: string
+          format: date-time
+          description: Last successful sync timestamp
+          example: "2026-03-26T09:07:54Z"
+        drift_detected:
+          type: boolean
+          description: Indicates mismatch with control plane desired state
+          example: false
+      required:
+        - gateway_id
+        - health_state
+        - applied_bundle_id
+        - applied_revision
+        - last_sync_at
+        - drift_detected
+    EnforcementPointStatus:
+      type: object
+      description: Synchronization and health status for an enforcement point
+      properties:
+        enforcement_point_id:
+          type: string
+          description: Enforcement point identifier
+          example: "ep-nyc-edge-01"
+        campus_id:
+          type: string
+          description: Campus identifier
+          example: "campus-nyc-01"
+        control_plane_state:
+          type: string
+          description: Reachability status to policy control plane
+          enum:
+            - connected
+            - degraded
+            - disconnected
+          example: connected
+        desired_bundle_id:
+          type: string
+          description: Target bundle currently expected
+          example: "bundle-3f944ad0"
+        desired_revision:
+          type: integer
+          description: Target revision currently expected
+          minimum: 1
+          example: 8
+        overall_sync_state:
+          type: string
+          description: Aggregate synchronization state across gateways
+          enum:
+            - in_sync
+            - syncing
+            - drift
+          example: syncing
+        last_control_plane_heartbeat:
+          type: string
+          format: date-time
+          description: Last control-plane heartbeat timestamp
+          example: "2026-03-26T09:08:01Z"
+        gateways:
+          type: array
+          items:
+            $ref: "#/components/schemas/GatewayHealth"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace identifier for status retrieval
+          example: "3fb5fb30-329f-4514-82d4-a9260d5ab6bc"
+      required:
+        - enforcement_point_id
+        - campus_id
+        - control_plane_state
+        - desired_bundle_id
+        - desired_revision
+        - overall_sync_state
+        - last_control_plane_heartbeat
+        - gateways
+        - trace_id
+    AuditActor:
+      type: object
+      description: Identity details for actor causing an event
+      properties:
+        actor_type:
+          type: string
+          enum:
+            - user
+            - service
+            - system
+          description: Actor classification
+          example: user
+        actor_id:
+          type: string
+          description: Stable actor identifier
+          example: "usr-741933"
+        actor_name:
+          type: string
+          description: Human-readable actor name
+          example: "Nina Walters"
+      required:
+        - actor_type
+        - actor_id
+    AuditEvent:
+      type: object
+      description: Immutable audit event emitted by policy engine and control plane
+      properties:
+        event_id:
+          type: string
+          description: Unique audit event identifier
+          example: "evt-0afdc8829c"
+        timestamp:
+          type: string
+          format: date-time
+          description: Event timestamp
+          example: "2026-03-26T09:05:49Z"
+        action:
+          type: string
+          description: Event action type
+          enum:
+            - policy_create
+            - policy_update
+            - policy_publish
+            - access_decision
+          example: access_decision
+        decision:
+          type: string
+          nullable: true
+          description: Decision outcome for access evaluation events
+          enum:
+            - allow
+            - deny
+            - rate_limited
+          example: deny
+        policy_id:
+          type: string
+          description: Policy identifier associated with event
+          example: "pol-2f1b768e"
+        policy_revision:
+          type: integer
+          description: Policy revision at event time
+          minimum: 1
+          example: 8
+        enforcement_point_id:
+          type: string
+          description: Enforcement point generating event
+          example: "ep-nyc-edge-01"
+        slice_id:
+          type: string
+          description: Network slice identifier involved in decision
+          example: "slice-enterprise-core"
+        app_id:
+          type: string
+          description: Application identifier involved in decision
+          example: "app-video-analytics"
+        device_id:
+          type: string
+          description: Device identifier involved in decision
+          example: "dev-f5c2a17b"
+        device_posture_result:
+          type: string
+          description: Device posture check outcome
+          enum:
+            - pass
+            - fail
+            - skipped
+          example: fail
+        mTLS_verified:
+          type: boolean
+          description: Whether mTLS handshake verification passed
+          example: false
+        actor:
+          $ref: "#/components/schemas/AuditActor"
+        request_id:
+          type: string
+          description: Request correlation identifier
+          example: "req-8f383e91-d102-4bd6-9cd3-f6ef6010b1d6"
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier
+          example: "1f7f3fcb-0ff2-4ba0-92bd-4f83c1fa9d83"
+        metadata:
+          type: object
+          description: Additional event metadata
+          additionalProperties:
+            type: string
+      required:
+        - event_id
+        - timestamp
+        - action
+        - policy_id
+        - policy_revision
+        - enforcement_point_id
+        - request_id
+        - trace_id
+    AuditEventListResponse:
+      type: object
+      description: Cursor-paginated audit event response
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        paging:
+          type: object
+          properties:
+            next_cursor:
+              type: string
+              nullable: true
+              description: Cursor used to request the next page
+              example: "eyJwYWdlIjozLCJ0cyI6IjIwMjYtMDMtMjFUMTE6MzI6MDRaIn0"
+            limit:
+              type: integer
+              description: Page size applied to this response
+              example: 100
+          required:
+            - limit
+      required:
+        - data
+        - paging
+    Pagination:
+      type: object
+      description: Standard pagination metadata
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          minimum: 1
+          example: 1
+        page_size:
+          type: integer
+          description: Number of items returned per page
+          minimum: 1
+          example: 25
+        total_items:
+          type: integer
+          description: Total number of items matching query
+          minimum: 0
+          example: 102
+        total_pages:
+          type: integer
+          description: Total page count for the query
+          minimum: 0
+          example: 5
+        has_next_page:
+          type: boolean
+          description: Whether additional pages are available
+          example: true
+      required:
+        - page
+        - page_size
+        - total_items
+        - total_pages
+        - has_next_page
+    AuditInfo:
+      type: object
+      description: Audit metadata attached to mutable resources
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Resource creation timestamp
+          example: "2026-03-10T12:19:44Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last resource update timestamp
+          example: "2026-03-26T09:03:05Z"
+        created_by:
+          type: string
+          description: Principal creating the resource
+          example: "netops-admin@verizon.com"
+        updated_by:
+          type: string
+          description: Principal performing the last update
+          example: "netops-admin@verizon.com"
+      required:
+        - created_at
+        - updated_at
+    ErrorDetail:
+      type: object
+      description: Field-level validation detail
+      properties:
+        field:
+          type: string
+          description: Field that failed validation
+          example: enforcement.throttle.max_requests_per_second
+        reason:
+          type: string
+          description: Human-readable validation reason
+          example: Must be present when action is rate_limit
+      required:
+        - field
+        - reason
+    ErrorEnvelope:
+      type: object
+      description: Structured API error envelope
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: Human-readable error description
+          example: The request body contains invalid fields.
+        details:
+          type: array
+          description: Optional list of field-level errors
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+        request_id:
+          type: string
+          description: Request correlation identifier
+          example: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      required:
+        - code
+        - message
+        - request_id
+    Error:
+      type: object
+      description: Error response wrapper
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorEnvelope"
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token from Verizon enterprise identity platform
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 token service for Verizon network APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.verizon.com/oauth2/token
+          scopes:
+            policy.read: Read policy and status resources
+            policy.write: Create, update, and publish policy resources
+            audit.read: Read policy audit and compliance logs
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: enforcement.action
+                  reason: Must be one of allow, deny, or rate_limit
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The policy revision is stale and cannot be published.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Device posture strict mode requires mTLS_required to be true.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

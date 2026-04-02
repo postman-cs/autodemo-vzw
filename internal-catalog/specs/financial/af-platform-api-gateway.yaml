@@ -1,0 +1,2854 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance API Gateway Management API
+  description: >-
+    Centralized API gateway configuration managing request routing, rate limiting, authentication policies,
+    request/response transformations, TLS certificate management, and upstream health monitoring. Supports path-
+    based and header-based routing with weighted traffic distribution, pluggable auth strategies (JWT, OAuth2, API
+    key, mTLS), and real-time analytics on request volume, latency percentiles, and error rates.
+  version: 4.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-platform-api-gateway
+  x-acme-domain: platform
+servers:
+  - url: https://af-platform-api-gateway.api.acmefin.com/v1
+    description: Production
+  - url: https://af-platform-api-gateway.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Routes
+    description: API route definitions, path matching, and upstream forwarding rules
+  - name: Rate Limiting
+    description: Rate limiting policies with token bucket and sliding window algorithms
+  - name: Auth Policies
+    description: Authentication and authorization policy management
+  - name: Upstreams
+    description: Upstream service registration and health monitoring
+paths:
+  /routes:
+    get:
+      operationId: listRoutes
+      summary: List routes
+      description: >-
+        List all API gateway routes with filtering by status, upstream, and path pattern. Returns route
+        configuration including middleware chain and traffic weight.
+      tags:
+        - Routes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: "Filter by route status"
+          schema:
+            type: "string"
+            enum:
+              - active
+              - draining
+              - disabled
+        - name: upstream_id
+          in: query
+          required: false
+          description: "Filter routes by upstream target"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        route_id:
+                          type: string
+                          description: "Route ID"
+                          format: uuid
+                          example: "rt-3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d"
+                        path:
+                          type: string
+                          description: "URL path pattern"
+                          example: "/api/v1/payments/*"
+                        methods:
+                          type: array
+                          description: "Allowed HTTP methods"
+                          items:
+                            type: string
+                        upstream_id:
+                          type: string
+                          description: "Target upstream service"
+                          format: uuid
+                          example: "ups-1a2b3c4d-5e6f-7a8b-9c0d"
+                        strip_prefix:
+                          type: boolean
+                          description: "Strip matched prefix before forwarding"
+                          example: true
+                        timeout_ms:
+                          type: integer
+                          description: "Request timeout in milliseconds"
+                          example: 30000
+                        retries:
+                          type: integer
+                          description: "Max upstream retries"
+                          example: 2
+                        status:
+                          type: string
+                          description: "Route status"
+                          example: "active"
+                          enum:
+                            - active
+                            - draining
+                            - disabled
+                        created_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - route_id
+                        - path
+                        - upstream_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createRoute
+      summary: Create a route
+      description: >-
+        Define a new API route with path matching, upstream forwarding, and optional middleware (auth, rate
+        limit, transform). Routes are validated for path conflicts before activation.
+      tags:
+        - Routes
+      requestBody:
+        required: true
+        description: Create a route request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    path:
+                      type: string
+                      description: "URL path pattern (supports wildcards)"
+                      example: "/api/v2/accounts/*"
+                    methods:
+                      type: array
+                      description: "HTTP methods"
+                      items:
+                        type: string
+                    upstream_id:
+                      type: string
+                      description: "Target upstream"
+                      format: uuid
+                      example: "ups-1a2b3c4d"
+                    strip_prefix:
+                      type: boolean
+                      description: "Strip prefix"
+                      example: true
+                    timeout_ms:
+                      type: integer
+                      description: "Timeout"
+                      example: 30000
+                    retries:
+                      type: integer
+                      description: "Max retries"
+                      example: 2
+                    auth_policy_id:
+                      type: string
+                      description: "Auth policy to apply"
+                      example: "pol-jwt-default"
+                    rate_limit_policy_id:
+                      type: string
+                      description: "Rate limit policy"
+                      example: "rl-standard"
+              required:
+                - path
+                - methods
+                - upstream_id
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  route_id:
+                    type: string
+                    description: "Route ID"
+                    format: uuid
+                    example: "rt-3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d"
+                  path:
+                    type: string
+                    description: "URL path pattern"
+                    example: "/api/v1/payments/*"
+                  methods:
+                    type: array
+                    description: "Allowed HTTP methods"
+                    items:
+                      type: string
+                  upstream_id:
+                    type: string
+                    description: "Target upstream service"
+                    format: uuid
+                    example: "ups-1a2b3c4d-5e6f-7a8b-9c0d"
+                  strip_prefix:
+                    type: boolean
+                    description: "Strip matched prefix before forwarding"
+                    example: true
+                  timeout_ms:
+                    type: integer
+                    description: "Request timeout in milliseconds"
+                    example: 30000
+                  retries:
+                    type: integer
+                    description: "Max upstream retries"
+                    example: 2
+                  status:
+                    type: string
+                    description: "Route status"
+                    example: "active"
+                    enum:
+                      - active
+                      - draining
+                      - disabled
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - route_id
+                  - path
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /routes/{route_id}:
+    get:
+      operationId: getRoute
+      summary: Get route
+      description: >-
+        Retrieve full route configuration including middleware chain, upstream target, and traffic
+        statistics.
+      tags:
+        - Routes
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          description: "Unique route id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  route_id:
+                    type: string
+                    description: "Route ID"
+                    format: uuid
+                    example: "rt-3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d"
+                  path:
+                    type: string
+                    description: "URL path pattern"
+                    example: "/api/v1/payments/*"
+                  methods:
+                    type: array
+                    description: "Allowed HTTP methods"
+                    items:
+                      type: string
+                  upstream_id:
+                    type: string
+                    description: "Target upstream service"
+                    format: uuid
+                    example: "ups-1a2b3c4d-5e6f-7a8b-9c0d"
+                  strip_prefix:
+                    type: boolean
+                    description: "Strip matched prefix before forwarding"
+                    example: true
+                  timeout_ms:
+                    type: integer
+                    description: "Request timeout in milliseconds"
+                    example: 30000
+                  retries:
+                    type: integer
+                    description: "Max upstream retries"
+                    example: 2
+                  status:
+                    type: string
+                    description: "Route status"
+                    example: "active"
+                    enum:
+                      - active
+                      - draining
+                      - disabled
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - route_id
+                  - path
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateRoute
+      summary: Update route
+      description: >-
+        Update route configuration. Path changes are validated for conflicts. Active routes can be updated
+        without downtime via hot-reload.
+      tags:
+        - Routes
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          description: "Unique route id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update route request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    path:
+                      type: string
+                      description: "Updated path"
+                      example: "/api/v2/accounts/*"
+                    methods:
+                      type: array
+                      description: "Updated methods"
+                      items:
+                        type: string
+                    timeout_ms:
+                      type: integer
+                      description: "Updated timeout"
+                      example: 60000
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  route_id:
+                    type: string
+                    description: "Route ID"
+                    format: uuid
+                    example: "rt-3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d"
+                  path:
+                    type: string
+                    description: "URL path pattern"
+                    example: "/api/v1/payments/*"
+                  methods:
+                    type: array
+                    description: "Allowed HTTP methods"
+                    items:
+                      type: string
+                  upstream_id:
+                    type: string
+                    description: "Target upstream service"
+                    format: uuid
+                    example: "ups-1a2b3c4d-5e6f-7a8b-9c0d"
+                  strip_prefix:
+                    type: boolean
+                    description: "Strip matched prefix before forwarding"
+                    example: true
+                  timeout_ms:
+                    type: integer
+                    description: "Request timeout in milliseconds"
+                    example: 30000
+                  retries:
+                    type: integer
+                    description: "Max upstream retries"
+                    example: 2
+                  status:
+                    type: string
+                    description: "Route status"
+                    example: "active"
+                    enum:
+                      - active
+                      - draining
+                      - disabled
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - route_id
+                  - path
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteRoute
+      summary: Delete route
+      description: >-
+        Remove a route from the gateway. Active routes are drained before removal (existing connections
+        complete).
+      tags:
+        - Routes
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          description: "Unique route id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /routes/{route_id}/rate-limits:
+    get:
+      operationId: getRouteRateLimit
+      summary: Get route rate limit
+      description: Retrieve the rate limit configuration applied to a specific route.
+      tags:
+        - Rate Limiting
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          description: "Unique route id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  route_id:
+                    type: string
+                    description: "Route ID"
+                    format: uuid
+                    example: "rt-3a4b5c6d"
+                  policy_id:
+                    type: string
+                    description: "Applied policy"
+                    format: uuid
+                    example: "rl-5a6b7c8d"
+                  requests_per_second:
+                    type: integer
+                    description: "Allowed RPS"
+                    example: 100
+                  burst_size:
+                    type: integer
+                    description: "Burst capacity"
+                    example: 150
+                  algorithm:
+                    type: string
+                    description: "Rate limiting algorithm"
+                    example: "token_bucket"
+                    enum:
+                      - token_bucket
+                      - sliding_window
+                      - fixed_window
+                required:
+                  - route_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: setRouteRateLimit
+      summary: Set route rate limit
+      description: Apply or update the rate limit for a route. Overrides any policy-level defaults.
+      tags:
+        - Rate Limiting
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          description: "Route ID"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Set route rate limit request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    requests_per_second:
+                      type: integer
+                      description: "RPS limit"
+                      example: 100
+                    burst_size:
+                      type: integer
+                      description: "Burst"
+                      example: 150
+                    algorithm:
+                      type: string
+                      description: "Algorithm"
+                      example: "token_bucket"
+                      enum:
+                        - token_bucket
+                        - sliding_window
+              required:
+                - requests_per_second
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  route_id:
+                    type: string
+                    description: "Route"
+                    format: uuid
+                    example: "rt-3a4b5c6d"
+                  requests_per_second:
+                    type: integer
+                    description: "Applied RPS"
+                    example: 100
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - route_id
+                  - requests_per_second
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /rate-limits/policies:
+    get:
+      operationId: listRateLimitPolicies
+      summary: List rate limit policies
+      description: >-
+        List all rate limiting policies available for assignment to routes. Policies define request quotas,
+        burst capacity, and algorithm selection.
+      tags:
+        - Rate Limiting
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        policy_id:
+                          type: string
+                          description: "Policy ID"
+                          format: uuid
+                          example: "rl-5a6b7c8d-9e0f-1a2b-3c4d-5e6f7a8b9c0d"
+                        name:
+                          type: string
+                          description: "Policy name"
+                          example: "standard-tier"
+                        requests_per_second:
+                          type: integer
+                          description: "Base RPS"
+                          example: 100
+                        burst_size:
+                          type: integer
+                          description: "Burst capacity"
+                          example: 150
+                        algorithm:
+                          type: string
+                          description: "Algorithm"
+                          example: "token_bucket"
+                          enum:
+                            - token_bucket
+                            - sliding_window
+                            - fixed_window
+                        scope:
+                          type: string
+                          description: "Rate limit scope"
+                          example: "global"
+                          enum:
+                            - global
+                            - per_client
+                            - per_route
+                      required:
+                        - policy_id
+                        - name
+                        - requests_per_second
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createRateLimitPolicy
+      summary: Create rate limit policy
+      description: >-
+        Create a new rate limiting policy. Policies can be scoped globally, per-client (by API key), or per-
+        route.
+      tags:
+        - Rate Limiting
+      requestBody:
+        required: true
+        description: Create rate limit policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Policy name"
+                      example: "premium-tier"
+                    requests_per_second:
+                      type: integer
+                      description: "RPS"
+                      example: 500
+                    burst_size:
+                      type: integer
+                      description: "Burst"
+                      example: 750
+                    algorithm:
+                      type: string
+                      description: "Algorithm"
+                      example: "token_bucket"
+                      enum:
+                        - token_bucket
+                        - sliding_window
+                    scope:
+                      type: string
+                      description: "Scope"
+                      example: "global"
+                      enum:
+                        - global
+                        - per_client
+                        - per_route
+              required:
+                - name
+                - requests_per_second
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "rl-5a6b7c8d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "premium-tier"
+                  requests_per_second:
+                    type: integer
+                    description: "RPS"
+                    example: 500
+                required:
+                  - policy_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /rate-limits/policies/{policy_id}:
+    get:
+      operationId: getRateLimitPolicy
+      summary: Get rate limit policy
+      description: Retrieve a rate limit policy configuration with usage statistics.
+      tags:
+        - Rate Limiting
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "Policy ID"
+                    format: uuid
+                    example: "rl-5a6b7c8d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "standard-tier"
+                  requests_per_second:
+                    type: integer
+                    description: "RPS"
+                    example: 100
+                  algorithm:
+                    type: string
+                    description: "Algorithm"
+                    example: "token_bucket"
+                required:
+                  - policy_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateRateLimitPolicy
+      summary: Update rate limit policy
+      description: >-
+        Update a rate limit policy. Changes propagate to all routes using this policy within 30 seconds.
+      tags:
+        - Rate Limiting
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update rate limit policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    requests_per_second:
+                      type: integer
+                      description: "Updated RPS"
+                      example: 200
+                    burst_size:
+                      type: integer
+                      description: "Updated burst"
+                      example: 300
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "rl-5a6b7c8d"
+                  requests_per_second:
+                    type: integer
+                    description: "RPS"
+                    example: 200
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - policy_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteRateLimitPolicy
+      summary: Delete rate limit policy
+      description: Delete a rate limit policy. Fails if any routes are still using this policy.
+      tags:
+        - Rate Limiting
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /auth/policies:
+    get:
+      operationId: listAuthPolicies
+      summary: List auth policies
+      description: >-
+        List authentication/authorization policies configurable on gateway routes. Supports JWT validation,
+        OAuth2 introspection, API key verification, and mutual TLS.
+      tags:
+        - Auth Policies
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        policy_id:
+                          type: string
+                          description: "Auth policy ID"
+                          format: uuid
+                          example: "ap-2a3b4c5d-6e7f"
+                        name:
+                          type: string
+                          description: "Policy name"
+                          example: "jwt-default"
+                        type:
+                          type: string
+                          description: "Auth mechanism"
+                          example: "jwt"
+                          enum:
+                            - jwt
+                            - oauth2
+                            - api_key
+                            - mtls
+                            - composite
+                        enabled:
+                          type: boolean
+                          description: "Whether policy is active"
+                          example: true
+                      required:
+                        - policy_id
+                        - name
+                        - type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createAuthPolicy
+      summary: Create auth policy
+      description: >-
+        Create a new authentication policy specifying the auth mechanism, validation rules, and token
+        extraction configuration.
+      tags:
+        - Auth Policies
+      requestBody:
+        required: true
+        description: Create auth policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Policy name"
+                      example: "jwt-internal"
+                    type:
+                      type: string
+                      description: "Auth type"
+                      example: "jwt"
+                      enum:
+                        - jwt
+                        - oauth2
+                        - api_key
+                        - mtls
+                    config:
+                      type: object
+                      description: "Auth-type-specific configuration (JWKS URL, scopes, etc.)"
+                    cache_ttl_seconds:
+                      type: integer
+                      description: "Token validation cache TTL"
+                      example: 300
+              required:
+                - name
+                - type
+                - config
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ap-2a3b4c5d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "jwt-internal"
+                  type:
+                    type: string
+                    description: "Type"
+                    example: "jwt"
+                required:
+                  - policy_id
+                  - name
+                  - type
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /auth/policies/{policy_id}:
+    get:
+      operationId: getAuthPolicy
+      summary: Get auth policy
+      description: Retrieve auth policy configuration and enforcement statistics.
+      tags:
+        - Auth Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ap-2a3b4c5d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "jwt-default"
+                  type:
+                    type: string
+                    description: "Type"
+                    example: "jwt"
+                  config:
+                    type: object
+                    description: "Policy configuration"
+                  enabled:
+                    type: boolean
+                    description: "Active"
+                    example: true
+                required:
+                  - policy_id
+                  - name
+                  - type
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateAuthPolicy
+      summary: Update auth policy
+      description: Update auth policy configuration. Active policies are hot-reloaded.
+      tags:
+        - Auth Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update auth policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    config:
+                      type: object
+                      description: "Updated config"
+                    enabled:
+                      type: boolean
+                      description: "Enable/disable"
+                      example: true
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ap-2a3b4c5d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "jwt-default"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - policy_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteAuthPolicy
+      summary: Delete auth policy
+      description: Delete an auth policy. Fails if assigned to active routes.
+      tags:
+        - Auth Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: "Unique policy id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /transformations:
+    get:
+      operationId: listTransformations
+      summary: List transformations
+      description: >-
+        List request/response transformation rules. Transformations can modify headers, rewrite paths,
+        inject variables, and transform body content.
+      tags:
+        - Routes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transform_id:
+                          type: string
+                          description: "Transform ID"
+                          format: uuid
+                          example: "tf-1a2b3c4d"
+                        name:
+                          type: string
+                          description: "Transform name"
+                          example: "add-correlation-id"
+                        type:
+                          type: string
+                          description: "Transform type"
+                          example: "request_header"
+                          enum:
+                            - request_header
+                            - response_header
+                            - path_rewrite
+                            - body_transform
+                        phase:
+                          type: string
+                          description: "Execution phase"
+                          example: "request"
+                          enum:
+                            - request
+                            - response
+                      required:
+                        - transform_id
+                        - name
+                        - type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTransformation
+      summary: Create transformation
+      description: Create a request or response transformation rule.
+      tags:
+        - Routes
+      requestBody:
+        required: true
+        description: Create transformation request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Name"
+                      example: "inject-trace-id"
+                    type:
+                      type: string
+                      description: "Type"
+                      example: "request_header"
+                      enum:
+                        - request_header
+                        - response_header
+                        - path_rewrite
+                        - body_transform
+                    phase:
+                      type: string
+                      description: "Phase"
+                      example: "request"
+                      enum:
+                        - request
+                        - response
+                    config:
+                      type: object
+                      description: "Transform-specific configuration"
+              required:
+                - name
+                - type
+                - phase
+                - config
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transform_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "tf-1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "inject-trace-id"
+                  type:
+                    type: string
+                    description: "Type"
+                    example: "request_header"
+                required:
+                  - transform_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transformations/{transform_id}:
+    get:
+      operationId: getTransformation
+      summary: Get transformation
+      description: Retrieve transformation rule details.
+      tags:
+        - Routes
+      parameters:
+        - name: transform_id
+          in: path
+          required: true
+          description: "Unique transform id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transform_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "tf-1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "add-correlation-id"
+                  type:
+                    type: string
+                    description: "Type"
+                    example: "request_header"
+                  config:
+                    type: object
+                    description: "Configuration"
+                required:
+                  - transform_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateTransformation
+      summary: Update transformation
+      description: Update a transformation rule.
+      tags:
+        - Routes
+      parameters:
+        - name: transform_id
+          in: path
+          required: true
+          description: "Unique transform id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update transformation request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    config:
+                      type: object
+                      description: "Updated config"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transform_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "tf-1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "add-correlation-id"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - transform_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteTransformation
+      summary: Delete transformation
+      description: Remove a transformation rule.
+      tags:
+        - Routes
+      parameters:
+        - name: transform_id
+          in: path
+          required: true
+          description: "Unique transform id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /analytics/requests:
+    get:
+      operationId: getRequestAnalytics
+      summary: Get request analytics
+      description: >-
+        Aggregate request volume analytics across all gateway routes with breakdown by route, status code,
+        and client. Supports time-range bucketing.
+      tags:
+        - Routes
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: "Start time"
+          schema:
+            type: "string"
+            format: "date-time"
+        - name: to
+          in: query
+          required: false
+          description: "End time"
+          schema:
+            type: "string"
+            format: "date-time"
+        - name: granularity
+          in: query
+          required: false
+          description: "Time bucket size"
+          schema:
+            type: "string"
+            enum:
+              - minute
+              - hour
+              - day
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_requests:
+                    type: integer
+                    description: "Total requests in period"
+                    example: 1542890
+                  success_rate:
+                    type: number
+                    description: "2xx response rate"
+                    format: double
+                    example: 0.9812
+                  avg_latency_ms:
+                    type: number
+                    description: "Average latency"
+                    format: double
+                    example: 45.2
+                  p99_latency_ms:
+                    type: number
+                    description: "P99 latency"
+                    format: double
+                    example: 320.5
+                  by_status_code:
+                    type: object
+                    description: "Request counts by HTTP status code"
+                  by_route:
+                    type: array
+                    description: "Top routes by volume"
+                    items:
+                      type: object
+                required:
+                  - total_requests
+                  - success_rate
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /analytics/latency:
+    get:
+      operationId: getLatencyAnalytics
+      summary: Get latency analytics
+      description: >-
+        Latency distribution analysis across routes with percentile breakdowns (p50, p90, p95, p99) and
+        trend detection.
+      tags:
+        - Routes
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: "Start time"
+          schema:
+            type: "string"
+            format: "date-time"
+        - name: to
+          in: query
+          required: false
+          description: "End time"
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  p50_ms:
+                    type: number
+                    description: "Median latency"
+                    format: double
+                    example: 23.4
+                  p90_ms:
+                    type: number
+                    description: "P90 latency"
+                    format: double
+                    example: 89.1
+                  p95_ms:
+                    type: number
+                    description: "P95 latency"
+                    format: double
+                    example: 156.8
+                  p99_ms:
+                    type: number
+                    description: "P99 latency"
+                    format: double
+                    example: 320.5
+                  slowest_routes:
+                    type: array
+                    description: "Routes with highest latency"
+                    items:
+                      type: object
+                required:
+                  - p50_ms
+                  - p90_ms
+                  - p99_ms
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /analytics/errors:
+    get:
+      operationId: getErrorAnalytics
+      summary: Get error analytics
+      description: >-
+        Error rate analysis with breakdown by error type (4xx vs 5xx), route, and upstream. Includes error
+        spike detection and top error messages.
+      tags:
+        - Routes
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: "Start time"
+          schema:
+            type: "string"
+            format: "date-time"
+        - name: to
+          in: query
+          required: false
+          description: "End time"
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_errors:
+                    type: integer
+                    description: "Total errors in period"
+                    example: 28450
+                  error_rate:
+                    type: number
+                    description: "Error rate"
+                    format: double
+                    example: 0.0188
+                  client_errors_4xx:
+                    type: integer
+                    description: "4xx errors"
+                    example: 22100
+                  server_errors_5xx:
+                    type: integer
+                    description: "5xx errors"
+                    example: 6350
+                  top_errors:
+                    type: array
+                    description: "Most frequent error responses"
+                    items:
+                      type: object
+                required:
+                  - total_errors
+                  - error_rate
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /health:
+    get:
+      operationId: getGatewayHealth
+      summary: Get gateway health
+      description: >-
+        Overall gateway health status including upstream connectivity, certificate expiration, and rate
+        limiter state.
+      tags:
+        - Routes
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: "Overall gateway health"
+                    example: "healthy"
+                    enum:
+                      - healthy
+                      - degraded
+                      - unhealthy
+                  uptime_seconds:
+                    type: integer
+                    description: "Gateway uptime"
+                    example: 864000
+                  active_connections:
+                    type: integer
+                    description: "Current active connections"
+                    example: 1523
+                  upstreams_healthy:
+                    type: integer
+                    description: "Healthy upstream count"
+                    example: 12
+                  upstreams_unhealthy:
+                    type: integer
+                    description: "Unhealthy upstream count"
+                    example: 0
+                  certificates_expiring_soon:
+                    type: integer
+                    description: "Certs expiring within 30 days"
+                    example: 1
+                required:
+                  - status
+                  - uptime_seconds
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /upstreams:
+    get:
+      operationId: listUpstreams
+      summary: List upstreams
+      description: >-
+        List all registered upstream services with their health status and traffic weight.
+      tags:
+        - Upstreams
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        upstream_id:
+                          type: string
+                          description: "Upstream ID"
+                          format: uuid
+                          example: "ups-1a2b3c4d-5e6f-7a8b-9c0d"
+                        name:
+                          type: string
+                          description: "Service name"
+                          example: "payments-service"
+                        url:
+                          type: string
+                          description: "Upstream URL"
+                          example: "https://payments.internal:8443"
+                        health_status:
+                          type: string
+                          description: "Current health"
+                          example: "healthy"
+                          enum:
+                            - healthy
+                            - degraded
+                            - down
+                        weight:
+                          type: integer
+                          description: "Traffic weight (1-100)"
+                          example: 100
+                        active_connections:
+                          type: integer
+                          description: "Current connections"
+                          example: 45
+                      required:
+                        - upstream_id
+                        - name
+                        - url
+                        - health_status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createUpstream
+      summary: Register upstream
+      description: >-
+        Register a new upstream service target for route forwarding. Health checks begin immediately after
+        registration.
+      tags:
+        - Upstreams
+      requestBody:
+        required: true
+        description: Register upstream request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Service name"
+                      example: "accounts-service"
+                    url:
+                      type: string
+                      description: "Service URL"
+                      example: "https://accounts.internal:8443"
+                    weight:
+                      type: integer
+                      description: "Traffic weight"
+                      example: 100
+                    health_check_path:
+                      type: string
+                      description: "Health endpoint"
+                      example: "/health"
+                    health_check_interval_seconds:
+                      type: integer
+                      description: "Check interval"
+                      example: 10
+              required:
+                - name
+                - url
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upstream_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ups-1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "accounts-service"
+                  health_status:
+                    type: string
+                    description: "Status"
+                    example: "healthy"
+                required:
+                  - upstream_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /upstreams/{upstream_id}:
+    get:
+      operationId: getUpstream
+      summary: Get upstream
+      description: >-
+        Retrieve upstream service details including health check results and connection statistics.
+      tags:
+        - Upstreams
+      parameters:
+        - name: upstream_id
+          in: path
+          required: true
+          description: "Unique upstream id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upstream_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ups-1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "payments-service"
+                  url:
+                    type: string
+                    description: "URL"
+                    example: "https://payments.internal:8443"
+                  health_status:
+                    type: string
+                    description: "Health"
+                    example: "healthy"
+                  weight:
+                    type: integer
+                    description: "Weight"
+                    example: 100
+                required:
+                  - upstream_id
+                  - name
+                  - health_status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateUpstream
+      summary: Update upstream
+      description: >-
+        Update upstream configuration. Weight changes take effect immediately for traffic distribution.
+      tags:
+        - Upstreams
+      parameters:
+        - name: upstream_id
+          in: path
+          required: true
+          description: "Unique upstream id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update upstream request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    url:
+                      type: string
+                      description: "Updated URL"
+                      example: "https://payments-v2.internal:8443"
+                    weight:
+                      type: integer
+                      description: "Updated weight"
+                      example: 80
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upstream_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ups-1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "payments-service"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - upstream_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /upstreams/{upstream_id}/health-checks:
+    get:
+      operationId: getUpstreamHealthChecks
+      summary: Get upstream health checks
+      description: Retrieve health check history and configuration for an upstream.
+      tags:
+        - Upstreams
+      parameters:
+        - name: upstream_id
+          in: path
+          required: true
+          description: "Unique upstream id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upstream_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ups-1a2b3c4d"
+                  health_check_path:
+                    type: string
+                    description: "Check path"
+                    example: "/health"
+                  interval_seconds:
+                    type: integer
+                    description: "Check interval"
+                    example: 10
+                  healthy_threshold:
+                    type: integer
+                    description: "Consecutive successes to mark healthy"
+                    example: 3
+                  unhealthy_threshold:
+                    type: integer
+                    description: "Consecutive failures to mark unhealthy"
+                    example: 2
+                  recent_checks:
+                    type: array
+                    description: "Recent health check results"
+                    items:
+                      type: object
+                required:
+                  - upstream_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: updateUpstreamHealthChecks
+      summary: Update health check config
+      description: Configure health check parameters for an upstream service.
+      tags:
+        - Upstreams
+      parameters:
+        - name: upstream_id
+          in: path
+          required: true
+          description: "Upstream ID"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update health check config request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    health_check_path:
+                      type: string
+                      description: "Path"
+                      example: "/health"
+                    interval_seconds:
+                      type: integer
+                      description: "Interval"
+                      example: 10
+                    healthy_threshold:
+                      type: integer
+                      description: "Healthy threshold"
+                      example: 3
+                    unhealthy_threshold:
+                      type: integer
+                      description: "Unhealthy threshold"
+                      example: 2
+              required:
+                - health_check_path
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upstream_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "ups-1a2b3c4d"
+                  health_check_path:
+                    type: string
+                    description: "Path"
+                    example: "/health"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - upstream_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /certificates:
+    get:
+      operationId: listCertificates
+      summary: List TLS certificates
+      description: >-
+        List all TLS certificates managed by the gateway with expiration status and domain coverage.
+      tags:
+        - Routes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cert_id:
+                          type: string
+                          description: "Certificate ID"
+                          format: uuid
+                          example: "crt-4a5b6c7d"
+                        domains:
+                          type: array
+                          description: "Covered domains"
+                          items:
+                            type: string
+                        issuer:
+                          type: string
+                          description: "Certificate issuer"
+                          example: "Let's Encrypt"
+                        expires_at:
+                          type: string
+                          description: "Expiration date"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        auto_renew:
+                          type: boolean
+                          description: "Auto-renewal enabled"
+                          example: true
+                        status:
+                          type: string
+                          description: "Certificate status"
+                          example: "active"
+                          enum:
+                            - active
+                            - expiring_soon
+                            - expired
+                      required:
+                        - cert_id
+                        - domains
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: uploadCertificate
+      summary: Upload TLS certificate
+      description: Upload a TLS certificate and private key for gateway termination.
+      tags:
+        - Routes
+      requestBody:
+        required: true
+        description: Upload TLS certificate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    domains:
+                      type: array
+                      description: "Domain names"
+                      items:
+                        type: string
+                    certificate_pem:
+                      type: string
+                      description: "PEM-encoded certificate"
+                      example: "-----BEGIN CERTIFICATE-----..."
+                    private_key_pem:
+                      type: string
+                      description: "PEM-encoded private key"
+                      example: "-----BEGIN PRIVATE KEY-----..."
+                    auto_renew:
+                      type: boolean
+                      description: "Enable auto-renewal"
+                      example: true
+              required:
+                - domains
+                - certificate_pem
+                - private_key_pem
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cert_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "crt-4a5b6c7d"
+                  domains:
+                    type: array
+                    description: "Domains"
+                    items:
+                      type: string
+                  expires_at:
+                    type: string
+                    description: "Expiration"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - cert_id
+                  - domains
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /certificates/{cert_id}:
+    get:
+      operationId: getCertificate
+      summary: Get certificate
+      description: Retrieve certificate details including chain info and OCSP status.
+      tags:
+        - Routes
+      parameters:
+        - name: cert_id
+          in: path
+          required: true
+          description: "Unique cert id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cert_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "crt-4a5b6c7d"
+                  domains:
+                    type: array
+                    description: "Domains"
+                    items:
+                      type: string
+                  issuer:
+                    type: string
+                    description: "Issuer"
+                    example: "Let's Encrypt"
+                  expires_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - cert_id
+                  - domains
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteCertificate
+      summary: Delete certificate
+      description: Remove a certificate. Fails if it's the only cert covering active routes.
+      tags:
+        - Routes
+      parameters:
+        - name: cert_id
+          in: path
+          required: true
+          description: "Unique cert id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

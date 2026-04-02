@@ -1,0 +1,1983 @@
+openapi: 3.0.3
+info:
+  title: VZW Campus Digital Twin API
+  description: >-
+    Provides digital twin projection and analysis capabilities for Verizon campus environments. The API supports
+    deterministic twin snapshot creation from live state, spatial topology retrieval, what-if simulation execution,
+    drift detection between projected and observed state, and lifecycle management for twin assets used by NOC,
+    capacity planning, and campus engineering automation.
+  version: 1.0.0
+  contact:
+    name: Verizon Digital Twin Platform Team
+    email: digital-twin-api@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/legal/terms
+  x-verizon-catalog-id: vzw-campus-digital-twin-api
+  x-verizon-domain: digital-twin
+servers:
+  - url: https://vzw-campus-digital-twin-api.api.verizon.com
+    description: Production
+  - url: https://vzw-campus-digital-twin-api.staging.verizon.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Twins
+    description: Twin snapshot creation, retrieval, listing, and deletion
+  - name: Simulations
+    description: What-if simulations and predicted KPI analysis
+  - name: Drift
+    description: Drift checks between projected twin and live campus state
+paths:
+  /v1/twins:
+    post:
+      operationId: createTwinSnapshot
+      summary: Create a digital twin snapshot from live campus state
+      description: >-
+        Creates a new campus digital twin by projecting an immutable snapshot from live telemetry, inventory,
+        geospatial, and slice configuration inputs. The snapshot can optionally include specific domains only and can
+        enforce source consistency thresholds before committing the twin.
+      tags:
+        - Twins
+      requestBody:
+        required: true
+        description: Parameters controlling source capture scope and consistency requirements
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTwinRequest"
+            example:
+              campus_id: camp-sjc-07
+              source_mode: LIVE
+              include_domains:
+                - DEVICES
+                - SLICES
+                - CELLS
+                - CAPACITY
+              consistency_policy:
+                max_source_age_seconds: 30
+                required_sources:
+                  - telemetry
+                  - inventory
+                  - geospatial
+                fail_on_partial_source_data: true
+              metadata:
+                requested_by: user-17c2f8
+                reason: Pre-maintenance baseline snapshot
+                tags:
+                  - change-window
+                  - baseline
+      responses:
+        "201":
+          description: Twin snapshot created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwinResponse"
+              example:
+                data:
+                  twin_id: twin-7cf15a0f
+                  campus_id: camp-sjc-07
+                  name: camp-sjc-07-live-2026-03-27t102400z
+                  source_mode: LIVE
+                  status: READY
+                  version: 1
+                  snapshot_timestamp: "2026-03-27T10:24:00Z"
+                  source_watermarks:
+                    telemetry_at: "2026-03-27T10:23:58Z"
+                    inventory_at: "2026-03-27T10:23:55Z"
+                    geospatial_at: "2026-03-27T10:23:54Z"
+                  topology_summary:
+                    building_count: 12
+                    floor_count: 58
+                    cell_count: 234
+                    device_count: 18342
+                    slice_count: 9
+                  created_at: "2026-03-27T10:24:02Z"
+                  created_by: user-17c2f8
+                  expires_at: "2026-04-26T10:24:02Z"
+                  etag: W/"twin-7cf15a0f-v1"
+                meta:
+                  request_id: 7a0b328c-877f-4948-a4d2-e7e7d724e8e6
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listTwins
+      summary: List digital twins with pagination and filters
+      description: >-
+        Returns digital twin snapshots for a campus or tenant context. Supports filtering by status, snapshot time,
+        source mode, and tags to support automation workflows and operations dashboards.
+      tags:
+        - Twins
+      parameters:
+        - $ref: "#/components/parameters/campusId"
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/sourceMode"
+        - $ref: "#/components/parameters/createdAfter"
+        - $ref: "#/components/parameters/createdBefore"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/perPage"
+      responses:
+        "200":
+          description: Twin list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwinListResponse"
+              example:
+                data:
+                  - twin_id: twin-7cf15a0f
+                    campus_id: camp-sjc-07
+                    name: camp-sjc-07-live-2026-03-27t102400z
+                    source_mode: LIVE
+                    status: READY
+                    version: 1
+                    snapshot_timestamp: "2026-03-27T10:24:00Z"
+                    topology_summary:
+                      building_count: 12
+                      floor_count: 58
+                      cell_count: 234
+                      device_count: 18342
+                      slice_count: 9
+                    created_at: "2026-03-27T10:24:02Z"
+                    created_by: user-17c2f8
+                    expires_at: "2026-04-26T10:24:02Z"
+                    etag: W/"twin-7cf15a0f-v1"
+                  - twin_id: twin-9074e619
+                    campus_id: camp-sjc-07
+                    name: camp-sjc-07-live-2026-03-26t071003z
+                    source_mode: LIVE
+                    status: READY
+                    version: 1
+                    snapshot_timestamp: "2026-03-26T07:10:03Z"
+                    topology_summary:
+                      building_count: 12
+                      floor_count: 58
+                      cell_count: 232
+                      device_count: 17988
+                      slice_count: 9
+                    created_at: "2026-03-26T07:10:04Z"
+                    created_by: system-scheduler
+                    expires_at: "2026-04-25T07:10:04Z"
+                    etag: W/"twin-9074e619-v1"
+                meta:
+                  page: 1
+                  per_page: 20
+                  total_items: 2
+                  total_pages: 1
+                  request_id: a50f170a-1202-44d8-9be8-283a37b2143b
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/twins/{twinId}:
+    get:
+      operationId: getTwinTopology
+      summary: Get twin topology with device, slice, and cell positions
+      description: >-
+        Retrieves full twin topology including geospatial and indoor coordinates for devices, slices, and cells.
+        Optional detail controls allow callers to tune payload size for map rendering, analytics, or validation.
+      tags:
+        - Twins
+      parameters:
+        - $ref: "#/components/parameters/twinId"
+        - $ref: "#/components/parameters/includePositions"
+        - $ref: "#/components/parameters/includeKpis"
+      responses:
+        "200":
+          description: Twin topology retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwinTopologyResponse"
+              example:
+                data:
+                  twin:
+                    twin_id: twin-7cf15a0f
+                    campus_id: camp-sjc-07
+                    name: camp-sjc-07-live-2026-03-27t102400z
+                    source_mode: LIVE
+                    status: READY
+                    version: 1
+                    snapshot_timestamp: "2026-03-27T10:24:00Z"
+                    topology_summary:
+                      building_count: 12
+                      floor_count: 58
+                      cell_count: 234
+                      device_count: 18342
+                      slice_count: 9
+                    created_at: "2026-03-27T10:24:02Z"
+                    created_by: user-17c2f8
+                    expires_at: "2026-04-26T10:24:02Z"
+                    etag: W/"twin-7cf15a0f-v1"
+                  cells:
+                    - cell_id: cell-a14
+                      radio_tech: NR
+                      band: n77
+                      state: ACTIVE
+                      building_id: bldg-a
+                      floor: 3
+                      coordinates:
+                        x_meters: 114.6
+                        y_meters: 72.9
+                        z_meters: 10.5
+                        lat: 37.41682
+                        lon: -121.98943
+                      capacity:
+                        max_downlink_mbps: 1800
+                        max_uplink_mbps: 280
+                        connected_devices: 192
+                      kpis:
+                        utilization_pct: 64.2
+                        p95_latency_ms: 22.1
+                        packet_loss_pct: 0.12
+                  slices:
+                    - slice_id: slice-gold-ar
+                      profile: URLLC
+                      qos_class: QCI-2
+                      priority: 1
+                      assigned_cells:
+                        - cell-a14
+                        - cell-c02
+                      reserved_capacity_pct: 28
+                      active_device_count: 823
+                      kpis:
+                        throughput_mbps: 740.8
+                        p95_latency_ms: 14.9
+                        success_rate_pct: 99.94
+                  devices:
+                    - device_id: dev-forklift-0921
+                      category: AGV
+                      status: CONNECTED
+                      slice_id: slice-gold-ar
+                      attached_cell_id: cell-a14
+                      location:
+                        building_id: bldg-a
+                        floor: 3
+                        x_meters: 128.2
+                        y_meters: 51.4
+                        z_meters: 10.2
+                        confidence_pct: 97.2
+                      radio:
+                        rsrp_dbm: -86
+                        sinr_db: 23.5
+                        cqi: 12
+                meta:
+                  request_id: 7fdcf1f9-b623-4b03-af7c-cf9f938f737f
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteTwin
+      summary: Delete a digital twin snapshot
+      description: >-
+        Deletes an existing twin snapshot and associated simulation artifacts unless retention lock policies prevent
+        deletion. The operation is idempotent and returns no content on success.
+      tags:
+        - Twins
+      parameters:
+        - $ref: "#/components/parameters/twinId"
+      responses:
+        "204":
+          description: Twin deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/twins/{twinId}/simulations:
+    post:
+      operationId: runTwinSimulation
+      summary: Run what-if simulation on an existing twin
+      description: >-
+        Executes a deterministic simulation scenario against a selected twin. Scenarios may add or move devices,
+        alter slice capacity reservations, or apply policy changes. Results include predicted service KPIs, hotspot
+        risks, and confidence metrics.
+      tags:
+        - Simulations
+      parameters:
+        - $ref: "#/components/parameters/twinId"
+      requestBody:
+        required: true
+        description: Simulation plan and constraints
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSimulationRequest"
+            example:
+              name: add-300-ar-devices-east-wing
+              mode: WHAT_IF
+              time_horizon_minutes: 180
+              changes:
+                add_devices:
+                  - count: 300
+                    category: AR_HEADSET
+                    target_slice_id: slice-gold-ar
+                    location:
+                      building_id: bldg-c
+                      floor: 2
+                      zone: east-wing
+                update_slices:
+                  - slice_id: slice-gold-ar
+                    reserved_capacity_delta_pct: 12
+                  - slice_id: slice-silver-iot
+                    reserved_capacity_delta_pct: -8
+              assumptions:
+                mobility_model: WAREHOUSE_LOOP
+                traffic_profile: PEAK_SHIFT_CHANGE
+                packet_size_bytes_p50: 768
+              objectives:
+                - type: MAX_UTILIZATION_PCT
+                  target_lte: 80
+                - type: P95_LATENCY_MS
+                  target_lte: 25
+      responses:
+        "202":
+          description: Simulation accepted for execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationAcceptedResponse"
+              example:
+                data:
+                  sim_id: sim-f19b8e2d
+                  twin_id: twin-7cf15a0f
+                  name: add-300-ar-devices-east-wing
+                  mode: WHAT_IF
+                  status: QUEUED
+                  queued_at: "2026-03-27T10:33:02Z"
+                  estimated_completion_seconds: 25
+                  links:
+                    result: /v1/twins/twin-7cf15a0f/simulations/sim-f19b8e2d
+                meta:
+                  request_id: b4afd670-c8ba-4d69-8695-df83de300f98
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listTwinSimulations
+      summary: List simulations for a twin
+      description: >-
+        Returns simulation jobs associated with a twin, including status, scenario metadata, and completion timestamps.
+        Results can be filtered by status and ordered by submission time.
+      tags:
+        - Simulations
+      parameters:
+        - $ref: "#/components/parameters/twinId"
+        - $ref: "#/components/parameters/simulationStatus"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/perPage"
+      responses:
+        "200":
+          description: Simulation list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationListResponse"
+              example:
+                data:
+                  - sim_id: sim-f19b8e2d
+                    twin_id: twin-7cf15a0f
+                    name: add-300-ar-devices-east-wing
+                    mode: WHAT_IF
+                    status: SUCCEEDED
+                    submitted_at: "2026-03-27T10:33:02Z"
+                    completed_at: "2026-03-27T10:33:26Z"
+                  - sim_id: sim-66c04a93
+                    twin_id: twin-7cf15a0f
+                    name: shift-20pct-iot-to-cell-c05
+                    mode: WHAT_IF
+                    status: RUNNING
+                    submitted_at: "2026-03-27T10:35:17Z"
+                    completed_at: null
+                meta:
+                  page: 1
+                  per_page: 20
+                  total_items: 2
+                  total_pages: 1
+                  request_id: c34f7f1f-3e53-4566-9624-7ecf26cb8eca
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/twins/{twinId}/simulations/{simId}:
+    get:
+      operationId: getTwinSimulationResult
+      summary: Get simulation results with predicted KPIs
+      description: >-
+        Retrieves the latest state and result payload for a simulation. Completed simulations include predicted KPI
+        deltas by slice and cell, hotspot risk projections, confidence scoring, and recommended mitigation actions.
+      tags:
+        - Simulations
+      parameters:
+        - $ref: "#/components/parameters/twinId"
+        - $ref: "#/components/parameters/simId"
+      responses:
+        "200":
+          description: Simulation retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationResultResponse"
+              example:
+                data:
+                  sim_id: sim-f19b8e2d
+                  twin_id: twin-7cf15a0f
+                  name: add-300-ar-devices-east-wing
+                  mode: WHAT_IF
+                  status: SUCCEEDED
+                  submitted_at: "2026-03-27T10:33:02Z"
+                  started_at: "2026-03-27T10:33:04Z"
+                  completed_at: "2026-03-27T10:33:26Z"
+                  scenario_hash: sha256:8d4f2f6daeb03d71326397f8c4cdbd51211ed80cf2f21dcfa3f4673fb6f884a3
+                  predicted_kpis:
+                    global:
+                      throughput_mbps_delta: 118.2
+                      utilization_pct_delta: 7.4
+                      p95_latency_ms_delta: 4.9
+                      packet_loss_pct_delta: 0.08
+                    by_slice:
+                      - slice_id: slice-gold-ar
+                        utilization_pct: 79.6
+                        p95_latency_ms: 24.8
+                        success_rate_pct: 99.71
+                      - slice_id: slice-silver-iot
+                        utilization_pct: 44.1
+                        p95_latency_ms: 34.7
+                        success_rate_pct: 99.23
+                    by_cell:
+                      - cell_id: cell-c02
+                        utilization_pct: 88.9
+                        p95_latency_ms: 31.5
+                        hotspot_risk: HIGH
+                      - cell_id: cell-a14
+                        utilization_pct: 76.3
+                        p95_latency_ms: 23.1
+                        hotspot_risk: MEDIUM
+                  confidence:
+                    score: 0.91
+                    factors:
+                      - source_data_freshness
+                      - historical_model_fit
+                      - mobility_model_match
+                  recommendations:
+                    - action: Increase reserved capacity for slice-gold-ar by 5%
+                      impact: Expected latency reduction of 3.2 ms in east-wing zones
+                    - action: Enable handover bias to cell-a14 for AR cohort in bldg-c
+                      impact: Expected hotspot risk reduction at cell-c02 from HIGH to MEDIUM
+                meta:
+                  request_id: 8b56cf7b-f810-4752-8f56-a3cd50e02f29
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/twins/{twinId}/drift-check:
+    post:
+      operationId: runTwinDriftCheck
+      summary: Compare twin state to live campus state and flag drift
+      description: >-
+        Performs drift analysis between a selected twin snapshot and live campus data. The check returns domain-level
+        divergence scores, entity-level mismatches, and severity classifications to support remediation decisions.
+      tags:
+        - Drift
+      parameters:
+        - $ref: "#/components/parameters/twinId"
+      requestBody:
+        required: true
+        description: Drift check scope and tolerance controls
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriftCheckRequest"
+            example:
+              domains:
+                - DEVICES
+                - SLICES
+                - CELLS
+              tolerance:
+                max_position_drift_meters: 8
+                max_capacity_drift_pct: 12
+                max_device_assignment_drift_pct: 3
+              sample_size:
+                devices: 2000
+                cells: 234
+              include_entity_diffs: true
+      responses:
+        "200":
+          description: Drift check completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriftCheckResponse"
+              example:
+                data:
+                  drift_check_id: drift-4c2f1e5b
+                  twin_id: twin-7cf15a0f
+                  checked_at: "2026-03-27T10:42:11Z"
+                  overall_status: WARNING
+                  overall_drift_score: 0.27
+                  domains:
+                    - domain: DEVICES
+                      drift_score: 0.31
+                      severity: MEDIUM
+                      mismatch_count: 188
+                    - domain: CELLS
+                      drift_score: 0.12
+                      severity: LOW
+                      mismatch_count: 21
+                    - domain: SLICES
+                      drift_score: 0.39
+                      severity: HIGH
+                      mismatch_count: 7
+                  divergences:
+                    - entity_type: DEVICE
+                      entity_id: dev-forklift-0921
+                      field: attached_cell_id
+                      twin_value: cell-a14
+                      live_value: cell-c02
+                      severity: MEDIUM
+                    - entity_type: SLICE
+                      entity_id: slice-gold-ar
+                      field: reserved_capacity_pct
+                      twin_value: 28
+                      live_value: 36
+                      severity: HIGH
+                  recommendations:
+                    - action: Refresh twin snapshot before simulation-driven capacity decisions
+                    - action: Reconcile slice-gold-ar reservation policy with orchestrator state
+                meta:
+                  request_id: 98b5f934-ab9c-42cc-89a6-d58e373fc35a
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    twinId:
+      name: twinId
+      in: path
+      required: true
+      description: Unique digital twin identifier
+      schema:
+        type: string
+      example: twin-7cf15a0f
+    simId:
+      name: simId
+      in: path
+      required: true
+      description: Unique simulation identifier
+      schema:
+        type: string
+      example: sim-f19b8e2d
+    campusId:
+      name: campus_id
+      in: query
+      required: false
+      description: Restrict results to one campus
+      schema:
+        type: string
+      example: camp-sjc-07
+    status:
+      name: status
+      in: query
+      required: false
+      description: Filter twins by lifecycle status
+      schema:
+        type: string
+        enum:
+          - CREATING
+          - READY
+          - ERROR
+          - EXPIRED
+          - DELETED
+      example: READY
+    sourceMode:
+      name: source_mode
+      in: query
+      required: false
+      description: Filter twins by source acquisition mode
+      schema:
+        type: string
+        enum:
+          - LIVE
+          - IMPORTED
+          - HYBRID
+      example: LIVE
+    simulationStatus:
+      name: status
+      in: query
+      required: false
+      description: Filter simulation jobs by status
+      schema:
+        type: string
+        enum:
+          - QUEUED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
+      example: SUCCEEDED
+    createdAfter:
+      name: created_after
+      in: query
+      required: false
+      description: Return resources created at or after this timestamp
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-01T00:00:00Z"
+    createdBefore:
+      name: created_before
+      in: query
+      required: false
+      description: Return resources created at or before this timestamp
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-31T23:59:59Z"
+    page:
+      name: page
+      in: query
+      required: false
+      description: Page number (1-indexed)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      example: 1
+    perPage:
+      name: per_page
+      in: query
+      required: false
+      description: Page size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+      example: 20
+    includePositions:
+      name: include_positions
+      in: query
+      required: false
+      description: Include geospatial and indoor coordinate data
+      schema:
+        type: boolean
+        default: true
+      example: true
+    includeKpis:
+      name: include_kpis
+      in: query
+      required: false
+      description: Include latest KPI overlays for cells, slices, and devices
+      schema:
+        type: boolean
+        default: true
+      example: true
+  schemas:
+    CreateTwinRequest:
+      type: object
+      description: Request payload for creating a twin snapshot
+      properties:
+        campus_id:
+          type: string
+          description: Campus identifier from campus registry
+          example: camp-sjc-07
+        source_mode:
+          type: string
+          description: Source strategy for creating the snapshot
+          enum:
+            - LIVE
+            - IMPORTED
+            - HYBRID
+          example: LIVE
+        include_domains:
+          type: array
+          description: Domain subsets included in snapshot capture
+          items:
+            type: string
+            enum:
+              - DEVICES
+              - SLICES
+              - CELLS
+              - CAPACITY
+              - COVERAGE
+              - POLICIES
+          minItems: 1
+        consistency_policy:
+          $ref: "#/components/schemas/ConsistencyPolicy"
+        metadata:
+          $ref: "#/components/schemas/TwinMetadata"
+      required:
+        - campus_id
+        - source_mode
+    ConsistencyPolicy:
+      type: object
+      description: Source consistency thresholds used during snapshot creation
+      properties:
+        max_source_age_seconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+          example: 30
+        required_sources:
+          type: array
+          items:
+            type: string
+            enum:
+              - telemetry
+              - inventory
+              - geospatial
+              - orchestration
+          minItems: 1
+        fail_on_partial_source_data:
+          type: boolean
+          example: true
+      required:
+        - max_source_age_seconds
+        - required_sources
+        - fail_on_partial_source_data
+    TwinMetadata:
+      type: object
+      description: Caller-provided metadata for audit and search
+      properties:
+        requested_by:
+          type: string
+          description: Principal requesting snapshot creation
+          example: user-17c2f8
+        reason:
+          type: string
+          description: Business or operations reason for creating the twin
+          maxLength: 256
+          example: Pre-maintenance baseline snapshot
+        tags:
+          type: array
+          items:
+            type: string
+          maxItems: 20
+    Twin:
+      type: object
+      description: Twin metadata and summary information
+      properties:
+        twin_id:
+          type: string
+          description: Unique twin identifier
+          example: twin-7cf15a0f
+        campus_id:
+          type: string
+          example: camp-sjc-07
+        name:
+          type: string
+          example: camp-sjc-07-live-2026-03-27t102400z
+        source_mode:
+          type: string
+          enum:
+            - LIVE
+            - IMPORTED
+            - HYBRID
+          example: LIVE
+        status:
+          type: string
+          enum:
+            - CREATING
+            - READY
+            - ERROR
+            - EXPIRED
+            - DELETED
+          example: READY
+        version:
+          type: integer
+          minimum: 1
+          example: 1
+        snapshot_timestamp:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:24:00Z"
+        source_watermarks:
+          $ref: "#/components/schemas/SourceWatermarks"
+        topology_summary:
+          $ref: "#/components/schemas/TopologySummary"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:24:02Z"
+        created_by:
+          type: string
+          example: user-17c2f8
+        expires_at:
+          type: string
+          format: date-time
+          example: "2026-04-26T10:24:02Z"
+        etag:
+          type: string
+          description: Entity tag for optimistic reads and cache validation
+          example: W/"twin-7cf15a0f-v1"
+      required:
+        - twin_id
+        - campus_id
+        - source_mode
+        - status
+        - version
+        - snapshot_timestamp
+        - topology_summary
+        - created_at
+        - etag
+    SourceWatermarks:
+      type: object
+      description: Source ingestion timestamps used by snapshot projection
+      properties:
+        telemetry_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:23:58Z"
+        inventory_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:23:55Z"
+        geospatial_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:23:54Z"
+    TopologySummary:
+      type: object
+      description: Aggregate topology cardinality counters
+      properties:
+        building_count:
+          type: integer
+          minimum: 0
+          example: 12
+        floor_count:
+          type: integer
+          minimum: 0
+          example: 58
+        cell_count:
+          type: integer
+          minimum: 0
+          example: 234
+        device_count:
+          type: integer
+          minimum: 0
+          example: 18342
+        slice_count:
+          type: integer
+          minimum: 0
+          example: 9
+      required:
+        - building_count
+        - floor_count
+        - cell_count
+        - device_count
+        - slice_count
+    TwinTopology:
+      type: object
+      description: Full topology payload for a twin snapshot
+      properties:
+        twin:
+          $ref: "#/components/schemas/Twin"
+        cells:
+          type: array
+          items:
+            $ref: "#/components/schemas/Cell"
+        slices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Slice"
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Device"
+      required:
+        - twin
+        - cells
+        - slices
+        - devices
+    Cell:
+      type: object
+      description: Radio cell in the twin topology
+      properties:
+        cell_id:
+          type: string
+          example: cell-a14
+        radio_tech:
+          type: string
+          enum:
+            - LTE
+            - NR
+          example: NR
+        band:
+          type: string
+          example: n77
+        state:
+          type: string
+          enum:
+            - ACTIVE
+            - DEGRADED
+            - MAINTENANCE
+            - DOWN
+          example: ACTIVE
+        building_id:
+          type: string
+          example: bldg-a
+        floor:
+          type: integer
+          example: 3
+        coordinates:
+          $ref: "#/components/schemas/Coordinates"
+        capacity:
+          $ref: "#/components/schemas/CellCapacity"
+        kpis:
+          $ref: "#/components/schemas/CellKpis"
+      required:
+        - cell_id
+        - radio_tech
+        - state
+        - coordinates
+    Slice:
+      type: object
+      description: Network slice representation in the twin
+      properties:
+        slice_id:
+          type: string
+          example: slice-gold-ar
+        profile:
+          type: string
+          enum:
+            - URLLC
+            - EMBB
+            - MIOT
+          example: URLLC
+        qos_class:
+          type: string
+          example: QCI-2
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 1
+        assigned_cells:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        reserved_capacity_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 28
+        active_device_count:
+          type: integer
+          minimum: 0
+          example: 823
+        kpis:
+          $ref: "#/components/schemas/SliceKpis"
+      required:
+        - slice_id
+        - profile
+        - priority
+        - assigned_cells
+        - reserved_capacity_pct
+    Device:
+      type: object
+      description: Device representation in the twin topology
+      properties:
+        device_id:
+          type: string
+          example: dev-forklift-0921
+        category:
+          type: string
+          enum:
+            - CAMERA
+            - AGV
+            - SENSOR
+            - HANDHELD
+            - AR_HEADSET
+            - INDUSTRIAL_IOT
+          example: AGV
+        status:
+          type: string
+          enum:
+            - CONNECTED
+            - IDLE
+            - ROAMING
+            - OFFLINE
+          example: CONNECTED
+        slice_id:
+          type: string
+          example: slice-gold-ar
+        attached_cell_id:
+          type: string
+          example: cell-a14
+        location:
+          $ref: "#/components/schemas/DeviceLocation"
+        radio:
+          $ref: "#/components/schemas/RadioMetrics"
+      required:
+        - device_id
+        - category
+        - status
+        - slice_id
+        - attached_cell_id
+    Coordinates:
+      type: object
+      description: Indoor and geospatial coordinates
+      properties:
+        x_meters:
+          type: number
+          example: 114.6
+        y_meters:
+          type: number
+          example: 72.9
+        z_meters:
+          type: number
+          example: 10.5
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 37.41682
+        lon:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: -121.98943
+      required:
+        - x_meters
+        - y_meters
+        - lat
+        - lon
+    DeviceLocation:
+      type: object
+      description: Device position and confidence
+      properties:
+        building_id:
+          type: string
+          example: bldg-a
+        floor:
+          type: integer
+          example: 3
+        x_meters:
+          type: number
+          example: 128.2
+        y_meters:
+          type: number
+          example: 51.4
+        z_meters:
+          type: number
+          example: 10.2
+        confidence_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 97.2
+      required:
+        - building_id
+        - floor
+        - x_meters
+        - y_meters
+        - confidence_pct
+    RadioMetrics:
+      type: object
+      description: Radio signal metrics for a device
+      properties:
+        rsrp_dbm:
+          type: number
+          example: -86
+        sinr_db:
+          type: number
+          example: 23.5
+        cqi:
+          type: integer
+          minimum: 0
+          maximum: 15
+          example: 12
+      required:
+        - rsrp_dbm
+        - sinr_db
+    CellCapacity:
+      type: object
+      description: Capacity and load counters for a cell
+      properties:
+        max_downlink_mbps:
+          type: number
+          minimum: 0
+          example: 1800
+        max_uplink_mbps:
+          type: number
+          minimum: 0
+          example: 280
+        connected_devices:
+          type: integer
+          minimum: 0
+          example: 192
+      required:
+        - max_downlink_mbps
+        - max_uplink_mbps
+        - connected_devices
+    CellKpis:
+      type: object
+      description: Performance metrics for a cell
+      properties:
+        utilization_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 64.2
+        p95_latency_ms:
+          type: number
+          minimum: 0
+          example: 22.1
+        packet_loss_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 0.12
+    SliceKpis:
+      type: object
+      description: Performance metrics for a slice
+      properties:
+        throughput_mbps:
+          type: number
+          minimum: 0
+          example: 740.8
+        p95_latency_ms:
+          type: number
+          minimum: 0
+          example: 14.9
+        success_rate_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 99.94
+    CreateSimulationRequest:
+      type: object
+      description: Simulation scenario definition
+      properties:
+        name:
+          type: string
+          maxLength: 128
+          example: add-300-ar-devices-east-wing
+        mode:
+          type: string
+          enum:
+            - WHAT_IF
+          example: WHAT_IF
+        time_horizon_minutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          example: 180
+        changes:
+          $ref: "#/components/schemas/SimulationChanges"
+        assumptions:
+          $ref: "#/components/schemas/SimulationAssumptions"
+        objectives:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SimulationObjective"
+      required:
+        - name
+        - mode
+        - time_horizon_minutes
+        - changes
+    SimulationChanges:
+      type: object
+      description: Planned state mutations in a what-if scenario
+      properties:
+        add_devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/AddDevicesChange"
+        update_slices:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdateSliceChange"
+      minProperties: 1
+    AddDevicesChange:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          example: 300
+        category:
+          type: string
+          enum:
+            - CAMERA
+            - AGV
+            - SENSOR
+            - HANDHELD
+            - AR_HEADSET
+            - INDUSTRIAL_IOT
+          example: AR_HEADSET
+        target_slice_id:
+          type: string
+          example: slice-gold-ar
+        location:
+          $ref: "#/components/schemas/TargetLocation"
+      required:
+        - count
+        - category
+        - target_slice_id
+        - location
+    UpdateSliceChange:
+      type: object
+      properties:
+        slice_id:
+          type: string
+          example: slice-gold-ar
+        reserved_capacity_delta_pct:
+          type: number
+          minimum: -100
+          maximum: 100
+          example: 12
+      required:
+        - slice_id
+        - reserved_capacity_delta_pct
+    TargetLocation:
+      type: object
+      properties:
+        building_id:
+          type: string
+          example: bldg-c
+        floor:
+          type: integer
+          example: 2
+        zone:
+          type: string
+          example: east-wing
+      required:
+        - building_id
+        - floor
+    SimulationAssumptions:
+      type: object
+      properties:
+        mobility_model:
+          type: string
+          enum:
+            - STATIC
+            - WAREHOUSE_LOOP
+            - CAMPUS_PEDESTRIAN
+          example: WAREHOUSE_LOOP
+        traffic_profile:
+          type: string
+          enum:
+            - NOMINAL
+            - PEAK_SHIFT_CHANGE
+            - INCIDENT_SURGE
+          example: PEAK_SHIFT_CHANGE
+        packet_size_bytes_p50:
+          type: integer
+          minimum: 64
+          maximum: 9000
+          example: 768
+    SimulationObjective:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - MAX_UTILIZATION_PCT
+            - P95_LATENCY_MS
+            - PACKET_LOSS_PCT
+          example: MAX_UTILIZATION_PCT
+        target_lte:
+          type: number
+          minimum: 0
+          example: 80
+      required:
+        - type
+        - target_lte
+    Simulation:
+      type: object
+      description: Simulation job metadata
+      properties:
+        sim_id:
+          type: string
+          example: sim-f19b8e2d
+        twin_id:
+          type: string
+          example: twin-7cf15a0f
+        name:
+          type: string
+          example: add-300-ar-devices-east-wing
+        mode:
+          type: string
+          enum:
+            - WHAT_IF
+          example: WHAT_IF
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+            - CANCELLED
+          example: SUCCEEDED
+        submitted_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:33:02Z"
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-03-27T10:33:26Z"
+      required:
+        - sim_id
+        - twin_id
+        - name
+        - mode
+        - status
+        - submitted_at
+    SimulationResult:
+      allOf:
+        - $ref: "#/components/schemas/Simulation"
+        - type: object
+          properties:
+            started_at:
+              type: string
+              format: date-time
+              nullable: true
+              example: "2026-03-27T10:33:04Z"
+            scenario_hash:
+              type: string
+              description: Content hash of scenario payload for deterministic comparisons
+              example: sha256:8d4f2f6daeb03d71326397f8c4cdbd51211ed80cf2f21dcfa3f4673fb6f884a3
+            predicted_kpis:
+              $ref: "#/components/schemas/PredictedKpis"
+            confidence:
+              $ref: "#/components/schemas/SimulationConfidence"
+            recommendations:
+              type: array
+              items:
+                $ref: "#/components/schemas/Recommendation"
+          required:
+            - predicted_kpis
+    PredictedKpis:
+      type: object
+      properties:
+        global:
+          $ref: "#/components/schemas/GlobalKpiDelta"
+        by_slice:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlicePrediction"
+        by_cell:
+          type: array
+          items:
+            $ref: "#/components/schemas/CellPrediction"
+      required:
+        - global
+    GlobalKpiDelta:
+      type: object
+      properties:
+        throughput_mbps_delta:
+          type: number
+          example: 118.2
+        utilization_pct_delta:
+          type: number
+          example: 7.4
+        p95_latency_ms_delta:
+          type: number
+          example: 4.9
+        packet_loss_pct_delta:
+          type: number
+          example: 0.08
+    SlicePrediction:
+      type: object
+      properties:
+        slice_id:
+          type: string
+          example: slice-gold-ar
+        utilization_pct:
+          type: number
+          example: 79.6
+        p95_latency_ms:
+          type: number
+          example: 24.8
+        success_rate_pct:
+          type: number
+          example: 99.71
+      required:
+        - slice_id
+    CellPrediction:
+      type: object
+      properties:
+        cell_id:
+          type: string
+          example: cell-c02
+        utilization_pct:
+          type: number
+          example: 88.9
+        p95_latency_ms:
+          type: number
+          example: 31.5
+        hotspot_risk:
+          type: string
+          enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+          example: HIGH
+      required:
+        - cell_id
+        - hotspot_risk
+    SimulationConfidence:
+      type: object
+      properties:
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.91
+        factors:
+          type: array
+          items:
+            type: string
+      required:
+        - score
+    Recommendation:
+      type: object
+      properties:
+        action:
+          type: string
+          example: Increase reserved capacity for slice-gold-ar by 5%
+        impact:
+          type: string
+          example: Expected latency reduction of 3.2 ms in east-wing zones
+      required:
+        - action
+    DriftCheckRequest:
+      type: object
+      description: Drift check configuration
+      properties:
+        domains:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - DEVICES
+              - SLICES
+              - CELLS
+              - CAPACITY
+              - COVERAGE
+        tolerance:
+          $ref: "#/components/schemas/DriftTolerance"
+        sample_size:
+          $ref: "#/components/schemas/DriftSampleSize"
+        include_entity_diffs:
+          type: boolean
+          example: true
+      required:
+        - domains
+    DriftTolerance:
+      type: object
+      properties:
+        max_position_drift_meters:
+          type: number
+          minimum: 0
+          example: 8
+        max_capacity_drift_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 12
+        max_device_assignment_drift_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 3
+    DriftSampleSize:
+      type: object
+      properties:
+        devices:
+          type: integer
+          minimum: 1
+          example: 2000
+        cells:
+          type: integer
+          minimum: 1
+          example: 234
+    DriftCheckResult:
+      type: object
+      properties:
+        drift_check_id:
+          type: string
+          example: drift-4c2f1e5b
+        twin_id:
+          type: string
+          example: twin-7cf15a0f
+        checked_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:42:11Z"
+        overall_status:
+          type: string
+          enum:
+            - HEALTHY
+            - WARNING
+            - CRITICAL
+          example: WARNING
+        overall_drift_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.27
+        domains:
+          type: array
+          items:
+            $ref: "#/components/schemas/DomainDrift"
+        divergences:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntityDivergence"
+        recommendations:
+          type: array
+          items:
+            type: string
+      required:
+        - drift_check_id
+        - twin_id
+        - checked_at
+        - overall_status
+        - overall_drift_score
+        - domains
+    DomainDrift:
+      type: object
+      properties:
+        domain:
+          type: string
+          enum:
+            - DEVICES
+            - SLICES
+            - CELLS
+            - CAPACITY
+            - COVERAGE
+          example: DEVICES
+        drift_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.31
+        severity:
+          type: string
+          enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+          example: MEDIUM
+        mismatch_count:
+          type: integer
+          minimum: 0
+          example: 188
+      required:
+        - domain
+        - drift_score
+        - severity
+        - mismatch_count
+    EntityDivergence:
+      type: object
+      properties:
+        entity_type:
+          type: string
+          enum:
+            - DEVICE
+            - SLICE
+            - CELL
+          example: DEVICE
+        entity_id:
+          type: string
+          example: dev-forklift-0921
+        field:
+          type: string
+          example: attached_cell_id
+        twin_value:
+          anyOf:
+            - type: string
+            - type: number
+            - type: boolean
+          nullable: true
+        live_value:
+          anyOf:
+            - type: string
+            - type: number
+            - type: boolean
+          nullable: true
+        severity:
+          type: string
+          enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+          example: MEDIUM
+      required:
+        - entity_type
+        - entity_id
+        - field
+        - severity
+    TwinResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Twin"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+      required:
+        - data
+        - meta
+    TwinListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Twin"
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/ResponseMeta"
+            - $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+    TwinTopologyResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/TwinTopology"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+      required:
+        - data
+        - meta
+    SimulationAcceptedResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/SimulationAccepted"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+      required:
+        - data
+        - meta
+    SimulationAccepted:
+      type: object
+      properties:
+        sim_id:
+          type: string
+          example: sim-f19b8e2d
+        twin_id:
+          type: string
+          example: twin-7cf15a0f
+        name:
+          type: string
+          example: add-300-ar-devices-east-wing
+        mode:
+          type: string
+          enum:
+            - WHAT_IF
+          example: WHAT_IF
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+            - CANCELLED
+          example: QUEUED
+        queued_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:33:02Z"
+        estimated_completion_seconds:
+          type: integer
+          minimum: 0
+          example: 25
+        links:
+          type: object
+          properties:
+            result:
+              type: string
+              example: /v1/twins/twin-7cf15a0f/simulations/sim-f19b8e2d
+          required:
+            - result
+      required:
+        - sim_id
+        - twin_id
+        - name
+        - mode
+        - status
+        - queued_at
+        - links
+    SimulationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Simulation"
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/ResponseMeta"
+            - $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+    SimulationResultResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/SimulationResult"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+      required:
+        - data
+        - meta
+    DriftCheckResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/DriftCheckResult"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+      required:
+        - data
+        - meta
+    ResponseMeta:
+      type: object
+      description: Metadata envelope included in all successful responses
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          example: 7a0b328c-877f-4948-a4d2-e7e7d724e8e6
+      required:
+        - request_id
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list endpoints
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        per_page:
+          type: integer
+          minimum: 1
+          example: 20
+        total_items:
+          type: integer
+          minimum: 0
+          example: 2
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 1
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    example: campus_id
+                  reason:
+                    type: string
+                    example: Campus does not exist in tenant scope
+            request_id:
+              type: string
+              example: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by Verizon identity platform
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: campus_id
+                  reason: Campus does not exist in tenant scope
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The twin is retention-locked and cannot be deleted.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but violates business constraints.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Slice capacity deltas exceed admissible limits.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many twin analysis requests in the current window.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

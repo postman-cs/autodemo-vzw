@@ -1,0 +1,1049 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Multi-Factor Authentication API
+  description: >-
+    Multi-factor authentication service supporting TOTP (RFC 6238), SMS OTP, email verification codes,
+    WebAuthn/FIDO2 hardware keys, and push notifications. Manages factor enrollment, verification challenges,
+    backup recovery codes, and trusted device designation. Implements adaptive MFA policies that escalate
+    authentication requirements based on risk signals.
+  version: 3.0.2
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-identity-mfa
+  x-acme-domain: identity
+servers:
+  - url: https://af-identity-mfa.api.acmefin.com/v1
+    description: Production
+  - url: https://af-identity-mfa.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Factor Management
+    description: MFA factor enrollment, configuration, and lifecycle
+  - name: Verification
+    description: Challenge issuance, OTP verification, and recovery
+  - name: Recovery
+    description: Backup codes and factor recovery operations
+paths:
+  /mfa/factors:
+    get:
+      operationId: listMfaFactors
+      summary: List enrolled factors
+      description: >-
+        Retrieve all MFA factors enrolled for the authenticated user, including status and last-used
+        timestamps.
+      tags:
+        - Factor Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: factor_type
+          in: query
+          required: false
+          description: Filter by factor type
+          schema:
+            type: "string"
+            enum:
+              - totp
+              - sms
+              - email
+              - webauthn
+              - push
+        - name: status
+          in: query
+          required: false
+          description: Filter by factor status
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        factor_id:
+                          type: string
+                          description: Unique factor identifier
+                          example: "fac_a1b2c3d4"
+                          readOnly: true
+                        user_id:
+                          type: string
+                          description: Factor owner
+                          example: "usr_4e5f6a7b"
+                        factor_type:
+                          type: string
+                          description: MFA factor type
+                          example: "totp"
+                          enum:
+                            - totp
+                            - sms
+                            - email
+                            - webauthn
+                            - push
+                        status:
+                          type: string
+                          description: Factor status
+                          example: "active"
+                          enum:
+                            - pending_activation
+                            - active
+                            - disabled
+                        phone_number:
+                          type: string
+                          description: Phone number (masked) for SMS factor
+                          example: "+1 ***-***-4321"
+                        email_address:
+                          type: string
+                          description: Email for email-based OTP
+                          example: "j.***@acmefin.com"
+                        is_preferred:
+                          type: boolean
+                          description: Whether this is the user's preferred factor
+                          example: true
+                        created_at:
+                          type: string
+                          description: Factor enrollment timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        last_used_at:
+                          type: string
+                          description: Last successful verification
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - factor_id
+                        - factor_type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: enrollFactor
+      summary: Enroll MFA factor
+      description: >-
+        Enroll a new MFA factor. For TOTP, returns the shared secret and provisioning URI for authenticator
+        app setup. For SMS/email, triggers a verification code to confirm the contact method.
+      tags:
+        - Factor Management
+      requestBody:
+        required: true
+        description: Enroll MFA factor request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    factor_type:
+                      type: string
+                      description: Factor type to enroll
+                      example: "totp"
+                      enum:
+                        - totp
+                        - sms
+                        - email
+                        - webauthn
+                        - push
+                    phone_number:
+                      type: string
+                      description: Phone number for SMS factor (E.164 format)
+                      example: "+14155551234"
+                    email_address:
+                      type: string
+                      description: Email for email factor
+                      format: email
+                      example: "j.smith@acmefin.com"
+              required:
+                - factor_type
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  factor_id:
+                    type: string
+                    description: Unique factor identifier
+                    example: "fac_a1b2c3d4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Factor owner
+                    example: "usr_4e5f6a7b"
+                  factor_type:
+                    type: string
+                    description: MFA factor type
+                    example: "totp"
+                    enum:
+                      - totp
+                      - sms
+                      - email
+                      - webauthn
+                      - push
+                  status:
+                    type: string
+                    description: Factor status
+                    example: "active"
+                    enum:
+                      - pending_activation
+                      - active
+                      - disabled
+                  phone_number:
+                    type: string
+                    description: Phone number (masked) for SMS factor
+                    example: "+1 ***-***-4321"
+                  email_address:
+                    type: string
+                    description: Email for email-based OTP
+                    example: "j.***@acmefin.com"
+                  is_preferred:
+                    type: boolean
+                    description: Whether this is the user's preferred factor
+                    example: true
+                  created_at:
+                    type: string
+                    description: Factor enrollment timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  last_used_at:
+                    type: string
+                    description: Last successful verification
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  totp_secret:
+                    type: string
+                    description: TOTP shared secret (base32, only for TOTP enrollment)
+                    example: "JBSWY3DPEHPK3PXP"
+                  totp_uri:
+                    type: string
+                    description: otpauth:// provisioning URI
+                    example: "otpauth://totp/AcmeFin:j.smith?secret=JBSWY3DPEHPK3PXP&issuer=AcmeFin"
+                  qr_code_url:
+                    type: string
+                    description: QR code image URL for authenticator setup
+                    example: "https://auth.acmefin.com/qr/fac_a1b2c3d4"
+                required:
+                  - factor_id
+                  - factor_type
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mfa/factors/{factor_id}:
+    get:
+      operationId: getMfaFactor
+      summary: Get factor details
+      description: >-
+        Retrieve details for a specific MFA factor including verification statistics and configuration.
+      tags:
+        - Factor Management
+      parameters:
+        - name: factor_id
+          in: path
+          required: true
+          description: Unique factor id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  factor_id:
+                    type: string
+                    description: Unique factor identifier
+                    example: "fac_a1b2c3d4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Factor owner
+                    example: "usr_4e5f6a7b"
+                  factor_type:
+                    type: string
+                    description: MFA factor type
+                    example: "totp"
+                    enum:
+                      - totp
+                      - sms
+                      - email
+                      - webauthn
+                      - push
+                  status:
+                    type: string
+                    description: Factor status
+                    example: "active"
+                    enum:
+                      - pending_activation
+                      - active
+                      - disabled
+                  phone_number:
+                    type: string
+                    description: Phone number (masked) for SMS factor
+                    example: "+1 ***-***-4321"
+                  email_address:
+                    type: string
+                    description: Email for email-based OTP
+                    example: "j.***@acmefin.com"
+                  is_preferred:
+                    type: boolean
+                    description: Whether this is the user's preferred factor
+                    example: true
+                  created_at:
+                    type: string
+                    description: Factor enrollment timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  last_used_at:
+                    type: string
+                    description: Last successful verification
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - factor_id
+                  - factor_type
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: removeFactor
+      summary: Remove MFA factor
+      description: >-
+        Remove an enrolled MFA factor. At least one active factor must remain if MFA is required by
+        organizational policy.
+      tags:
+        - Factor Management
+      parameters:
+        - name: factor_id
+          in: path
+          required: true
+          description: Unique factor id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /mfa/factors/{factor_id}/activate:
+    post:
+      operationId: activateFactor
+      summary: Activate MFA factor
+      description: >-
+        Activate a pending factor by verifying the initial code. For TOTP, the user must provide a valid
+        6-digit code from their authenticator app. For SMS/email, verify the code sent during enrollment.
+      tags:
+        - Factor Management
+      parameters:
+        - name: factor_id
+          in: path
+          required: true
+          description: Unique factor id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Activate MFA factor request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    code:
+                      type: string
+                      description: Verification code (6 digits)
+                      example: "482901"
+                      minLength: 6
+                      maxLength: 6
+              required:
+                - code
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  factor_id:
+                    type: string
+                    description: Unique factor identifier
+                    example: "fac_a1b2c3d4"
+                    readOnly: true
+                  status:
+                    type: string
+                    description: Updated status
+                    example: "active"
+                  activated_at:
+                    type: string
+                    description: Activation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - factor_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mfa/challenge:
+    post:
+      operationId: issueMfaChallenge
+      summary: Issue MFA challenge
+      description: >-
+        Issue an MFA challenge for a specific factor. For SMS/email, sends a one-time code. For push, sends
+        a notification to the registered device. For TOTP/WebAuthn, returns challenge parameters.
+      tags:
+        - Verification
+      requestBody:
+        required: true
+        description: Issue MFA challenge request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: User to challenge
+                      example: "usr_4e5f6a7b"
+                    factor_id:
+                      type: string
+                      description: Factor to use (or omit for preferred factor)
+                      example: "fac_a1b2c3d4"
+                    transaction_context:
+                      type: string
+                      description: Context to display in push notification
+                      example: "Login from Chrome on macOS"
+              required:
+                - user_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge_id:
+                    type: string
+                    description: Unique challenge identifier
+                    example: "chal_x1y2z3"
+                    readOnly: true
+                  factor_type:
+                    type: string
+                    description: Factor type challenged
+                    example: "totp"
+                  expires_in:
+                    type: integer
+                    description: Challenge TTL in seconds
+                    example: 300
+                  challenge_data:
+                    type: string
+                    description: Factor-specific challenge parameters (WebAuthn options, etc.)
+                required:
+                  - challenge_id
+                  - factor_type
+                  - expires_in
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mfa/verify:
+    post:
+      operationId: verifyMfaCode
+      summary: Verify MFA code
+      description: >-
+        Verify a one-time code or WebAuthn assertion against an active challenge. Returns verification
+        result and, on success, issues an MFA session token.
+      tags:
+        - Verification
+      requestBody:
+        required: true
+        description: Verify MFA code request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    challenge_id:
+                      type: string
+                      description: Challenge to verify against
+                      example: "chal_x1y2z3"
+                    code:
+                      type: string
+                      description: OTP code or WebAuthn response
+                      example: "482901"
+                    factor_type:
+                      type: string
+                      description: Factor type
+                      example: "totp"
+                      enum:
+                        - totp
+                        - sms
+                        - email
+                        - webauthn
+                        - push
+              required:
+                - challenge_id
+                - code
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                    description: Whether verification succeeded
+                    example: true
+                  mfa_token:
+                    type: string
+                    description: MFA session token (valid for configured TTL)
+                    example: "mfa_t0k3n_a1b2c3"
+                  expires_in:
+                    type: integer
+                    description: MFA token TTL in seconds
+                    example: 3600
+                required:
+                  - verified
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mfa/backup-codes:
+    post:
+      operationId: generateBackupCodes
+      summary: Generate backup codes
+      description: >-
+        Generate a new set of 10 single-use backup recovery codes. Invalidates any previously generated
+        codes. Each code is 8 alphanumeric characters.
+      tags:
+        - Recovery
+      requestBody:
+        required: true
+        description: Generate backup codes request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: User to generate codes for
+                      example: "usr_4e5f6a7b"
+                    confirm_regenerate:
+                      type: boolean
+                      description: Confirm invalidation of existing codes
+                      example: true
+              required:
+                - user_id
+                - confirm_regenerate
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codes:
+                    type: array
+                    description: Single-use backup codes (store securely, shown once)
+                    items:
+                      type: string
+                      example: "A1B2-C3D4"
+                  generated_at:
+                    type: string
+                    description: Generation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  codes_remaining:
+                    type: integer
+                    description: Total usable codes
+                    example: 10
+                required:
+                  - codes
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mfa/trusted-devices:
+    get:
+      operationId: listTrustedDevices
+      summary: List MFA-trusted devices
+      description: >-
+        Retrieve devices that have been designated as trusted, bypassing MFA challenges for a configured
+        duration.
+      tags:
+        - Recovery
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        device_id:
+                          type: string
+                          description: Unique device identifier
+                          example: "dev_a1b2c3d4"
+                          readOnly: true
+                        device_name:
+                          type: string
+                          description: Device name
+                          example: "Work Laptop"
+                        user_id:
+                          type: string
+                          description: Device owner
+                          example: "usr_4e5f6a7b"
+                        trusted_until:
+                          type: string
+                          description: Trust expiration
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        created_at:
+                          type: string
+                          description: Trust designation timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - device_id
+                        - trusted_until
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

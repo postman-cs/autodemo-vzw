@@ -1,0 +1,1343 @@
+openapi: 3.0.3
+info:
+  title: VZW Geospatial Hazard Intel API
+  version: 1.0.0
+  description: >-
+    Provides hazard zone enrichment, risk scoring, and geo-fence alerting capabilities
+    for dispatch and routing decisions across Verizon field operations. The API supports
+    retrieval of active hazard polygons, point-in-zone risk computation, geofence lifecycle
+    management, and advisory publication to impacted units.
+  contact:
+    name: Verizon Hazard Intel Platform
+    email: hazard-intel-api@verizon.com
+    url: https://developer.verizon.com/apis/hazard-intel
+  license:
+    name: Proprietary
+    url: https://developer.verizon.com/terms
+  x-verizon-catalog-id: vzw-geospatial-hazard-intel-api
+  x-verizon-domain: hazard-intel
+servers:
+  - url: https://vzw-geospatial-hazard-intel-api.verizon.com
+    description: Production
+  - url: https://vzw-geospatial-hazard-intel-api.staging.verizon.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Hazards
+    description: Hazard zone retrieval, detail, and risk analysis operations
+  - name: Geofences
+    description: Geofence lifecycle operations used for proactive alerting
+  - name: Advisories
+    description: Advisory publication operations for affected field units
+paths:
+  /v1/hazards:
+    get:
+      operationId: listHazards
+      summary: List active hazard zones
+      description: >-
+        Returns active hazard zones with pagination and optional filters. Use the `bbox`
+        filter to narrow results to a viewport, and type/severity filters to focus on
+        relevant operational hazards.
+      tags:
+        - Hazards
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+        - name: type
+          in: query
+          required: false
+          description: Filter results by hazard type
+          schema:
+            $ref: '#/components/schemas/HazardType'
+          example: WILDFIRE
+        - name: severity
+          in: query
+          required: false
+          description: Filter results by severity level
+          schema:
+            $ref: '#/components/schemas/HazardSeverity'
+          example: HIGH
+        - name: bbox
+          in: query
+          required: false
+          description: >-
+            Bounding box in WGS84 format `minLng,minLat,maxLng,maxLat`.
+            Example covers part of the San Francisco peninsula.
+          schema:
+            type: string
+            pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$'
+          example: '-122.525,37.703,-122.355,37.832'
+        - name: includeGeometry
+          in: query
+          required: false
+          description: Include full polygon geometry in list response
+          schema:
+            type: boolean
+            default: false
+          example: false
+      responses:
+        '200':
+          description: Hazard zones returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HazardListResponse'
+              examples:
+                sfHazards:
+                  summary: Active hazards near San Francisco
+                  value:
+                    data:
+                      - hazardId: hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P
+                        type: WILDFIRE
+                        severity: HIGH
+                        status: ACTIVE
+                        title: Twin Peaks Brush Fire Spread Zone
+                        summary: >-
+                          Fast-moving brush fire with intermittent road closure impacts
+                          across central and west San Francisco.
+                        startedAt: '2026-03-27T07:45:00Z'
+                        updatedAt: '2026-03-27T08:02:00Z'
+                        expiresAt: '2026-03-27T16:00:00Z'
+                        centroid:
+                          latitude: 37.7587
+                          longitude: -122.4456
+                        affectedUnitCount: 18
+                      - hazardId: hz_01HZ5F5YH0P6N6N3W7X5M9Q1T6
+                        type: FLOOD
+                        severity: MODERATE
+                        status: ACTIVE
+                        title: Embarcadero Tidal Surge
+                        summary: >-
+                          High tide and runoff causing lane restrictions around
+                          Embarcadero and South Beach corridors.
+                        startedAt: '2026-03-27T06:30:00Z'
+                        updatedAt: '2026-03-27T07:40:00Z'
+                        expiresAt: '2026-03-27T13:00:00Z'
+                        centroid:
+                          latitude: 37.7924
+                          longitude: -122.3935
+                        affectedUnitCount: 9
+                    page:
+                      pageSize: 25
+                      nextPageToken: eyJvZmZzZXQiOjI1fQ==
+                    traceId: 35b525f4-2d47-4f14-b445-cf9f32c7f8a0
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/hazards/{hazardId}:
+    get:
+      operationId: getHazardById
+      summary: Get hazard zone detail
+      description: >-
+        Returns full hazard details, including polygon geometry and recommended routing
+        guidance for dispatch systems.
+      tags:
+        - Hazards
+      parameters:
+        - $ref: '#/components/parameters/HazardId'
+      responses:
+        '200':
+          description: Hazard detail returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HazardDetailResponse'
+              examples:
+                sfWildfireDetail:
+                  summary: Twin Peaks hazard with polygon geometry
+                  value:
+                    data:
+                      hazardId: hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P
+                      type: WILDFIRE
+                      severity: HIGH
+                      status: ACTIVE
+                      title: Twin Peaks Brush Fire Spread Zone
+                      summary: >-
+                        Fast-moving brush fire with intermittent road closure impacts
+                        across central and west San Francisco.
+                      source: CAL_FIRE_FEED
+                      confidenceScore: 0.92
+                      startedAt: '2026-03-27T07:45:00Z'
+                      updatedAt: '2026-03-27T08:02:00Z'
+                      expiresAt: '2026-03-27T16:00:00Z'
+                      impactedRoads:
+                        - Market St
+                        - Portola Dr
+                        - Clarendon Ave
+                      recommendedAction: >-
+                        Avoid routes crossing the polygon and favor US-101 corridor
+                        until suppression resources stabilize perimeter spread.
+                      centroid:
+                        latitude: 37.7587
+                        longitude: -122.4456
+                      geometry:
+                        type: Polygon
+                        coordinates:
+                          -
+                            - [-122.4692, 37.7681]
+                            - [-122.4491, 37.7785]
+                            - [-122.4302, 37.7703]
+                            - [-122.4268, 37.7527]
+                            - [-122.4448, 37.7419]
+                            - [-122.4634, 37.7485]
+                            - [-122.4692, 37.7681]
+                      affectedUnitIds:
+                        - unit_sf_201
+                        - unit_sf_314
+                        - unit_sf_428
+                    traceId: f7d42138-c4ac-4242-8fee-2e0f87131c8b
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/hazards/risk-score:
+    post:
+      operationId: computeHazardRiskScore
+      summary: Compute hazard risk score for point
+      description: >-
+        Computes a normalized risk score for a given latitude/longitude point using
+        active hazards, severity weighting, proximity, and time decay factors.
+      tags:
+        - Hazards
+      requestBody:
+        required: true
+        description: Risk score request payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RiskScoreRequest'
+            examples:
+              sfPoint:
+                summary: Dispatch waypoint in SOMA
+                value:
+                  point:
+                    latitude: 37.7749
+                    longitude: -122.4194
+                  unitType: DISPATCH_VAN
+                  routeBearingDegrees: 115
+                  lookAheadMinutes: 45
+                  includeContributors: true
+      responses:
+        '200':
+          description: Risk score computed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskScoreResponse'
+              examples:
+                sfRiskResult:
+                  summary: High-risk dispatch point
+                  value:
+                    data:
+                      score: 78
+                      category: HIGH
+                      computedAt: '2026-03-27T08:04:31Z'
+                      algorithmVersion: 2026.03.1
+                      point:
+                        latitude: 37.7749
+                        longitude: -122.4194
+                      contributors:
+                        - hazardId: hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P
+                          type: WILDFIRE
+                          severity: HIGH
+                          distanceMeters: 1820
+                          weightedContribution: 46.2
+                        - hazardId: hz_01HZ5F5YH0P6N6N3W7X5M9Q1T6
+                          type: FLOOD
+                          severity: MODERATE
+                          distanceMeters: 3490
+                          weightedContribution: 18.8
+                      recommendedAction: >-
+                        Route around Market St to reduce exposure during next 45 minutes.
+                    traceId: 2fbcc4a4-27ac-45f8-93d9-a15a5ec2e8d3
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/geofences:
+    post:
+      operationId: createGeofence
+      summary: Create alert geofence
+      description: >-
+        Creates a geofence tied to one or more hazard types. Matching unit positions
+        trigger alert events routed to dispatch and monitoring systems.
+      tags:
+        - Geofences
+      requestBody:
+        required: true
+        description: Geofence creation payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGeofenceRequest'
+            examples:
+              sfOperationsGeofence:
+                summary: Geofence around western dispatch corridor
+                value:
+                  name: SF Western Corridor Watch
+                  description: Alert dispatch when units enter high-risk western corridor
+                  hazardTypes:
+                    - WILDFIRE
+                    - WIND
+                  minSeverity: MODERATE
+                  geometry:
+                    type: Polygon
+                    coordinates:
+                      -
+                        - [-122.5070, 37.7850]
+                        - [-122.4650, 37.8040]
+                        - [-122.4300, 37.7810]
+                        - [-122.4560, 37.7450]
+                        - [-122.5000, 37.7500]
+                        - [-122.5070, 37.7850]
+                  notifyChannels:
+                    - DISPATCH_CONSOLE
+                    - SMS
+                  targetUnitIds:
+                    - unit_sf_201
+                    - unit_sf_314
+                  activeUntil: '2026-03-28T00:00:00Z'
+      responses:
+        '201':
+          description: Geofence created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeofenceDetailResponse'
+              examples:
+                createdGeofence:
+                  summary: Created geofence
+                  value:
+                    data:
+                      geofenceId: gf_01HZ5G4TZP9Q82JRT3AKX9NN8V
+                      name: SF Western Corridor Watch
+                      description: Alert dispatch when units enter high-risk western corridor
+                      status: ACTIVE
+                      hazardTypes:
+                        - WILDFIRE
+                        - WIND
+                      minSeverity: MODERATE
+                      notifyChannels:
+                        - DISPATCH_CONSOLE
+                        - SMS
+                      targetUnitIds:
+                        - unit_sf_201
+                        - unit_sf_314
+                      activeFrom: '2026-03-27T08:06:00Z'
+                      activeUntil: '2026-03-28T00:00:00Z'
+                      createdAt: '2026-03-27T08:06:00Z'
+                      updatedAt: '2026-03-27T08:06:00Z'
+                      geometry:
+                        type: Polygon
+                        coordinates:
+                          -
+                            - [-122.5070, 37.7850]
+                            - [-122.4650, 37.8040]
+                            - [-122.4300, 37.7810]
+                            - [-122.4560, 37.7450]
+                            - [-122.5000, 37.7500]
+                            - [-122.5070, 37.7850]
+                    traceId: 8c7e0c2d-6b7d-4de6-a84f-b6c7caaf89db
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    get:
+      operationId: listGeofences
+      summary: List active geofences
+      description: >-
+        Returns active geofences used for alert evaluation. Use optional filters to
+        retrieve geofences for a specific status or hazard type.
+      tags:
+        - Geofences
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+        - name: status
+          in: query
+          required: false
+          description: Filter by geofence status
+          schema:
+            $ref: '#/components/schemas/GeofenceStatus'
+          example: ACTIVE
+        - name: hazardType
+          in: query
+          required: false
+          description: Return geofences configured for this hazard type
+          schema:
+            $ref: '#/components/schemas/HazardType'
+          example: WILDFIRE
+      responses:
+        '200':
+          description: Geofences returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeofenceListResponse'
+              examples:
+                activeGeofences:
+                  summary: Active geofence list
+                  value:
+                    data:
+                      - geofenceId: gf_01HZ5G4TZP9Q82JRT3AKX9NN8V
+                        name: SF Western Corridor Watch
+                        status: ACTIVE
+                        hazardTypes:
+                          - WILDFIRE
+                          - WIND
+                        minSeverity: MODERATE
+                        activeFrom: '2026-03-27T08:06:00Z'
+                        activeUntil: '2026-03-28T00:00:00Z'
+                        targetUnitCount: 2
+                      - geofenceId: gf_01HZ5G6JH1A0JPQX8J6S0FQZWF
+                        name: Embarcadero Flood Alert
+                        status: ACTIVE
+                        hazardTypes:
+                          - FLOOD
+                        minSeverity: LOW
+                        activeFrom: '2026-03-27T06:10:00Z'
+                        activeUntil: '2026-03-27T15:00:00Z'
+                        targetUnitCount: 11
+                    page:
+                      pageSize: 25
+                      nextPageToken: null
+                    traceId: 04a17c6f-818a-4ce9-bf70-793be4c8cf10
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/geofences/{geofenceId}:
+    delete:
+      operationId: deleteGeofence
+      summary: Delete geofence
+      description: >-
+        Deactivates and deletes an alert geofence. Existing emitted alerts are preserved
+        in downstream audit systems.
+      tags:
+        - Geofences
+      parameters:
+        - $ref: '#/components/parameters/GeofenceId'
+      responses:
+        '204':
+          description: Geofence deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/hazards/{hazardId}/advisories:
+    post:
+      operationId: publishHazardAdvisory
+      summary: Publish hazard advisory
+      description: >-
+        Publishes an operational advisory for units affected by a hazard. The advisory is
+        distributed to configured channels and persisted for audit.
+      tags:
+        - Advisories
+      parameters:
+        - $ref: '#/components/parameters/HazardId'
+      requestBody:
+        required: true
+        description: Advisory payload to publish
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishAdvisoryRequest'
+            examples:
+              rerouteAdvisory:
+                summary: Dispatch reroute advisory for wildfire spread
+                value:
+                  title: Reroute westbound units around Twin Peaks perimeter
+                  message: >-
+                    Active fire spread detected near Twin Peaks. Avoid Clarendon Ave and
+                    Portola Dr until containment exceeds 60 percent.
+                  severity: HIGH
+                  advisoryType: ROUTE_ADJUSTMENT
+                  channels:
+                    - DISPATCH_CONSOLE
+                    - SMS
+                    - IN_VEHICLE_TABLET
+                  targetUnitIds:
+                    - unit_sf_201
+                    - unit_sf_314
+                    - unit_sf_428
+                  expiresAt: '2026-03-27T12:00:00Z'
+                  correlationId: op_dispatch_shift_b_20260327
+      responses:
+        '202':
+          description: Advisory accepted for publication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdvisoryResponse'
+              examples:
+                advisoryAccepted:
+                  summary: Accepted advisory request
+                  value:
+                    data:
+                      advisoryId: adv_01HZ5GBJ0ZZ3NWN96TYWJAK6Y2
+                      hazardId: hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P
+                      status: QUEUED
+                      acceptedAt: '2026-03-27T08:10:12Z'
+                      advisoryType: ROUTE_ADJUSTMENT
+                      severity: HIGH
+                      channelStatuses:
+                        - channel: DISPATCH_CONSOLE
+                          status: QUEUED
+                        - channel: SMS
+                          status: QUEUED
+                        - channel: IN_VEHICLE_TABLET
+                          status: QUEUED
+                    traceId: 6132b8ee-714f-48ce-8120-9f90c921e253
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  parameters:
+    HazardId:
+      name: hazardId
+      in: path
+      required: true
+      description: Unique hazard identifier
+      schema:
+        type: string
+        minLength: 12
+      example: hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P
+    GeofenceId:
+      name: geofenceId
+      in: path
+      required: true
+      description: Unique geofence identifier
+      schema:
+        type: string
+        minLength: 12
+      example: gf_01HZ5G4TZP9Q82JRT3AKX9NN8V
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: Number of records to return per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+      example: 25
+    PageToken:
+      name: pageToken
+      in: query
+      required: false
+      description: Opaque token for fetching next page of results
+      schema:
+        type: string
+      example: eyJvZmZzZXQiOjI1fQ==
+  schemas:
+    HazardType:
+      type: string
+      description: Hazard classification
+      enum:
+        - WILDFIRE
+        - FLOOD
+        - WIND
+        - LANDSLIDE
+        - EARTHQUAKE
+        - HAZMAT
+        - CIVIL_UNREST
+    HazardSeverity:
+      type: string
+      description: Hazard severity scale
+      enum:
+        - LOW
+        - MODERATE
+        - HIGH
+        - CRITICAL
+    HazardStatus:
+      type: string
+      description: Current lifecycle status of hazard record
+      enum:
+        - ACTIVE
+        - MONITORING
+        - RESOLVED
+    GeofenceStatus:
+      type: string
+      description: Current lifecycle status of geofence
+      enum:
+        - ACTIVE
+        - EXPIRED
+        - DISABLED
+    AdvisoryType:
+      type: string
+      description: Advisory category
+      enum:
+        - ROUTE_ADJUSTMENT
+        - DISPATCH_DELAY
+        - SAFETY_NOTICE
+        - EVACUATION_NOTICE
+    AdvisorySeverity:
+      type: string
+      description: Advisory urgency level
+      enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+        - CRITICAL
+    AlertChannel:
+      type: string
+      description: Allowed delivery channel for advisories and geofence alerts
+      enum:
+        - DISPATCH_CONSOLE
+        - SMS
+        - EMAIL
+        - IN_VEHICLE_TABLET
+        - WEBHOOK
+    GeoPoint:
+      type: object
+      description: WGS84 point
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 37.7749
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: -122.4194
+      required:
+        - latitude
+        - longitude
+    GeoJsonPolygon:
+      type: object
+      description: >-
+        GeoJSON Polygon geometry where each coordinate is `[longitude, latitude]`.
+        The first and last positions in each linear ring must be equivalent.
+      properties:
+        type:
+          type: string
+          enum:
+            - Polygon
+          example: Polygon
+        coordinates:
+          type: array
+          description: Array of linear rings for polygon geometry
+          minItems: 1
+          items:
+            type: array
+            minItems: 4
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: number
+                format: double
+          example:
+            -
+              - [-122.4692, 37.7681]
+              - [-122.4491, 37.7785]
+              - [-122.4302, 37.7703]
+              - [-122.4268, 37.7527]
+              - [-122.4448, 37.7419]
+              - [-122.4634, 37.7485]
+              - [-122.4692, 37.7681]
+      required:
+        - type
+        - coordinates
+    PageInfo:
+      type: object
+      description: Pagination metadata
+      properties:
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 25
+        nextPageToken:
+          nullable: true
+          type: string
+          description: Token for requesting next page; null if no additional pages exist
+          example: eyJvZmZzZXQiOjI1fQ==
+      required:
+        - pageSize
+        - nextPageToken
+    HazardSummary:
+      type: object
+      description: Condensed hazard representation for list responses
+      properties:
+        hazardId:
+          type: string
+          example: hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P
+        type:
+          $ref: '#/components/schemas/HazardType'
+        severity:
+          $ref: '#/components/schemas/HazardSeverity'
+        status:
+          $ref: '#/components/schemas/HazardStatus'
+        title:
+          type: string
+          maxLength: 120
+          example: Twin Peaks Brush Fire Spread Zone
+        summary:
+          type: string
+          maxLength: 500
+          example: Fast-moving brush fire with intermittent road closure impacts.
+        startedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T07:45:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T08:02:00Z'
+        expiresAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:00:00Z'
+        centroid:
+          $ref: '#/components/schemas/GeoPoint'
+        affectedUnitCount:
+          type: integer
+          minimum: 0
+          example: 18
+      required:
+        - hazardId
+        - type
+        - severity
+        - status
+        - title
+        - startedAt
+        - updatedAt
+        - centroid
+    HazardDetail:
+      allOf:
+        - $ref: '#/components/schemas/HazardSummary'
+        - type: object
+          properties:
+            source:
+              type: string
+              description: Upstream source system for hazard feed
+              example: CAL_FIRE_FEED
+            confidenceScore:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+              example: 0.92
+            impactedRoads:
+              type: array
+              items:
+                type: string
+              example:
+                - Market St
+                - Portola Dr
+            recommendedAction:
+              type: string
+              maxLength: 1000
+              example: Avoid polygon crossing and route through US-101 corridor.
+            geometry:
+              $ref: '#/components/schemas/GeoJsonPolygon'
+            affectedUnitIds:
+              type: array
+              items:
+                type: string
+              example:
+                - unit_sf_201
+                - unit_sf_314
+          required:
+            - source
+            - confidenceScore
+            - geometry
+    HazardListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/HazardSummary'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+        traceId:
+          type: string
+          format: uuid
+          example: 35b525f4-2d47-4f14-b445-cf9f32c7f8a0
+      required:
+        - data
+        - page
+        - traceId
+    HazardDetailResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/HazardDetail'
+        traceId:
+          type: string
+          format: uuid
+          example: f7d42138-c4ac-4242-8fee-2e0f87131c8b
+      required:
+        - data
+        - traceId
+    RiskScoreRequest:
+      type: object
+      properties:
+        point:
+          $ref: '#/components/schemas/GeoPoint'
+        unitType:
+          type: string
+          description: Dispatch unit profile used for risk weighting
+          enum:
+            - DISPATCH_VAN
+            - RESPONSE_TRUCK
+            - FIELD_TECH
+            - CONTRACTOR
+          example: DISPATCH_VAN
+        routeBearingDegrees:
+          type: integer
+          minimum: 0
+          maximum: 359
+          description: Direction of intended travel from point
+          example: 115
+        lookAheadMinutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          default: 60
+          description: Time horizon for predicted risk exposure
+          example: 45
+        includeContributors:
+          type: boolean
+          default: false
+          description: Include contributor-level hazard breakdown in response
+          example: true
+      required:
+        - point
+        - unitType
+    RiskContributor:
+      type: object
+      properties:
+        hazardId:
+          type: string
+          example: hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P
+        type:
+          $ref: '#/components/schemas/HazardType'
+        severity:
+          $ref: '#/components/schemas/HazardSeverity'
+        distanceMeters:
+          type: number
+          format: float
+          minimum: 0
+          example: 1820
+        weightedContribution:
+          type: number
+          format: float
+          minimum: 0
+          example: 46.2
+      required:
+        - hazardId
+        - type
+        - severity
+        - distanceMeters
+        - weightedContribution
+    RiskCategory:
+      type: string
+      enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+        - EXTREME
+      description: Bucketed score category
+    RiskScoreResult:
+      type: object
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 78
+        category:
+          $ref: '#/components/schemas/RiskCategory'
+        computedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T08:04:31Z'
+        algorithmVersion:
+          type: string
+          example: 2026.03.1
+        point:
+          $ref: '#/components/schemas/GeoPoint'
+        contributors:
+          type: array
+          items:
+            $ref: '#/components/schemas/RiskContributor'
+        recommendedAction:
+          type: string
+          maxLength: 1000
+          example: Route around Market St to reduce exposure during next 45 minutes.
+      required:
+        - score
+        - category
+        - computedAt
+        - algorithmVersion
+        - point
+    RiskScoreResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RiskScoreResult'
+        traceId:
+          type: string
+          format: uuid
+          example: 2fbcc4a4-27ac-45f8-93d9-a15a5ec2e8d3
+      required:
+        - data
+        - traceId
+    GeofenceSummary:
+      type: object
+      properties:
+        geofenceId:
+          type: string
+          example: gf_01HZ5G4TZP9Q82JRT3AKX9NN8V
+        name:
+          type: string
+          maxLength: 120
+          example: SF Western Corridor Watch
+        status:
+          $ref: '#/components/schemas/GeofenceStatus'
+        hazardTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/HazardType'
+        minSeverity:
+          $ref: '#/components/schemas/HazardSeverity'
+        activeFrom:
+          type: string
+          format: date-time
+          example: '2026-03-27T08:06:00Z'
+        activeUntil:
+          type: string
+          format: date-time
+          example: '2026-03-28T00:00:00Z'
+        targetUnitCount:
+          type: integer
+          minimum: 0
+          example: 2
+      required:
+        - geofenceId
+        - name
+        - status
+        - hazardTypes
+        - minSeverity
+        - activeFrom
+        - activeUntil
+        - targetUnitCount
+    GeofenceDetail:
+      allOf:
+        - $ref: '#/components/schemas/GeofenceSummary'
+        - type: object
+          properties:
+            description:
+              type: string
+              maxLength: 500
+              example: Alert dispatch when units enter high-risk western corridor
+            notifyChannels:
+              type: array
+              items:
+                $ref: '#/components/schemas/AlertChannel'
+            targetUnitIds:
+              type: array
+              items:
+                type: string
+              example:
+                - unit_sf_201
+                - unit_sf_314
+            createdAt:
+              type: string
+              format: date-time
+              example: '2026-03-27T08:06:00Z'
+            updatedAt:
+              type: string
+              format: date-time
+              example: '2026-03-27T08:06:00Z'
+            geometry:
+              $ref: '#/components/schemas/GeoJsonPolygon'
+          required:
+            - notifyChannels
+            - createdAt
+            - updatedAt
+            - geometry
+    CreateGeofenceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 120
+          example: SF Western Corridor Watch
+        description:
+          type: string
+          maxLength: 500
+          example: Alert dispatch when units enter high-risk western corridor
+        hazardTypes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/HazardType'
+        minSeverity:
+          $ref: '#/components/schemas/HazardSeverity'
+        geometry:
+          $ref: '#/components/schemas/GeoJsonPolygon'
+        notifyChannels:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AlertChannel'
+        targetUnitIds:
+          type: array
+          items:
+            type: string
+        activeUntil:
+          type: string
+          format: date-time
+          description: Optional expiration for geofence
+          example: '2026-03-28T00:00:00Z'
+      required:
+        - name
+        - hazardTypes
+        - minSeverity
+        - geometry
+        - notifyChannels
+    GeofenceListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeofenceSummary'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+        traceId:
+          type: string
+          format: uuid
+          example: 04a17c6f-818a-4ce9-bf70-793be4c8cf10
+      required:
+        - data
+        - page
+        - traceId
+    GeofenceDetailResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/GeofenceDetail'
+        traceId:
+          type: string
+          format: uuid
+          example: 8c7e0c2d-6b7d-4de6-a84f-b6c7caaf89db
+      required:
+        - data
+        - traceId
+    PublishAdvisoryRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 5
+          maxLength: 160
+          example: Reroute westbound units around Twin Peaks perimeter
+        message:
+          type: string
+          minLength: 20
+          maxLength: 2000
+          example: Active fire spread detected. Avoid Clarendon Ave and Portola Dr.
+        severity:
+          $ref: '#/components/schemas/AdvisorySeverity'
+        advisoryType:
+          $ref: '#/components/schemas/AdvisoryType'
+        channels:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AlertChannel'
+        targetUnitIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T12:00:00Z'
+        correlationId:
+          type: string
+          maxLength: 120
+          description: Client-supplied id for deduplication and audit
+          example: op_dispatch_shift_b_20260327
+      required:
+        - title
+        - message
+        - severity
+        - advisoryType
+        - channels
+        - targetUnitIds
+    ChannelStatus:
+      type: object
+      properties:
+        channel:
+          $ref: '#/components/schemas/AlertChannel'
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - SENT
+            - FAILED
+          example: QUEUED
+      required:
+        - channel
+        - status
+    AdvisoryData:
+      type: object
+      properties:
+        advisoryId:
+          type: string
+          example: adv_01HZ5GBJ0ZZ3NWN96TYWJAK6Y2
+        hazardId:
+          type: string
+          example: hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - PROCESSING
+            - PUBLISHED
+            - FAILED
+          example: QUEUED
+        acceptedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T08:10:12Z'
+        advisoryType:
+          $ref: '#/components/schemas/AdvisoryType'
+        severity:
+          $ref: '#/components/schemas/AdvisorySeverity'
+        channelStatuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelStatus'
+      required:
+        - advisoryId
+        - hazardId
+        - status
+        - acceptedAt
+        - advisoryType
+        - severity
+        - channelStatuses
+    AdvisoryResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AdvisoryData'
+        traceId:
+          type: string
+          format: uuid
+          example: 6132b8ee-714f-48ce-8120-9f90c921e253
+      required:
+        - data
+        - traceId
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+          example: bbox
+        reason:
+          type: string
+          example: Must be provided as minLng,minLat,maxLng,maxLat.
+      required:
+        - field
+        - reason
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: The request contains invalid parameters.
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+            requestId:
+              type: string
+              description: Correlation id for support and debugging
+              example: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+          required:
+            - code
+            - message
+            - requestId
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: OAuth2/JWT bearer token issued by Verizon identity platform
+  responses:
+    '400':
+      description: Bad Request — Request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Query parameter `bbox` must use minLng,minLat,maxLng,maxLat.
+              details:
+                - field: bbox
+                  reason: Expected four comma-separated numbers.
+              requestId: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired bearer token.
+              requestId: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — Caller does not have required scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: FORBIDDEN
+              message: Missing required hazard-intel:write scope.
+              requestId: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — Requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: NOT_FOUND
+              message: Hazard `hz_01HZ5F5W8M2Q2E08J2JY6Y7N1P` was not found.
+              requestId: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — Request conflicts with current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: CONFLICT
+              message: Geofence overlaps an existing immutable protected zone.
+              requestId: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — Semantic validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Point must be within supported operating area.
+              details:
+                - field: point
+                  reason: Latitude/longitude outside permitted region.
+              requestId: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Request quota exceeded. Retry after 30 seconds.
+              requestId: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — Unexpected server-side fault.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Unexpected processing error occurred.
+              requestId: req-f6a7b8c9-d0e1-2345-fabc-456789012345

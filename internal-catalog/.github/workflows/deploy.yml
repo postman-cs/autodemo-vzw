@@ -1,0 +1,225 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  detect_action_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      actions_changed: ${{ steps.detect.outputs.actions_changed }}
+      actions_to_build: ${{ steps.detect.outputs.actions_to_build }}
+      enforce_bundle_drift: ${{ steps.detect.outputs.enforce_bundle_drift }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - id: detect
+        name: Detect action-related changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" != "push" ]]; then
+            {
+              echo "actions_changed=false"
+              echo "actions_to_build="
+              echo "enforce_bundle_drift=false"
+            } >> "$GITHUB_OUTPUT"
+            echo "Non-push event (${GITHUB_EVENT_NAME}); skipping change detection."
+            exit 0
+          fi
+
+          BEFORE_SHA="${{ github.event.before }}"
+          AFTER_SHA="${{ github.sha }}"
+
+          if [[ -z "${BEFORE_SHA}" || "${BEFORE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
+            if git rev-parse --verify "${AFTER_SHA}^" >/dev/null 2>&1; then
+              BEFORE_SHA="$(git rev-parse "${AFTER_SHA}^")"
+            else
+              BEFORE_SHA="${AFTER_SHA}"
+            fi
+          fi
+
+          CHANGED_FILES="$(git diff --name-only "${BEFORE_SHA}" "${AFTER_SHA}")"
+          echo "Changed files:"
+          echo "${CHANGED_FILES}"
+
+          ACTIONS_TO_BUILD=""
+          BUILD_ALL_ACTIONS="false"
+          ENFORCE_BUNDLE_DRIFT="false"
+
+          ACTION_DIR_CHANGED="false"
+          if echo "${CHANGED_FILES}" | grep -Eq '^\.github/actions/[^/]+/'; then
+            ACTION_DIR_CHANGED="true"
+          fi
+
+          DEP_INPUT_CHANGED="false"
+          if echo "${CHANGED_FILES}" | grep -Eq '^(package\.json$|package-lock\.json$|bun\.lock$)'; then
+            DEP_INPUT_CHANGED="true"
+          fi
+
+          # Build all bundles when shared build inputs changed.
+          if echo "${CHANGED_FILES}" | grep -Eq '^(scripts/build-actions\.sh|package\.json$|package-lock\.json$|bun\.lock$)'; then
+            BUILD_ALL_ACTIONS="true"
+          fi
+
+          if [[ "${ACTION_DIR_CHANGED}" == "true" || "${DEP_INPUT_CHANGED}" == "true" ]]; then
+            ENFORCE_BUNDLE_DRIFT="true"
+          fi
+
+          if [[ "${BUILD_ALL_ACTIONS}" == "false" ]]; then
+            ACTIONS_TO_BUILD="$(
+              echo "${CHANGED_FILES}" \
+                | awk -F/ '/^\.github\/actions\/[^/]+\// { print $3 }' \
+                | sort -u \
+                | paste -sd, -
+            )"
+          fi
+
+          if echo "${CHANGED_FILES}" | grep -Eq '^(\.github/actions/|scripts/build-actions\.sh$|package\.json$|package-lock\.json$|bun\.lock$)'; then
+            {
+              echo "actions_changed=true"
+              if [[ "${BUILD_ALL_ACTIONS}" == "true" || -z "${ACTIONS_TO_BUILD}" ]]; then
+                echo "actions_to_build="
+              else
+                echo "actions_to_build=${ACTIONS_TO_BUILD}"
+              fi
+              echo "enforce_bundle_drift=${ENFORCE_BUNDLE_DRIFT}"
+            } >> "$GITHUB_OUTPUT"
+            echo "Detected action-related changes."
+            if [[ "${BUILD_ALL_ACTIONS}" == "true" || -z "${ACTIONS_TO_BUILD}" ]]; then
+              echo "Building all action bundles."
+            else
+              echo "Targeted bundles: ${ACTIONS_TO_BUILD}"
+            fi
+            echo "Bundle drift enforcement: ${ENFORCE_BUNDLE_DRIFT}"
+          else
+            {
+              echo "actions_changed=false"
+              echo "actions_to_build="
+              echo "enforce_bundle_drift=false"
+            } >> "$GITHUB_OUTPUT"
+            echo "No action-related changes detected."
+          fi
+
+  validate_action_bundles:
+    name: Validate Action Bundles
+    runs-on: ubuntu-latest
+    needs: detect_action_changes
+    if: ${{ needs.detect_action_changes.outputs.actions_changed == 'true' }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6.3.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Build action bundles
+        run: npm run build:actions
+        env:
+          ACTIONS_TO_BUILD: ${{ needs.detect_action_changes.outputs.actions_to_build }}
+
+      - name: Local action load smoke test
+        uses: ./.github/actions/postman-bootstrap
+        with:
+          step: noop
+          project_name: test
+          domain: test
+          domain_code: test
+          requester_email: test@test.com
+          spec_url: http://test.com/spec.yaml
+          team_id: 123
+          runtime_mode: lambda
+          postman_api_key: test
+          postman_access_token: test
+          github_app_token: test
+          governance_mapping: "{}"
+
+  validate_bun_lock:
+    name: Validate bun.lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Validate bun.lock before install
+        run: node scripts/check-bun-lock.mjs
+
+  deploy:
+    runs-on: ubuntu-latest
+    name: Build & Deploy
+    needs: [detect_action_changes, validate_bun_lock]
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5.0.3
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          if bun install --frozen-lockfile; then
+            echo "bun.lock is in sync."
+          else
+            echo "::error::bun.lock drift detected in CI. This shouldn't happen if pre-commit hooks are active."
+            echo "::notice::Run 'bun install' locally, commit the updated bun.lock, and push again."
+            exit 1
+          fi
+
+      - name: Validate dependency graph
+        run: node scripts/validate-dependencies.mjs
+
+      - name: Generate worker runtime types
+        run: bun wrangler types --config wrangler.toml
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Build frontend
+        run: bun run build
+
+      - name: Deploy to Cloudflare Workers
+        run: bun wrangler deploy --config wrangler.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  gate:
+    runs-on: ubuntu-latest
+    name: Gate
+    needs: [deploy, validate_action_bundles]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          deploy="${{ needs.deploy.result }}"
+          bundles="${{ needs.validate_action_bundles.result }}"
+          if [[ "${deploy}" != "success" ]]; then
+            echo "::error::Deploy failed or was skipped (result: ${deploy})"
+            exit 1
+          fi
+          if [[ "${bundles}" != "success" && "${bundles}" != "skipped" ]]; then
+            echo "::error::Action bundle validation failed (result: ${bundles})"
+            exit 1
+          fi
+          echo "All checks passed."

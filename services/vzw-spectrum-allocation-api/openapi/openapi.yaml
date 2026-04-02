@@ -1,0 +1,1678 @@
+openapi: 3.0.3
+info:
+  title: VZW Spectrum Allocation API
+  description: |
+    The VZW Spectrum Allocation API provides local CBRS and private-band spectrum planning capabilities for enterprise campus deployments.
+    It helps RF engineering and network operations teams request grants, validate interference constraints, and manage channel/eirp updates
+    while enforcing policy guardrails for zone-level compliance.
+
+    Key capabilities include:
+    - Grant request workflows for CBRS PAL/GAA and private LTE/NR channels.
+    - Interference simulation against adjacent sectors and floor-level zones.
+    - Heatmap retrieval for RF utilization, occupancy, and guardband pressure.
+    - Controlled patch operations for modifying active grants with validation windows.
+
+    The API is intended for orchestration systems, NOC automation, and campus planning dashboards.
+  version: 1.0.0
+  contact:
+    name: Verizon Spectrum Platform Team
+    email: spectrum-api-support@verizon.com
+    url: https://developer.verizon.com/network/spectrum
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/legal/terms
+  x-catalog-id: vzw-spectrum-allocation-api
+  x-domain: spectrum
+servers:
+  - url: https://vzw-spectrum-allocation-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-spectrum-allocation-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Spectrum Grants
+    description: Operations for grant allocation, listing, status retrieval, and controlled modifications.
+  - name: Interference
+    description: Simulation and prediction APIs for adjacent-cell and inter-zone RF interference.
+  - name: RF Heatmaps
+    description: Floor and zone-level radio utilization tiles and derived quality indicators.
+paths:
+  /v1/spectrum/grants:
+    post:
+      operationId: requestSpectrumGrant
+      summary: Request spectrum grant
+      description: |
+        Creates a spectrum grant request for a target campus and RF zone.
+        The request is validated against policy constraints including allowed bands, EIRP ceilings,
+        channel occupancy, and time-window overlaps. If accepted, the API returns a grant in `pending`
+        or `active` state depending on whether immediate activation criteria are met.
+      tags:
+        - Spectrum Grants
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        description: Payload for a new grant request.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantRequest'
+            examples:
+              cbrsGaaGrant:
+                summary: CBRS GAA grant request for engineering building
+                value:
+                  request_id: req_01HZYDG3Q4B4GXHFXAJ5SZ4J21
+                  campus_id: campus_nyc_017
+                  zone_id: zone_eng_building_floor_03
+                  deployment_mode: private_lte
+                  band:
+                    band_id: cbrs_3550_3700
+                    band_type: cbrs_gaa
+                    center_frequency_mhz: 3625
+                    channel_width_mhz: 20
+                  eirp_dbm: 33
+                  grant_window:
+                    start_time: '2026-03-27T10:00:00Z'
+                    end_time: '2026-03-27T18:00:00Z'
+                  antenna_profile:
+                    antenna_height_m: 14.5
+                    azimuth_deg: 130
+                    beamwidth_deg: 65
+                    downtilt_deg: 4
+                  guardrail_preferences:
+                    min_interference_margin_db: 6.0
+                    min_guardband_khz: 500
+                    enforce_neighbor_zone_lock: true
+                  metadata:
+                    submitted_by: noc-automation@verizon.com
+                    ticket_id: INC-104352
+      responses:
+        '201':
+          description: Grant request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantResponse'
+              examples:
+                acceptedPendingActivation:
+                  summary: Request accepted and pending activation
+                  value:
+                    grant:
+                      grant_id: grant_01HZYDPM0D11EEXQ4GTVEZEAZP
+                      request_id: req_01HZYDG3Q4B4GXHFXAJ5SZ4J21
+                      campus_id: campus_nyc_017
+                      zone_id: zone_eng_building_floor_03
+                      state: pending
+                      deployment_mode: private_lte
+                      band:
+                        band_id: cbrs_3550_3700
+                        band_type: cbrs_gaa
+                        center_frequency_mhz: 3625
+                        channel_width_mhz: 20
+                      eirp_dbm: 33
+                      interference_margin_db: 7.2
+                      grant_window:
+                        start_time: '2026-03-27T10:00:00Z'
+                        end_time: '2026-03-27T18:00:00Z'
+                      expiration_time: '2026-03-27T18:00:00Z'
+                      created_at: '2026-03-27T09:58:11Z'
+                      updated_at: '2026-03-27T09:58:11Z'
+                    validation:
+                      policy_version: policy_2026_03_15
+                      checks_passed:
+                        - max_eirp_within_limit
+                        - no_time_window_collision
+                        - min_interference_margin_satisfied
+                    links:
+                      self: /v1/spectrum/grants/grant_01HZYDPM0D11EEXQ4GTVEZEAZP
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      operationId: listSpectrumGrants
+      summary: List spectrum grants
+      description: |
+        Returns active, pending, or expired grants for a campus and optional zone.
+        Supports filtering by grant state, deployment mode, and grant window overlap.
+        Pagination metadata is included to support dashboard and automation polling use cases.
+      tags:
+        - Spectrum Grants
+      parameters:
+        - $ref: '#/components/parameters/CampusIdQuery'
+        - $ref: '#/components/parameters/ZoneIdQuery'
+        - $ref: '#/components/parameters/GrantStateQuery'
+        - $ref: '#/components/parameters/DeploymentModeQuery'
+        - $ref: '#/components/parameters/WindowStartQuery'
+        - $ref: '#/components/parameters/WindowEndQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+      responses:
+        '200':
+          description: Grants listed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantListResponse'
+              examples:
+                campusActiveAndExpired:
+                  summary: Mixed active and expired grants for one campus
+                  value:
+                    data:
+                      - grant_id: grant_01HZYDPM0D11EEXQ4GTVEZEAZP
+                        campus_id: campus_nyc_017
+                        zone_id: zone_eng_building_floor_03
+                        state: active
+                        deployment_mode: private_lte
+                        band:
+                          band_id: cbrs_3550_3700
+                          band_type: cbrs_gaa
+                          center_frequency_mhz: 3625
+                          channel_width_mhz: 20
+                        eirp_dbm: 33
+                        interference_margin_db: 7.2
+                        expiration_time: '2026-03-27T18:00:00Z'
+                        updated_at: '2026-03-27T10:01:22Z'
+                      - grant_id: grant_01HY4YP09A2YMWN66S8EPV2YZ7
+                        campus_id: campus_nyc_017
+                        zone_id: zone_cafeteria_floor_01
+                        state: expired
+                        deployment_mode: private_nr
+                        band:
+                          band_id: private_n78_3300_3800
+                          band_type: private_licensed
+                          center_frequency_mhz: 3450
+                          channel_width_mhz: 40
+                        eirp_dbm: 30
+                        interference_margin_db: 5.8
+                        expiration_time: '2026-03-26T18:00:00Z'
+                        updated_at: '2026-03-26T18:00:01Z'
+                    pagination:
+                      page: 1
+                      per_page: 20
+                      total: 2
+                      total_pages: 1
+                    filters:
+                      campus_id: campus_nyc_017
+                      zone_id: null
+                      state: all
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/spectrum/grants/{grantId}:
+    get:
+      operationId: getSpectrumGrantById
+      summary: Get grant status and expiration windows
+      description: |
+        Retrieves detailed grant state for a specific grant identifier,
+        including effective and expiration windows, current policy status,
+        and optional pending modification details.
+      tags:
+        - Spectrum Grants
+      parameters:
+        - $ref: '#/components/parameters/GrantIdPath'
+      responses:
+        '200':
+          description: Grant details returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantDetailResponse'
+              examples:
+                activeGrantWithWindow:
+                  summary: Active grant with expiration and history
+                  value:
+                    grant:
+                      grant_id: grant_01HZYDPM0D11EEXQ4GTVEZEAZP
+                      request_id: req_01HZYDG3Q4B4GXHFXAJ5SZ4J21
+                      campus_id: campus_nyc_017
+                      zone_id: zone_eng_building_floor_03
+                      state: active
+                      deployment_mode: private_lte
+                      band:
+                        band_id: cbrs_3550_3700
+                        band_type: cbrs_gaa
+                        center_frequency_mhz: 3625
+                        channel_width_mhz: 20
+                      eirp_dbm: 33
+                      interference_margin_db: 7.2
+                      grant_window:
+                        start_time: '2026-03-27T10:00:00Z'
+                        end_time: '2026-03-27T18:00:00Z'
+                      expiration_time: '2026-03-27T18:00:00Z'
+                      created_at: '2026-03-27T09:58:11Z'
+                      updated_at: '2026-03-27T10:01:22Z'
+                    status:
+                      policy_compliance: compliant
+                      expiration_state: within_window
+                      seconds_to_expiration: 27900
+                    modification_queue:
+                      has_pending_patch: true
+                      pending_patch_id: patch_01HZZ0NG4PFM8Q61Y21Z8N7Y9E
+                    history:
+                      - event_time: '2026-03-27T09:58:11Z'
+                        event_type: grant_requested
+                        actor: noc-automation@verizon.com
+                      - event_time: '2026-03-27T10:00:00Z'
+                        event_type: grant_activated
+                        actor: control-plane
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    patch:
+      operationId: patchSpectrumGrant
+      summary: Modify power or channel allocation
+      description: |
+        Applies a partial update to an existing grant. Supported patch actions include
+        changes to `eirp_dbm`, channel center frequency, and channel width.
+        Updates are validated against current campus occupancy and interference guardrails
+        before acceptance.
+      tags:
+        - Spectrum Grants
+      parameters:
+        - $ref: '#/components/parameters/GrantIdPath'
+        - $ref: '#/components/parameters/IfMatchHeader'
+      requestBody:
+        required: true
+        description: Patch instructions for a grant.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantPatchRequest'
+            examples:
+              adjustPowerAndWidth:
+                summary: Lower EIRP and narrow channel width
+                value:
+                  patch_reason: Reduce overlap with newly commissioned adjacent sector
+                  requested_by: rf-engineer@verizon.com
+                  operations:
+                    - op: replace
+                      path: /eirp_dbm
+                      value: 31
+                    - op: replace
+                      path: /band/channel_width_mhz
+                      value: 15
+                  dry_run: false
+      responses:
+        '200':
+          description: Patch accepted and applied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantPatchResponse'
+              examples:
+                patchApplied:
+                  summary: Grant updated after policy checks
+                  value:
+                    grant_id: grant_01HZYDPM0D11EEXQ4GTVEZEAZP
+                    patch_id: patch_01HZZ0NG4PFM8Q61Y21Z8N7Y9E
+                    status: applied
+                    previous:
+                      eirp_dbm: 33
+                      channel_width_mhz: 20
+                    current:
+                      eirp_dbm: 31
+                      channel_width_mhz: 15
+                    validation:
+                      interference_margin_db_before: 7.2
+                      interference_margin_db_after: 9.1
+                      checks_passed:
+                        - eirp_under_zone_limit
+                        - occupancy_still_valid
+                        - adjacent_zone_margin_improved
+                    updated_at: '2026-03-27T11:03:18Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/spectrum/interference-checks:
+    post:
+      operationId: simulateInterferenceCheck
+      summary: Simulate interference against adjacent cells
+      description: |
+        Runs an RF simulation for a proposed or existing channel allocation.
+        The simulation computes predicted interference margins and guardband pressure
+        across neighboring cells and floors. The response includes pass/fail outcomes,
+        limiting sectors, and recommended mitigations.
+      tags:
+        - Interference
+      requestBody:
+        required: true
+        description: Interference simulation input.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InterferenceCheckRequest'
+            examples:
+              simulationForAdjacentSectors:
+                summary: Validate candidate channel before grant patch
+                value:
+                  simulation_id: sim_01HZZ3CCBHE4NQX09J5M9Z08V5
+                  campus_id: campus_nyc_017
+                  source_zone_id: zone_eng_building_floor_03
+                  candidate_allocation:
+                    center_frequency_mhz: 3635
+                    channel_width_mhz: 20
+                    eirp_dbm: 32
+                    deployment_mode: private_lte
+                  adjacency_scope:
+                    include_same_floor: true
+                    include_upper_floor: true
+                    include_lower_floor: true
+                    max_distance_m: 180
+                  environment:
+                    wall_loss_db: 9
+                    clutter_factor: medium
+                    rain_fade_db: 0
+      responses:
+        '200':
+          description: Simulation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterferenceCheckResponse'
+              examples:
+                simulationResultWithMitigations:
+                  summary: Margins calculated with one risk sector
+                  value:
+                    simulation_id: sim_01HZZ3CCBHE4NQX09J5M9Z08V5
+                    campus_id: campus_nyc_017
+                    source_zone_id: zone_eng_building_floor_03
+                    overall_result: caution
+                    summary:
+                      min_interference_margin_db: 4.7
+                      required_margin_db: 6.0
+                      impacted_neighbors: 1
+                    neighbors:
+                      - neighbor_zone_id: zone_eng_building_floor_04
+                        distance_m: 22
+                        predicted_rsrp_dbm: -74
+                        predicted_rsrq_db: -11
+                        interference_margin_db: 4.7
+                        status: below_threshold
+                    recommendations:
+                      - Reduce eirp_dbm to 30 for source zone.
+                      - Shift center_frequency_mhz to 3625.
+                      - Increase guardband_khz by 250 where possible.
+                    generated_at: '2026-03-27T11:11:42Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/spectrum/heatmaps/{campusId}:
+    get:
+      operationId: getRfUtilizationHeatmap
+      summary: Get RF utilization heatmap tiles
+      description: |
+        Returns RF utilization heatmap tiles for a campus, optionally scoped by building,
+        floor, and zone. Each tile contains utilization, interference pressure, and confidence
+        metrics to support floor-level planning and incident response.
+      tags:
+        - RF Heatmaps
+      parameters:
+        - $ref: '#/components/parameters/CampusIdPath'
+        - $ref: '#/components/parameters/BuildingIdQuery'
+        - $ref: '#/components/parameters/FloorIdQuery'
+        - $ref: '#/components/parameters/ZoneIdQuery'
+        - $ref: '#/components/parameters/ResolutionQuery'
+        - $ref: '#/components/parameters/TimeBucketQuery'
+      responses:
+        '200':
+          description: Heatmap tiles generated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeatmapResponse'
+              examples:
+                floorHeatmap:
+                  summary: Building and floor level tile output
+                  value:
+                    campus_id: campus_nyc_017
+                    building_id: bldg_eng
+                    floor_id: floor_03
+                    generated_at: '2026-03-27T11:24:08Z'
+                    resolution_m: 5
+                    time_bucket: pt5m
+                    tiles:
+                      - tile_id: t_03_001_001
+                        x: 1
+                        y: 1
+                        utilization_pct: 68.2
+                        occupancy_pct: 61.5
+                        interference_pressure_index: 0.41
+                        median_sinr_db: 17.2
+                        confidence: high
+                      - tile_id: t_03_001_002
+                        x: 1
+                        y: 2
+                        utilization_pct: 81.0
+                        occupancy_pct: 77.4
+                        interference_pressure_index: 0.72
+                        median_sinr_db: 12.8
+                        confidence: medium
+                    aggregates:
+                      avg_utilization_pct: 74.6
+                      max_utilization_pct: 91.4
+                      min_interference_margin_db: 5.1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    OAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.verizon.com/oauth2/token
+          scopes:
+            spectrum:read: Read grant, simulation, and heatmap resources.
+            spectrum:write: Create and modify grant and simulation resources.
+            spectrum:admin: Administer policy-level and cross-campus actions.
+
+  parameters:
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Client-generated idempotency token. If provided, duplicate requests with
+        the same token and body return the original response.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+
+    IfMatchHeader:
+      name: If-Match
+      in: header
+      required: false
+      description: Version token for optimistic concurrency control.
+      schema:
+        type: string
+        example: W/"grant-7"
+
+    CampusIdPath:
+      name: campusId
+      in: path
+      required: true
+      description: Campus identifier.
+      schema:
+        type: string
+        pattern: '^campus_[a-z0-9_\-]+$'
+
+    GrantIdPath:
+      name: grantId
+      in: path
+      required: true
+      description: Unique spectrum grant identifier.
+      schema:
+        type: string
+        pattern: '^grant_[A-Za-z0-9]{20,32}$'
+
+    CampusIdQuery:
+      name: campus_id
+      in: query
+      required: true
+      description: Campus identifier to filter grants.
+      schema:
+        type: string
+        pattern: '^campus_[a-z0-9_\-]+$'
+
+    ZoneIdQuery:
+      name: zone_id
+      in: query
+      required: false
+      description: Optional zone identifier filter.
+      schema:
+        type: string
+        pattern: '^zone_[a-z0-9_\-]+$'
+
+    GrantStateQuery:
+      name: state
+      in: query
+      required: false
+      description: Filter grants by state.
+      schema:
+        type: string
+        enum:
+          - pending
+          - active
+          - suspended
+          - expired
+          - all
+        default: all
+
+    DeploymentModeQuery:
+      name: deployment_mode
+      in: query
+      required: false
+      description: Filter by radio deployment mode.
+      schema:
+        type: string
+        enum:
+          - private_lte
+          - private_nr
+          - neutral_host
+
+    WindowStartQuery:
+      name: window_start
+      in: query
+      required: false
+      description: Lower bound for grant window overlap in ISO-8601 date-time.
+      schema:
+        type: string
+        format: date-time
+
+    WindowEndQuery:
+      name: window_end
+      in: query
+      required: false
+      description: Upper bound for grant window overlap in ISO-8601 date-time.
+      schema:
+        type: string
+        format: date-time
+
+    PageQuery:
+      name: page
+      in: query
+      required: false
+      description: Page number for paginated output.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PerPageQuery:
+      name: per_page
+      in: query
+      required: false
+      description: Number of records per page (max 100).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    BuildingIdQuery:
+      name: building_id
+      in: query
+      required: false
+      description: Building identifier for heatmap scoping.
+      schema:
+        type: string
+        pattern: '^bldg_[a-z0-9_\-]+$'
+
+    FloorIdQuery:
+      name: floor_id
+      in: query
+      required: false
+      description: Floor identifier for heatmap scoping.
+      schema:
+        type: string
+        pattern: '^floor_[a-z0-9_\-]+$'
+
+    ResolutionQuery:
+      name: resolution_m
+      in: query
+      required: false
+      description: Tile resolution in meters.
+      schema:
+        type: integer
+        enum:
+          - 2
+          - 5
+          - 10
+          - 20
+        default: 5
+
+    TimeBucketQuery:
+      name: time_bucket
+      in: query
+      required: false
+      description: Aggregation interval for heatmap metrics.
+      schema:
+        type: string
+        enum:
+          - pt1m
+          - pt5m
+          - pt15m
+          - pt1h
+        default: pt5m
+
+  responses:
+    BadRequest:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidPayload:
+              value:
+                error:
+                  code: INVALID_REQUEST
+                  message: Request payload failed validation.
+                  request_id: req_01HZYF65T7S8WJG2Y57VWW32D4
+                  details:
+                    - field: band.channel_width_mhz
+                      issue: must be one of 5, 10, 15, 20, 40
+                    - field: eirp_dbm
+                      issue: must be <= 37 for cbrs_gaa
+
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missingToken:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Bearer token is missing or expired.
+                  request_id: req_01HZYFA5HGQD67Q79JB953TP08
+
+    Forbidden:
+      description: Caller lacks required permissions.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            scopeDenied:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: Caller does not have required scope spectrum:write.
+                  request_id: req_01HZYFB9W5Y7FZXAK5QPQWSNQY
+
+    NotFound:
+      description: Requested resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            grantMissing:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Grant with id grant_01ABCDABCDABCDABCDABCD not found.
+                  request_id: req_01HZYFCPCAYTHK68NY8XK4J2N8
+
+    Conflict:
+      description: Request conflicts with current system state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            overlapConflict:
+              value:
+                error:
+                  code: GRANT_CONFLICT
+                  message: Requested channel overlaps an active protected allocation.
+                  request_id: req_01HZYFDZZMBB8P4P4RW2ZY5V41
+                  details:
+                    - field: band.center_frequency_mhz
+                      issue: overlaps grant_01HZY0F4X6DGRS3P9VJYHCPX7D
+
+    PreconditionFailed:
+      description: Version precondition failed for patch.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            staleVersion:
+              value:
+                error:
+                  code: PRECONDITION_FAILED
+                  message: Resource version mismatch. Refresh and retry.
+                  request_id: req_01HZYFEYPNP0WX4W8TBRN2E5RE
+
+    UnprocessableEntity:
+      description: Request is syntactically valid but violates policy guardrails.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            policyViolation:
+              value:
+                error:
+                  code: POLICY_VIOLATION
+                  message: Candidate allocation violates minimum interference margin.
+                  request_id: req_01HZYFG16GX0V3Y9N3E3XC64MN
+                  details:
+                    - field: interference_margin_db
+                      issue: predicted 4.7 dB, required >= 6.0 dB
+
+    TooManyRequests:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            throttled:
+              value:
+                error:
+                  code: RATE_LIMITED
+                  message: Too many requests. Retry later.
+                  request_id: req_01HZYFHGKG1M5N3SDP5NZ8P2R2
+
+    InternalServerError:
+      description: Internal service error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internalFailure:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: Unexpected server error occurred.
+                  request_id: req_01HZYFJK976PKQ5VS4QYDSD2ZK
+
+    ServiceUnavailable:
+      description: Service temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            dependencyUnavailable:
+              value:
+                error:
+                  code: SERVICE_UNAVAILABLE
+                  message: Interference engine unavailable. Please retry shortly.
+                  request_id: req_01HZYFMP92KK3SAWDZX9A0WACM
+
+  schemas:
+    GrantRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - campus_id
+        - zone_id
+        - deployment_mode
+        - band
+        - eirp_dbm
+        - grant_window
+      properties:
+        request_id:
+          type: string
+          description: Client request identifier for traceability.
+          pattern: '^req_[A-Za-z0-9]{20,32}$'
+        campus_id:
+          type: string
+          description: Campus identifier.
+          pattern: '^campus_[a-z0-9_\-]+$'
+        zone_id:
+          type: string
+          description: Zone identifier where allocation applies.
+          pattern: '^zone_[a-z0-9_\-]+$'
+        deployment_mode:
+          $ref: '#/components/schemas/DeploymentMode'
+        band:
+          $ref: '#/components/schemas/BandAllocation'
+        eirp_dbm:
+          type: number
+          format: float
+          description: Requested effective isotropic radiated power in dBm.
+          minimum: 0
+          maximum: 60
+          example: 33
+        grant_window:
+          $ref: '#/components/schemas/TimeWindow'
+        antenna_profile:
+          $ref: '#/components/schemas/AntennaProfile'
+        guardrail_preferences:
+          $ref: '#/components/schemas/GuardrailPreferences'
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Free-form metadata for ticketing and operational correlation.
+
+    GrantResponse:
+      type: object
+      required:
+        - grant
+        - validation
+        - links
+      properties:
+        grant:
+          $ref: '#/components/schemas/Grant'
+        validation:
+          type: object
+          required:
+            - policy_version
+            - checks_passed
+          properties:
+            policy_version:
+              type: string
+              example: policy_2026_03_15
+            checks_passed:
+              type: array
+              items:
+                type: string
+              example:
+                - max_eirp_within_limit
+                - no_time_window_collision
+                - min_interference_margin_satisfied
+        links:
+          type: object
+          required:
+            - self
+          properties:
+            self:
+              type: string
+              example: /v1/spectrum/grants/grant_01HZYDPM0D11EEXQ4GTVEZEAZP
+
+    GrantListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+        - filters
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GrantSummary'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+        filters:
+          type: object
+          properties:
+            campus_id:
+              type: string
+              nullable: true
+            zone_id:
+              type: string
+              nullable: true
+            state:
+              type: string
+              nullable: true
+
+    GrantDetailResponse:
+      type: object
+      required:
+        - grant
+        - status
+        - modification_queue
+        - history
+      properties:
+        grant:
+          $ref: '#/components/schemas/Grant'
+        status:
+          type: object
+          required:
+            - policy_compliance
+            - expiration_state
+            - seconds_to_expiration
+          properties:
+            policy_compliance:
+              type: string
+              enum:
+                - compliant
+                - non_compliant
+            expiration_state:
+              type: string
+              enum:
+                - within_window
+                - expiring_soon
+                - expired
+            seconds_to_expiration:
+              type: integer
+              minimum: 0
+        modification_queue:
+          type: object
+          required:
+            - has_pending_patch
+          properties:
+            has_pending_patch:
+              type: boolean
+            pending_patch_id:
+              type: string
+              nullable: true
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/GrantHistoryEvent'
+
+    GrantPatchRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - patch_reason
+        - requested_by
+        - operations
+      properties:
+        patch_reason:
+          type: string
+          minLength: 3
+          maxLength: 512
+        requested_by:
+          type: string
+          format: email
+        dry_run:
+          type: boolean
+          default: false
+        operations:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/GrantPatchOperation'
+
+    GrantPatchResponse:
+      type: object
+      required:
+        - grant_id
+        - patch_id
+        - status
+        - previous
+        - current
+        - validation
+        - updated_at
+      properties:
+        grant_id:
+          type: string
+        patch_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - applied
+            - rejected
+            - simulated
+        previous:
+          $ref: '#/components/schemas/PowerChannelSnapshot'
+        current:
+          $ref: '#/components/schemas/PowerChannelSnapshot'
+        validation:
+          type: object
+          required:
+            - interference_margin_db_before
+            - interference_margin_db_after
+            - checks_passed
+          properties:
+            interference_margin_db_before:
+              type: number
+              format: float
+            interference_margin_db_after:
+              type: number
+              format: float
+            checks_passed:
+              type: array
+              items:
+                type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    InterferenceCheckRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - simulation_id
+        - campus_id
+        - source_zone_id
+        - candidate_allocation
+        - adjacency_scope
+      properties:
+        simulation_id:
+          type: string
+          pattern: '^sim_[A-Za-z0-9]{20,32}$'
+        campus_id:
+          type: string
+          pattern: '^campus_[a-z0-9_\-]+$'
+        source_zone_id:
+          type: string
+          pattern: '^zone_[a-z0-9_\-]+$'
+        candidate_allocation:
+          type: object
+          additionalProperties: false
+          required:
+            - center_frequency_mhz
+            - channel_width_mhz
+            - eirp_dbm
+            - deployment_mode
+          properties:
+            center_frequency_mhz:
+              type: number
+              format: float
+              minimum: 600
+              maximum: 8000
+            channel_width_mhz:
+              type: integer
+              enum:
+                - 5
+                - 10
+                - 15
+                - 20
+                - 40
+            eirp_dbm:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 60
+            deployment_mode:
+              $ref: '#/components/schemas/DeploymentMode'
+        adjacency_scope:
+          type: object
+          additionalProperties: false
+          required:
+            - include_same_floor
+            - include_upper_floor
+            - include_lower_floor
+            - max_distance_m
+          properties:
+            include_same_floor:
+              type: boolean
+            include_upper_floor:
+              type: boolean
+            include_lower_floor:
+              type: boolean
+            max_distance_m:
+              type: integer
+              minimum: 1
+              maximum: 1000
+        environment:
+          type: object
+          additionalProperties: false
+          properties:
+            wall_loss_db:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 60
+            clutter_factor:
+              type: string
+              enum:
+                - low
+                - medium
+                - high
+            rain_fade_db:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 20
+
+    InterferenceCheckResponse:
+      type: object
+      required:
+        - simulation_id
+        - campus_id
+        - source_zone_id
+        - overall_result
+        - summary
+        - neighbors
+        - recommendations
+        - generated_at
+      properties:
+        simulation_id:
+          type: string
+        campus_id:
+          type: string
+        source_zone_id:
+          type: string
+        overall_result:
+          type: string
+          enum:
+            - pass
+            - caution
+            - fail
+        summary:
+          type: object
+          required:
+            - min_interference_margin_db
+            - required_margin_db
+            - impacted_neighbors
+          properties:
+            min_interference_margin_db:
+              type: number
+              format: float
+            required_margin_db:
+              type: number
+              format: float
+            impacted_neighbors:
+              type: integer
+              minimum: 0
+        neighbors:
+          type: array
+          items:
+            $ref: '#/components/schemas/NeighborInterferenceResult'
+        recommendations:
+          type: array
+          items:
+            type: string
+        generated_at:
+          type: string
+          format: date-time
+
+    HeatmapResponse:
+      type: object
+      required:
+        - campus_id
+        - generated_at
+        - resolution_m
+        - time_bucket
+        - tiles
+        - aggregates
+      properties:
+        campus_id:
+          type: string
+        building_id:
+          type: string
+          nullable: true
+        floor_id:
+          type: string
+          nullable: true
+        generated_at:
+          type: string
+          format: date-time
+        resolution_m:
+          type: integer
+        time_bucket:
+          type: string
+        tiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeatmapTile'
+        aggregates:
+          $ref: '#/components/schemas/HeatmapAggregates'
+
+    Grant:
+      type: object
+      required:
+        - grant_id
+        - request_id
+        - campus_id
+        - zone_id
+        - state
+        - deployment_mode
+        - band
+        - eirp_dbm
+        - interference_margin_db
+        - grant_window
+        - expiration_time
+        - created_at
+        - updated_at
+      properties:
+        grant_id:
+          type: string
+          pattern: '^grant_[A-Za-z0-9]{20,32}$'
+        request_id:
+          type: string
+          pattern: '^req_[A-Za-z0-9]{20,32}$'
+        campus_id:
+          type: string
+        zone_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/GrantState'
+        deployment_mode:
+          $ref: '#/components/schemas/DeploymentMode'
+        band:
+          $ref: '#/components/schemas/BandAllocation'
+        eirp_dbm:
+          type: number
+          format: float
+        interference_margin_db:
+          type: number
+          format: float
+        grant_window:
+          $ref: '#/components/schemas/TimeWindow'
+        expiration_time:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    GrantSummary:
+      type: object
+      required:
+        - grant_id
+        - campus_id
+        - zone_id
+        - state
+        - deployment_mode
+        - band
+        - eirp_dbm
+        - interference_margin_db
+        - expiration_time
+        - updated_at
+      properties:
+        grant_id:
+          type: string
+        campus_id:
+          type: string
+        zone_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/GrantState'
+        deployment_mode:
+          $ref: '#/components/schemas/DeploymentMode'
+        band:
+          $ref: '#/components/schemas/BandAllocation'
+        eirp_dbm:
+          type: number
+          format: float
+        interference_margin_db:
+          type: number
+          format: float
+        expiration_time:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    GrantHistoryEvent:
+      type: object
+      required:
+        - event_time
+        - event_type
+        - actor
+      properties:
+        event_time:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+          enum:
+            - grant_requested
+            - grant_activated
+            - grant_suspended
+            - grant_expired
+            - grant_patched
+        actor:
+          type: string
+
+    GrantPatchOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - op
+        - path
+        - value
+      properties:
+        op:
+          type: string
+          enum:
+            - replace
+        path:
+          type: string
+          enum:
+            - /eirp_dbm
+            - /band/center_frequency_mhz
+            - /band/channel_width_mhz
+        value:
+          oneOf:
+            - type: integer
+            - type: number
+              format: float
+
+    BandAllocation:
+      type: object
+      additionalProperties: false
+      required:
+        - band_id
+        - band_type
+        - center_frequency_mhz
+        - channel_width_mhz
+      properties:
+        band_id:
+          type: string
+          description: Canonical band identifier.
+          example: cbrs_3550_3700
+        band_type:
+          type: string
+          enum:
+            - cbrs_gaa
+            - cbrs_pal
+            - private_licensed
+            - unlicensed_shared
+        center_frequency_mhz:
+          type: number
+          format: float
+          minimum: 600
+          maximum: 8000
+          example: 3625
+        channel_width_mhz:
+          type: integer
+          enum:
+            - 5
+            - 10
+            - 15
+            - 20
+            - 40
+          example: 20
+
+    TimeWindow:
+      type: object
+      additionalProperties: false
+      required:
+        - start_time
+        - end_time
+      properties:
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+
+    AntennaProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        antenna_height_m:
+          type: number
+          format: float
+          minimum: 0.1
+          maximum: 100
+        azimuth_deg:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 359.9
+        beamwidth_deg:
+          type: number
+          format: float
+          minimum: 1
+          maximum: 360
+        downtilt_deg:
+          type: number
+          format: float
+          minimum: -20
+          maximum: 30
+
+    GuardrailPreferences:
+      type: object
+      additionalProperties: false
+      properties:
+        min_interference_margin_db:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 30
+        min_guardband_khz:
+          type: integer
+          minimum: 0
+          maximum: 20000
+        enforce_neighbor_zone_lock:
+          type: boolean
+
+    NeighborInterferenceResult:
+      type: object
+      required:
+        - neighbor_zone_id
+        - distance_m
+        - predicted_rsrp_dbm
+        - predicted_rsrq_db
+        - interference_margin_db
+        - status
+      properties:
+        neighbor_zone_id:
+          type: string
+        distance_m:
+          type: number
+          format: float
+          minimum: 0
+        predicted_rsrp_dbm:
+          type: number
+          format: float
+        predicted_rsrq_db:
+          type: number
+          format: float
+        interference_margin_db:
+          type: number
+          format: float
+        status:
+          type: string
+          enum:
+            - within_threshold
+            - below_threshold
+
+    HeatmapTile:
+      type: object
+      required:
+        - tile_id
+        - x
+        - y
+        - utilization_pct
+        - occupancy_pct
+        - interference_pressure_index
+        - median_sinr_db
+        - confidence
+      properties:
+        tile_id:
+          type: string
+        x:
+          type: integer
+          minimum: 0
+        y:
+          type: integer
+          minimum: 0
+        utilization_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        occupancy_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        interference_pressure_index:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        median_sinr_db:
+          type: number
+          format: float
+        confidence:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+
+    HeatmapAggregates:
+      type: object
+      required:
+        - avg_utilization_pct
+        - max_utilization_pct
+        - min_interference_margin_db
+      properties:
+        avg_utilization_pct:
+          type: number
+          format: float
+        max_utilization_pct:
+          type: number
+          format: float
+        min_interference_margin_db:
+          type: number
+          format: float
+
+    PowerChannelSnapshot:
+      type: object
+      required:
+        - eirp_dbm
+        - channel_width_mhz
+      properties:
+        eirp_dbm:
+          type: number
+          format: float
+        channel_width_mhz:
+          type: integer
+
+    GrantState:
+      type: string
+      enum:
+        - pending
+        - active
+        - suspended
+        - expired
+
+    DeploymentMode:
+      type: string
+      enum:
+        - private_lte
+        - private_nr
+        - neutral_host
+
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        per_page:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - request_id
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+
+    ErrorDetail:
+      type: object
+      required:
+        - field
+        - issue
+      properties:
+        field:
+          type: string
+        issue:
+          type: string

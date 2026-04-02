@@ -1,0 +1,1461 @@
+openapi: 3.0.3
+info:
+  title: VZW Grid Topology Sync API
+  description: >-
+    Synchronizes utility distribution grid topology from upstream GIS and SCADA source
+    systems into the operational asset graph used by dispatch, outage analysis,
+    switching plans, and telemetry routing. The API supports asynchronous sync jobs,
+    topology retrieval, consistency validation, and change log inspection.
+  version: 1.0.0
+  contact:
+    name: VZW Grid Platform API Team
+    email: grid-platform-api@vzw.example.com
+    url: https://developer.vzw.example.com/grid-topology
+  license:
+    name: Proprietary
+    url: https://vzw.example.com/legal/api-terms
+  x-vzw-catalog-id: vzw-grid-topology-sync-api
+  x-vzw-domain: grid-topology
+servers:
+  - url: https://vzw-grid-topology-sync-api.api.vzw.example.com
+    description: Production
+  - url: https://vzw-grid-topology-sync-api.staging.api.vzw.example.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Sync Jobs
+    description: Trigger and monitor topology synchronization workloads
+  - name: Topology
+    description: Query feeder topology and validate graph consistency
+  - name: Sources
+    description: Inspect configured upstream GIS and SCADA integration sources
+paths:
+  /v1/sync/jobs:
+    post:
+      operationId: createTopologySyncJob
+      summary: Trigger topology synchronization
+      description: >-
+        Creates an asynchronous synchronization job that imports topology deltas from
+        one or more configured upstream sources into the operational asset graph.
+        The request may scope processing by feeder, substation, and time window.
+        A successful response returns a queued job identifier for polling via
+        `GET /v1/sync/jobs/{jobId}`.
+      tags:
+        - Sync Jobs
+      requestBody:
+        required: true
+        description: Parameters that define the sync scope, source selection, and behavior.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSyncJobRequest"
+            example:
+              source_ids:
+                - gis-core-east
+                - scada-dms-primary
+              sync_mode: INCREMENTAL
+              priority: HIGH
+              feeder_ids:
+                - fdr-10294
+                - fdr-10295
+              substation_ids:
+                - sub-nyc-011
+              effective_from: "2026-03-20T00:00:00Z"
+              include_switch_states: true
+              include_transformer_taps: true
+              dry_run: false
+              requested_by: ops-scheduler@vzw.example.com
+      responses:
+        "202":
+          description: Sync job accepted for asynchronous execution.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateSyncJobResponse"
+              example:
+                job_id: sync-6f8c1190-0f32-4f8e-b5ef-fdcd34cb6ab0
+                status: QUEUED
+                submitted_at: "2026-03-27T11:42:12Z"
+                estimated_start_at: "2026-03-27T11:44:00Z"
+                trace_id: 32b1c5d5-4629-4d13-a648-08cde5f8ed8e
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/sync/jobs/{jobId}:
+    get:
+      operationId: getTopologySyncJob
+      summary: Get sync job status and change summary
+      description: >-
+        Returns lifecycle status, execution timings, source-level results, and a
+        high-level change summary for a previously submitted topology sync job.
+        Use this endpoint for polling while jobs are running and for audit reporting
+        after completion.
+      tags:
+        - Sync Jobs
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Current sync job state and summary details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncJobDetail"
+              example:
+                job_id: sync-6f8c1190-0f32-4f8e-b5ef-fdcd34cb6ab0
+                status: SUCCEEDED
+                sync_mode: INCREMENTAL
+                priority: HIGH
+                source_results:
+                  - source_id: gis-core-east
+                    source_type: GIS
+                    status: SUCCEEDED
+                    started_at: "2026-03-27T11:44:05Z"
+                    completed_at: "2026-03-27T11:47:20Z"
+                    records_processed: 1862
+                    records_failed: 0
+                  - source_id: scada-dms-primary
+                    source_type: SCADA
+                    status: SUCCEEDED
+                    started_at: "2026-03-27T11:47:22Z"
+                    completed_at: "2026-03-27T11:48:31Z"
+                    records_processed: 319
+                    records_failed: 2
+                change_summary:
+                  feeders_added: 1
+                  feeders_updated: 17
+                  feeders_removed: 0
+                  segments_added: 24
+                  segments_updated: 63
+                  segments_removed: 2
+                  switches_state_changed: 11
+                  transformers_updated: 6
+                  graph_edges_added: 92
+                  graph_edges_removed: 5
+                warnings:
+                  - code: SOURCE_RECORD_DROPPED
+                    message: 2 SCADA records ignored due to unknown switch identifier.
+                    source_id: scada-dms-primary
+                started_at: "2026-03-27T11:44:05Z"
+                completed_at: "2026-03-27T11:48:31Z"
+                trace_id: 32b1c5d5-4629-4d13-a648-08cde5f8ed8e
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/topology/feeders:
+    get:
+      operationId: listTopologyFeeders
+      summary: List feeder segments and connectivity graph metadata
+      description: >-
+        Returns feeder-level topology records including segment and node counts,
+        energized state, graph revision, and optional geometry bounds. Supports
+        filtering by substation, voltage class, and update timestamps.
+      tags:
+        - Topology
+      parameters:
+        - $ref: "#/components/parameters/SubstationIdQuery"
+        - $ref: "#/components/parameters/VoltageClassQuery"
+        - $ref: "#/components/parameters/UpdatedAfterQuery"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+      responses:
+        "200":
+          description: Paginated feeder topology summary list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeederListResponse"
+              example:
+                data:
+                  - feeder_id: fdr-10294
+                    feeder_name: Midtown-North-12kV
+                    substation_id: sub-nyc-011
+                    voltage_class_kv: 12.0
+                    transformer_phase: ABC
+                    switch_state: CLOSED
+                    segment_count: 432
+                    node_count: 441
+                    graph_revision: 2026.03.27.1148
+                    is_energized: true
+                    last_synced_at: "2026-03-27T11:48:31Z"
+                    bbox:
+                      min_lat: 40.7482
+                      min_lng: -73.9991
+                      max_lat: 40.7632
+                      max_lng: -73.9701
+                pagination:
+                  next_page_token: eyJvZmZzZXQiOjIwfQ==
+                  page_size: 20
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/topology/feeders/{feederId}/downstream:
+    get:
+      operationId: getFeederDownstreamAssets
+      summary: Get downstream assets from a feeder point
+      description: >-
+        Traverses the topology graph downstream from a feeder anchor point and returns
+        connected assets, path metadata, and constraint annotations. Supports depth
+        limits, phase filtering, and optional inclusion of open-switch branches.
+      tags:
+        - Topology
+      parameters:
+        - $ref: "#/components/parameters/FeederId"
+        - $ref: "#/components/parameters/AnchorNodeIdQuery"
+        - $ref: "#/components/parameters/DepthLimitQuery"
+        - $ref: "#/components/parameters/PhaseFilterQuery"
+        - $ref: "#/components/parameters/IncludeOpenSwitchesQuery"
+      responses:
+        "200":
+          description: Downstream graph traversal result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownstreamAssetsResponse"
+              example:
+                feeder_id: fdr-10294
+                anchor_node_id: node-breaker-01
+                evaluated_depth: 4
+                includes_open_switch_branches: false
+                downstream_assets:
+                  - asset_id: sw-330291
+                    asset_type: SWITCH
+                    substation_id: sub-nyc-011
+                    transformer_phase: AB
+                    switch_state: CLOSED
+                    distance_m: 112.4
+                    parent_asset_id: node-breaker-01
+                  - asset_id: xf-889120
+                    asset_type: TRANSFORMER
+                    substation_id: sub-nyc-011
+                    transformer_phase: ABC
+                    switch_state: CLOSED
+                    distance_m: 286.1
+                    parent_asset_id: sw-330291
+                graph_paths:
+                  - from_asset_id: node-breaker-01
+                    to_asset_id: xf-889120
+                    hop_count: 2
+                    impedance_ohm: 0.038
+                trace_id: 588f87c8-f041-43c7-a14b-62266d44e4d2
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/topology/validate:
+    post:
+      operationId: validateTopologyConsistency
+      summary: Validate topology consistency
+      description: >-
+        Runs consistency checks against current or candidate topology snapshots,
+        including cycle detection, orphan node detection, phase continuity,
+        and switch-state coherence across modeled paths.
+      tags:
+        - Topology
+      requestBody:
+        required: true
+        description: Validation scope and enabled rule groups.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateTopologyRequest"
+            example:
+              feeder_ids:
+                - fdr-10294
+              substation_ids:
+                - sub-nyc-011
+              snapshot_id: snap-2026-03-27T11:48:31Z
+              rules:
+                - CYCLE_DETECTION
+                - ORPHAN_NODES
+                - PHASE_CONTINUITY
+                - SWITCH_STATE_COHERENCE
+              max_issues: 100
+              fail_on_warning: false
+      responses:
+        "200":
+          description: Validation execution result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateTopologyResponse"
+              example:
+                validation_id: val-4e924fa8-5d57-4f65-9c58-8fd0d30f9cec
+                status: FAILED
+                snapshot_id: snap-2026-03-27T11:48:31Z
+                executed_rules:
+                  - CYCLE_DETECTION
+                  - ORPHAN_NODES
+                  - PHASE_CONTINUITY
+                  - SWITCH_STATE_COHERENCE
+                issue_counts:
+                  critical: 1
+                  warning: 3
+                  info: 4
+                issues:
+                  - issue_id: issue-0001
+                    severity: CRITICAL
+                    rule: CYCLE_DETECTION
+                    feeder_id: fdr-10294
+                    substation_id: sub-nyc-011
+                    message: Cycle detected between sw-330291 and sw-330294.
+                    suggested_action: Open tie switch sw-330294 or split segment graph.
+                  - issue_id: issue-0002
+                    severity: WARNING
+                    rule: SWITCH_STATE_COHERENCE
+                    feeder_id: fdr-10294
+                    substation_id: sub-nyc-011
+                    message: Switch sw-330401 state mismatch between GIS and SCADA.
+                    suggested_action: Reconcile source priority for switch state import.
+                trace_id: 32e7d855-1b41-45af-b57d-8f6418da0f84
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/sync/sources:
+    get:
+      operationId: listTopologySyncSources
+      summary: List configured upstream GIS and SCADA sources
+      description: >-
+        Returns source configuration metadata used by synchronization jobs,
+        including source type, enabled status, health state, and most recent
+        successful ingest checkpoint.
+      tags:
+        - Sources
+      parameters:
+        - $ref: "#/components/parameters/SourceTypeQuery"
+        - $ref: "#/components/parameters/EnabledQuery"
+      responses:
+        "200":
+          description: Source inventory with operational status indicators.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncSourcesResponse"
+              example:
+                data:
+                  - source_id: gis-core-east
+                    source_name: GIS Core East Region
+                    source_type: GIS
+                    enabled: true
+                    health_status: HEALTHY
+                    priority_rank: 1
+                    supports_full_sync: true
+                    supports_incremental_sync: true
+                    last_successful_sync_at: "2026-03-27T11:47:20Z"
+                    checkpoint_cursor: cursor-2026-03-27T11:47:20Z
+                  - source_id: scada-dms-primary
+                    source_name: SCADA DMS Primary
+                    source_type: SCADA
+                    enabled: true
+                    health_status: DEGRADED
+                    priority_rank: 2
+                    supports_full_sync: false
+                    supports_incremental_sync: true
+                    last_successful_sync_at: "2026-03-27T11:48:31Z"
+                    checkpoint_cursor: seq-9981172
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/topology/changes:
+    get:
+      operationId: listTopologyChanges
+      summary: Get paginated topology change log
+      description: >-
+        Returns recent topology change events applied to the operational asset graph.
+        Supports filtering by feeder, substation, source, and date range. Intended for
+        audit views, operational dashboards, and downstream replication checks.
+      tags:
+        - Topology
+      parameters:
+        - $ref: "#/components/parameters/FeederIdQuery"
+        - $ref: "#/components/parameters/SubstationIdQuery"
+        - $ref: "#/components/parameters/SourceIdQuery"
+        - $ref: "#/components/parameters/ChangedAfterQuery"
+        - $ref: "#/components/parameters/ChangedBeforeQuery"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+      responses:
+        "200":
+          description: Paginated list of topology changes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyChangeListResponse"
+              example:
+                data:
+                  - change_id: chg-20260327-001921
+                    occurred_at: "2026-03-27T11:47:19Z"
+                    source_id: gis-core-east
+                    source_type: GIS
+                    job_id: sync-6f8c1190-0f32-4f8e-b5ef-fdcd34cb6ab0
+                    feeder_id: fdr-10294
+                    substation_id: sub-nyc-011
+                    entity_type: SEGMENT
+                    entity_id: seg-440192
+                    change_type: UPDATED
+                    transformer_phase: AB
+                    switch_state: CLOSED
+                    field_deltas:
+                      - field: conductor_size
+                        old_value: 350kcmil
+                        new_value: 500kcmil
+                      - field: normal_switch_state
+                        old_value: OPEN
+                        new_value: CLOSED
+                  - change_id: chg-20260327-001922
+                    occurred_at: "2026-03-27T11:48:02Z"
+                    source_id: scada-dms-primary
+                    source_type: SCADA
+                    job_id: sync-6f8c1190-0f32-4f8e-b5ef-fdcd34cb6ab0
+                    feeder_id: fdr-10294
+                    substation_id: sub-nyc-011
+                    entity_type: SWITCH
+                    entity_id: sw-330401
+                    change_type: STATE_CHANGED
+                    transformer_phase: A
+                    switch_state: OPEN
+                    field_deltas:
+                      - field: switch_state
+                        old_value: CLOSED
+                        new_value: OPEN
+                pagination:
+                  next_page_token: eyJvZmZzZXQiOjI1fQ==
+                  page_size: 25
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      description: Unique sync job identifier.
+      schema:
+        type: string
+      example: sync-6f8c1190-0f32-4f8e-b5ef-fdcd34cb6ab0
+    FeederId:
+      name: feederId
+      in: path
+      required: true
+      description: Unique feeder identifier in the topology graph.
+      schema:
+        type: string
+      example: fdr-10294
+    FeederIdQuery:
+      name: feeder_id
+      in: query
+      required: false
+      description: Filter records to a specific feeder identifier.
+      schema:
+        type: string
+      example: fdr-10294
+    SubstationIdQuery:
+      name: substation_id
+      in: query
+      required: false
+      description: Filter records by substation identifier.
+      schema:
+        type: string
+      example: sub-nyc-011
+    SourceIdQuery:
+      name: source_id
+      in: query
+      required: false
+      description: Filter by upstream source identifier.
+      schema:
+        type: string
+      example: scada-dms-primary
+    SourceTypeQuery:
+      name: source_type
+      in: query
+      required: false
+      description: Restrict to source type.
+      schema:
+        $ref: "#/components/schemas/SourceType"
+    EnabledQuery:
+      name: enabled
+      in: query
+      required: false
+      description: Restrict to enabled or disabled sources.
+      schema:
+        type: boolean
+      example: true
+    VoltageClassQuery:
+      name: voltage_class_kv
+      in: query
+      required: false
+      description: Filter by nominal voltage class in kilovolts.
+      schema:
+        type: number
+        format: float
+      example: 12.0
+    UpdatedAfterQuery:
+      name: updated_after
+      in: query
+      required: false
+      description: Return resources updated after this timestamp.
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-26T00:00:00Z"
+    ChangedAfterQuery:
+      name: changed_after
+      in: query
+      required: false
+      description: Return changes occurring on or after this timestamp.
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-27T00:00:00Z"
+    ChangedBeforeQuery:
+      name: changed_before
+      in: query
+      required: false
+      description: Return changes occurring before this timestamp.
+      schema:
+        type: string
+        format: date-time
+      example: "2026-03-28T00:00:00Z"
+    AnchorNodeIdQuery:
+      name: anchor_node_id
+      in: query
+      required: false
+      description: Node identifier used as the traversal origin.
+      schema:
+        type: string
+      example: node-breaker-01
+    DepthLimitQuery:
+      name: depth_limit
+      in: query
+      required: false
+      description: Maximum graph traversal depth from the anchor node.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 12
+        default: 4
+      example: 4
+    PhaseFilterQuery:
+      name: transformer_phase
+      in: query
+      required: false
+      description: Restrict traversal to assets carrying the selected phase.
+      schema:
+        $ref: "#/components/schemas/TransformerPhase"
+    IncludeOpenSwitchesQuery:
+      name: include_open_switches
+      in: query
+      required: false
+      description: Include branches beyond open switches.
+      schema:
+        type: boolean
+        default: false
+      example: false
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Number of records returned per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+      example: 25
+    PageToken:
+      name: page_token
+      in: query
+      required: false
+      description: Opaque continuation token from a previous paginated response.
+      schema:
+        type: string
+      example: eyJvZmZzZXQiOjI1fQ==
+  schemas:
+    CreateSyncJobRequest:
+      type: object
+      description: Request payload for creating a topology sync job.
+      properties:
+        source_ids:
+          type: array
+          description: Source identifiers to include in the sync operation.
+          minItems: 1
+          items:
+            type: string
+        sync_mode:
+          $ref: "#/components/schemas/SyncMode"
+        priority:
+          $ref: "#/components/schemas/JobPriority"
+        feeder_ids:
+          type: array
+          description: Optional feeder scope for partial synchronization.
+          items:
+            type: string
+        substation_ids:
+          type: array
+          description: Optional substation scope for partial synchronization.
+          items:
+            type: string
+        effective_from:
+          type: string
+          format: date-time
+          description: Starting timestamp for incremental change ingestion.
+        include_switch_states:
+          type: boolean
+          description: Import switch_state transitions from eligible sources.
+          default: true
+        include_transformer_taps:
+          type: boolean
+          description: Include transformer tap and phase metadata updates.
+          default: true
+        dry_run:
+          type: boolean
+          description: Validate and compute deltas without persisting graph changes.
+          default: false
+        requested_by:
+          type: string
+          description: Principal or service account triggering the job.
+          example: ops-scheduler@vzw.example.com
+      required:
+        - source_ids
+        - sync_mode
+        - requested_by
+    CreateSyncJobResponse:
+      type: object
+      description: Acknowledgement payload for an accepted sync job.
+      properties:
+        job_id:
+          type: string
+          description: Unique identifier for the submitted sync job.
+        status:
+          $ref: "#/components/schemas/SyncJobStatus"
+        submitted_at:
+          type: string
+          format: date-time
+          description: Job submission timestamp.
+        estimated_start_at:
+          type: string
+          format: date-time
+          description: Estimated scheduler start timestamp.
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed tracing identifier.
+      required:
+        - job_id
+        - status
+        - submitted_at
+        - trace_id
+    SyncJobDetail:
+      type: object
+      description: Detailed state of a topology sync job.
+      properties:
+        job_id:
+          type: string
+          description: Unique sync job identifier.
+        status:
+          $ref: "#/components/schemas/SyncJobStatus"
+        sync_mode:
+          $ref: "#/components/schemas/SyncMode"
+        priority:
+          $ref: "#/components/schemas/JobPriority"
+        source_results:
+          type: array
+          description: Per-source execution outcomes.
+          items:
+            $ref: "#/components/schemas/SourceSyncResult"
+        change_summary:
+          $ref: "#/components/schemas/TopologyChangeSummary"
+        warnings:
+          type: array
+          description: Non-fatal warnings encountered during sync execution.
+          items:
+            $ref: "#/components/schemas/SyncWarning"
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - job_id
+        - status
+        - sync_mode
+        - source_results
+        - change_summary
+        - trace_id
+    SourceSyncResult:
+      type: object
+      description: Outcome for a single source processed within a sync job.
+      properties:
+        source_id:
+          type: string
+        source_type:
+          $ref: "#/components/schemas/SourceType"
+        status:
+          $ref: "#/components/schemas/SyncJobStatus"
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        records_processed:
+          type: integer
+          minimum: 0
+        records_failed:
+          type: integer
+          minimum: 0
+      required:
+        - source_id
+        - source_type
+        - status
+        - records_processed
+        - records_failed
+    TopologyChangeSummary:
+      type: object
+      description: Aggregated change counters produced by a sync operation.
+      properties:
+        feeders_added:
+          type: integer
+          minimum: 0
+        feeders_updated:
+          type: integer
+          minimum: 0
+        feeders_removed:
+          type: integer
+          minimum: 0
+        segments_added:
+          type: integer
+          minimum: 0
+        segments_updated:
+          type: integer
+          minimum: 0
+        segments_removed:
+          type: integer
+          minimum: 0
+        switches_state_changed:
+          type: integer
+          minimum: 0
+        transformers_updated:
+          type: integer
+          minimum: 0
+        graph_edges_added:
+          type: integer
+          minimum: 0
+        graph_edges_removed:
+          type: integer
+          minimum: 0
+      required:
+        - feeders_added
+        - feeders_updated
+        - feeders_removed
+        - segments_added
+        - segments_updated
+        - segments_removed
+        - switches_state_changed
+        - transformers_updated
+        - graph_edges_added
+        - graph_edges_removed
+    SyncWarning:
+      type: object
+      description: Warning emitted during sync execution.
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        source_id:
+          type: string
+      required:
+        - code
+        - message
+    FeederListResponse:
+      type: object
+      description: Paginated feeder summary payload.
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeederSummary"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+      required:
+        - data
+        - pagination
+    FeederSummary:
+      type: object
+      description: Feeder-level topology summary.
+      properties:
+        feeder_id:
+          type: string
+          description: Unique feeder identifier.
+        feeder_name:
+          type: string
+          description: Human-readable feeder name.
+        substation_id:
+          type: string
+          description: Associated substation identifier.
+        voltage_class_kv:
+          type: number
+          format: float
+          description: Nominal feeder voltage class in kilovolts.
+        transformer_phase:
+          $ref: "#/components/schemas/TransformerPhase"
+        switch_state:
+          $ref: "#/components/schemas/SwitchState"
+        segment_count:
+          type: integer
+          minimum: 0
+        node_count:
+          type: integer
+          minimum: 0
+        graph_revision:
+          type: string
+          description: Monotonic graph revision stamp.
+          example: 2026.03.27.1148
+        is_energized:
+          type: boolean
+        last_synced_at:
+          type: string
+          format: date-time
+        bbox:
+          $ref: "#/components/schemas/BoundingBox"
+      required:
+        - feeder_id
+        - feeder_name
+        - substation_id
+        - voltage_class_kv
+        - transformer_phase
+        - switch_state
+        - segment_count
+        - node_count
+        - graph_revision
+        - is_energized
+        - last_synced_at
+    BoundingBox:
+      type: object
+      description: Geographic bounding coordinates for feeder geometry.
+      properties:
+        min_lat:
+          type: number
+          format: double
+        min_lng:
+          type: number
+          format: double
+        max_lat:
+          type: number
+          format: double
+        max_lng:
+          type: number
+          format: double
+      required:
+        - min_lat
+        - min_lng
+        - max_lat
+        - max_lng
+    DownstreamAssetsResponse:
+      type: object
+      description: Result of downstream graph traversal from a feeder anchor.
+      properties:
+        feeder_id:
+          type: string
+        anchor_node_id:
+          type: string
+        evaluated_depth:
+          type: integer
+          minimum: 0
+        includes_open_switch_branches:
+          type: boolean
+        downstream_assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/DownstreamAsset"
+        graph_paths:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphPath"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - feeder_id
+        - anchor_node_id
+        - evaluated_depth
+        - includes_open_switch_branches
+        - downstream_assets
+        - graph_paths
+        - trace_id
+    DownstreamAsset:
+      type: object
+      description: Asset reachable downstream in feeder topology.
+      properties:
+        asset_id:
+          type: string
+        asset_type:
+          $ref: "#/components/schemas/AssetType"
+        substation_id:
+          type: string
+        transformer_phase:
+          $ref: "#/components/schemas/TransformerPhase"
+        switch_state:
+          $ref: "#/components/schemas/SwitchState"
+        distance_m:
+          type: number
+          format: float
+          minimum: 0
+        parent_asset_id:
+          type: string
+      required:
+        - asset_id
+        - asset_type
+        - substation_id
+        - transformer_phase
+        - switch_state
+        - distance_m
+    GraphPath:
+      type: object
+      description: Path metadata between connected assets.
+      properties:
+        from_asset_id:
+          type: string
+        to_asset_id:
+          type: string
+        hop_count:
+          type: integer
+          minimum: 1
+        impedance_ohm:
+          type: number
+          format: float
+          minimum: 0
+      required:
+        - from_asset_id
+        - to_asset_id
+        - hop_count
+    ValidateTopologyRequest:
+      type: object
+      description: Topology validation request definition.
+      properties:
+        feeder_ids:
+          type: array
+          items:
+            type: string
+        substation_ids:
+          type: array
+          items:
+            type: string
+        snapshot_id:
+          type: string
+          description: Snapshot or graph revision identifier to validate.
+        rules:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ValidationRule"
+        max_issues:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          default: 500
+        fail_on_warning:
+          type: boolean
+          default: false
+      required:
+        - rules
+    ValidateTopologyResponse:
+      type: object
+      description: Validation result payload with issue inventory.
+      properties:
+        validation_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/ValidationStatus"
+        snapshot_id:
+          type: string
+        executed_rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationRule"
+        issue_counts:
+          $ref: "#/components/schemas/IssueCounts"
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationIssue"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - validation_id
+        - status
+        - executed_rules
+        - issue_counts
+        - issues
+        - trace_id
+    IssueCounts:
+      type: object
+      properties:
+        critical:
+          type: integer
+          minimum: 0
+        warning:
+          type: integer
+          minimum: 0
+        info:
+          type: integer
+          minimum: 0
+      required:
+        - critical
+        - warning
+        - info
+    ValidationIssue:
+      type: object
+      description: Single validation issue produced by a topology rule.
+      properties:
+        issue_id:
+          type: string
+        severity:
+          $ref: "#/components/schemas/IssueSeverity"
+        rule:
+          $ref: "#/components/schemas/ValidationRule"
+        feeder_id:
+          type: string
+        substation_id:
+          type: string
+        message:
+          type: string
+        suggested_action:
+          type: string
+      required:
+        - issue_id
+        - severity
+        - rule
+        - message
+    SyncSourcesResponse:
+      type: object
+      description: Source registry response.
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SyncSource"
+      required:
+        - data
+    SyncSource:
+      type: object
+      description: Configuration and health summary for an upstream source.
+      properties:
+        source_id:
+          type: string
+        source_name:
+          type: string
+        source_type:
+          $ref: "#/components/schemas/SourceType"
+        enabled:
+          type: boolean
+        health_status:
+          $ref: "#/components/schemas/SourceHealthStatus"
+        priority_rank:
+          type: integer
+          minimum: 1
+        supports_full_sync:
+          type: boolean
+        supports_incremental_sync:
+          type: boolean
+        last_successful_sync_at:
+          type: string
+          format: date-time
+        checkpoint_cursor:
+          type: string
+      required:
+        - source_id
+        - source_name
+        - source_type
+        - enabled
+        - health_status
+        - priority_rank
+        - supports_full_sync
+        - supports_incremental_sync
+    TopologyChangeListResponse:
+      type: object
+      description: Paginated topology change log response.
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopologyChange"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+      required:
+        - data
+        - pagination
+    TopologyChange:
+      type: object
+      description: Immutable event record for a topology graph mutation.
+      properties:
+        change_id:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        source_id:
+          type: string
+        source_type:
+          $ref: "#/components/schemas/SourceType"
+        job_id:
+          type: string
+        feeder_id:
+          type: string
+        substation_id:
+          type: string
+        entity_type:
+          $ref: "#/components/schemas/TopologyEntityType"
+        entity_id:
+          type: string
+        change_type:
+          $ref: "#/components/schemas/ChangeType"
+        transformer_phase:
+          $ref: "#/components/schemas/TransformerPhase"
+        switch_state:
+          $ref: "#/components/schemas/SwitchState"
+        field_deltas:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldDelta"
+      required:
+        - change_id
+        - occurred_at
+        - source_id
+        - source_type
+        - feeder_id
+        - substation_id
+        - entity_type
+        - entity_id
+        - change_type
+    FieldDelta:
+      type: object
+      description: Field-level before/after mutation.
+      properties:
+        field:
+          type: string
+        old_value:
+          type: string
+        new_value:
+          type: string
+      required:
+        - field
+    Pagination:
+      type: object
+      description: Pagination cursor details.
+      properties:
+        next_page_token:
+          type: string
+        page_size:
+          type: integer
+          minimum: 1
+      required:
+        - page_size
+    SyncMode:
+      type: string
+      description: Synchronization execution mode.
+      enum:
+        - FULL
+        - INCREMENTAL
+    JobPriority:
+      type: string
+      description: Scheduling priority for sync jobs.
+      enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+        - CRITICAL
+    SyncJobStatus:
+      type: string
+      description: Lifecycle status of a sync job.
+      enum:
+        - QUEUED
+        - RUNNING
+        - SUCCEEDED
+        - PARTIALLY_SUCCEEDED
+        - FAILED
+        - CANCELED
+    SourceType:
+      type: string
+      description: Upstream system type.
+      enum:
+        - GIS
+        - SCADA
+    SourceHealthStatus:
+      type: string
+      description: Operational health of a configured source.
+      enum:
+        - HEALTHY
+        - DEGRADED
+        - UNAVAILABLE
+    ValidationRule:
+      type: string
+      description: Topology validation rule type.
+      enum:
+        - CYCLE_DETECTION
+        - ORPHAN_NODES
+        - PHASE_CONTINUITY
+        - SWITCH_STATE_COHERENCE
+        - DISCONNECTED_LOAD
+        - DUPLICATE_ASSET_IDENTIFIER
+    ValidationStatus:
+      type: string
+      description: Result state of topology validation.
+      enum:
+        - PASSED
+        - FAILED
+        - PARTIAL
+    IssueSeverity:
+      type: string
+      enum:
+        - CRITICAL
+        - WARNING
+        - INFO
+    AssetType:
+      type: string
+      description: Asset node type in the operational topology graph.
+      enum:
+        - BREAKER
+        - SWITCH
+        - TRANSFORMER
+        - LINE_SEGMENT
+        - CAPACITOR_BANK
+        - RECLOSER
+        - LOAD
+        - METER
+    TopologyEntityType:
+      type: string
+      enum:
+        - FEEDER
+        - SEGMENT
+        - SWITCH
+        - TRANSFORMER
+        - NODE
+        - EDGE
+    ChangeType:
+      type: string
+      enum:
+        - ADDED
+        - UPDATED
+        - REMOVED
+        - STATE_CHANGED
+    TransformerPhase:
+      type: string
+      description: Transformer or segment phase designation.
+      enum:
+        - A
+        - B
+        - C
+        - AB
+        - BC
+        - CA
+        - ABC
+    SwitchState:
+      type: string
+      description: Current switch state in the topology model.
+      enum:
+        - OPEN
+        - CLOSED
+        - INTERMEDIATE
+        - UNKNOWN
+    Error:
+      type: object
+      description: Standard API error envelope.
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable error code.
+            message:
+              type: string
+              description: Human-readable error description.
+            details:
+              type: array
+              description: Optional structured validation or domain issue details.
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  reason:
+                    type: string
+                required:
+                  - field
+                  - reason
+            request_id:
+              type: string
+              description: Correlation identifier for support and tracing.
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by VZW Identity Platform.
+  responses:
+    "400":
+      description: Bad Request - The request was malformed or has invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Request validation failed for one or more fields.
+              details:
+                - field: feeder_ids[0]
+                  reason: feeder_id format is invalid.
+              request_id: req-1f6af51a-8296-4f2c-baf0-5c63640418d7
+    "401":
+      description: Unauthorized - Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Missing or expired bearer token.
+              request_id: req-3fda5d7c-e098-4dd1-9551-03f65fdd0f41
+    "403":
+      description: Forbidden - Caller lacks authorization for the requested operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: Caller is not permitted to trigger topology sync jobs.
+              request_id: req-f0c876f6-ebf8-4e74-a77d-a60e95bc1613
+    "404":
+      description: Not Found - The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: Sync job sync-6f8c1190-0f32-4f8e-b5ef-fdcd34cb6ab0 was not found.
+              request_id: req-843b0f99-2ee8-45d6-b40c-abcf5e11f9cc
+    "409":
+      description: Conflict - The request conflicts with the current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: A full sync job is already running for requested sources.
+              request_id: req-a9f5c7dd-29a4-4f85-859d-6f632de13a4b
+    "422":
+      description: Unprocessable Entity - The request is valid JSON but violates domain rules.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: depth_limit exceeds allowed traversal limits for this feeder.
+              request_id: req-8a32bf1a-941b-4b4f-a4b7-a6666a4be683
+    "429":
+      description: Too Many Requests - Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Retry after 60 seconds.
+              request_id: req-5d13c68a-4fa9-484d-b273-890d00f6cb06
+    "500":
+      description: Internal Server Error - Unexpected failure while processing request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Topology graph store was temporarily unavailable.
+              request_id: req-25fdfb83-95a1-42ef-a10e-dca2f808afb6

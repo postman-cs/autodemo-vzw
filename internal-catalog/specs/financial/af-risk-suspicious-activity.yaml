@@ -1,0 +1,1366 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Suspicious Activity Reporting API
+  description: >-
+    FinCEN Suspicious Activity Report (SAR) management platform implementing BSA regulatory filing requirements.
+    Supports SAR creation, narrative generation with AI-assisted drafting, supporting document attachment, batch
+    validation against FinCEN XML schema, electronic filing via the BSA E-Filing system, and post-submission
+    follow-up tracking for continuing activity SARs.
+  version: 3.3.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-risk-suspicious-activity
+  x-acme-domain: risk
+servers:
+  - url: https://af-risk-suspicious-activity.api.acmefin.com/v1
+    description: Production
+  - url: https://af-risk-suspicious-activity.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: SAR Filing
+    description: SAR creation, review, and lifecycle management
+  - name: Narrative
+    description: SAR narrative section drafting and generation
+  - name: FinCEN Submission
+    description: BSA E-Filing system submission and tracking
+  - name: Supporting Documents
+    description: SAR supporting documentation management
+paths:
+  /sar:
+    get:
+      operationId: listSars
+      summary: List SARs
+      description: >-
+        Retrieve paginated list of Suspicious Activity Reports with filtering by status, filing type,
+        subject, amount threshold, and deadline proximity. Supports BSA officer queue management and
+        regulatory deadline tracking.
+      tags:
+        - SAR Filing
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by SAR status
+          schema:
+            type: "string"
+            enum:
+              - draft
+              - narrative_in_progress
+              - under_review
+              - approved
+              - submitted
+              - acknowledged
+        - name: filing_type
+          in: query
+          required: false
+          description: Filter by filing type
+          schema:
+            type: "string"
+            enum:
+              - initial
+              - continuing
+              - joint
+              - corrected
+        - name: deadline_before
+          in: query
+          required: false
+          description: Filter SARs with filing deadline before date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sar_id:
+                          type: string
+                          description: "Unique SAR identifier"
+                          format: uuid
+                          example: "550e8400-e29b-41d4-a716-446655440000"
+                        sar_number:
+                          type: string
+                          description: "FinCEN SAR filing number"
+                          example: "SAR-31-2025-0092144"
+                        status:
+                          type: string
+                          description: "SAR lifecycle status"
+                          example: "draft"
+                          enum:
+                            - draft
+                            - narrative_in_progress
+                            - under_review
+                            - approved
+                            - submitted
+                            - acknowledged
+                            - amendment_required
+                        subject_name:
+                          type: string
+                          description: "Primary subject name"
+                          example: "John Doe"
+                        suspicious_amount:
+                          type: number
+                          description: "Total suspicious activity amount"
+                          format: double
+                          example: 15000.0
+                        filing_type:
+                          type: string
+                          description: "Filing type"
+                          example: "initial"
+                          enum:
+                            - initial
+                            - continuing
+                            - joint
+                            - corrected
+                        activity_summary:
+                          type: string
+                          description: "Brief summary of suspicious activity"
+                        fincen_tracking_number:
+                          type: string
+                          description: "FinCEN batch tracking number after submission"
+                          example: "FIN-2025-B-004821"
+                        filed_at:
+                          type: string
+                          description: "FinCEN submission timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        filing_deadline:
+                          type: string
+                          description: "30-day regulatory filing deadline"
+                          format: date
+                          example: "2025-07-15"
+                      required:
+                        - sar_id
+                        - sar_number
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSar
+      summary: Create new SAR
+      description: >-
+        Initiate a new Suspicious Activity Report. Generates a SAR shell with header fields pre-populated
+        from the source case. The narrative section must be completed separately. SARs must be filed with
+        FinCEN within 30 calendar days of initial detection per 31 CFR 1020.320.
+      tags:
+        - SAR Filing
+      requestBody:
+        required: true
+        description: Create new SAR request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    subject_name:
+                      type: string
+                      description: "Primary subject name"
+                      example: "John Doe"
+                    subject_type:
+                      type: string
+                      description: "Subject type"
+                      example: "individual"
+                      enum:
+                        - individual
+                        - entity
+                        - both
+                    suspicious_amount:
+                      type: number
+                      description: "Total suspicious amount"
+                      format: double
+                      example: 15000.0
+                    activity_start_date:
+                      type: string
+                      description: "Start of suspicious activity"
+                      format: date
+                      example: "2025-01-15"
+                    activity_end_date:
+                      type: string
+                      description: "End of suspicious activity"
+                      format: date
+                      example: "2025-06-10"
+                    filing_type:
+                      type: string
+                      description: "SAR filing type"
+                      example: "initial"
+                      enum:
+                        - initial
+                        - continuing
+                        - joint
+                        - corrected
+                    source_case_id:
+                      type: string
+                      description: "Originating investigation case ID"
+                      format: uuid
+                      example: "550e8400-e29b-41d4-a716-446655440000"
+                    violation_types:
+                      type: array
+                      description: "BSA violation type codes"
+                      items:
+                        type: string
+                        example: "structuring"
+              required:
+                - subject_name
+                - suspicious_amount
+                - filing_type
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sar_id:
+                    type: string
+                    description: "Unique SAR identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  sar_number:
+                    type: string
+                    description: "FinCEN SAR filing number"
+                    example: "SAR-31-2025-0092144"
+                  status:
+                    type: string
+                    description: "SAR lifecycle status"
+                    example: "draft"
+                    enum:
+                      - draft
+                      - narrative_in_progress
+                      - under_review
+                      - approved
+                      - submitted
+                      - acknowledged
+                      - amendment_required
+                  subject_name:
+                    type: string
+                    description: "Primary subject name"
+                    example: "John Doe"
+                  suspicious_amount:
+                    type: number
+                    description: "Total suspicious activity amount"
+                    format: double
+                    example: 15000.0
+                  filing_type:
+                    type: string
+                    description: "Filing type"
+                    example: "initial"
+                    enum:
+                      - initial
+                      - continuing
+                      - joint
+                      - corrected
+                  activity_summary:
+                    type: string
+                    description: "Brief summary of suspicious activity"
+                  fincen_tracking_number:
+                    type: string
+                    description: "FinCEN batch tracking number after submission"
+                    example: "FIN-2025-B-004821"
+                  filed_at:
+                    type: string
+                    description: "FinCEN submission timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  filing_deadline:
+                    type: string
+                    description: "30-day regulatory filing deadline"
+                    format: date
+                    example: "2025-07-15"
+                required:
+                  - sar_id
+                  - sar_number
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sar/{sar_id}:
+    get:
+      operationId: getSar
+      summary: Get SAR details
+      description: >-
+        Retrieve complete SAR details including all filing sections, narrative text, supporting documents,
+        submission tracking, and amendment history.
+      tags:
+        - SAR Filing
+      parameters:
+        - name: sar_id
+          in: path
+          required: true
+          description: Unique sar id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sar_id:
+                    type: string
+                    description: "Unique SAR identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  sar_number:
+                    type: string
+                    description: "FinCEN SAR filing number"
+                    example: "SAR-31-2025-0092144"
+                  status:
+                    type: string
+                    description: "SAR lifecycle status"
+                    example: "draft"
+                    enum:
+                      - draft
+                      - narrative_in_progress
+                      - under_review
+                      - approved
+                      - submitted
+                      - acknowledged
+                      - amendment_required
+                  subject_name:
+                    type: string
+                    description: "Primary subject name"
+                    example: "John Doe"
+                  suspicious_amount:
+                    type: number
+                    description: "Total suspicious activity amount"
+                    format: double
+                    example: 15000.0
+                  filing_type:
+                    type: string
+                    description: "Filing type"
+                    example: "initial"
+                    enum:
+                      - initial
+                      - continuing
+                      - joint
+                      - corrected
+                  activity_summary:
+                    type: string
+                    description: "Brief summary of suspicious activity"
+                  fincen_tracking_number:
+                    type: string
+                    description: "FinCEN batch tracking number after submission"
+                    example: "FIN-2025-B-004821"
+                  filed_at:
+                    type: string
+                    description: "FinCEN submission timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  filing_deadline:
+                    type: string
+                    description: "30-day regulatory filing deadline"
+                    format: date
+                    example: "2025-07-15"
+                required:
+                  - sar_id
+                  - sar_number
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateSar
+      summary: Update SAR details
+      description: >-
+        Update SAR filing information including subject details, transaction information, and activity
+        dates. Modifications are tracked in the SAR audit trail. SARs in 'submitted' status cannot be
+        modified — file an amendment instead.
+      tags:
+        - SAR Filing
+      parameters:
+        - name: sar_id
+          in: path
+          required: true
+          description: Unique sar id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update SAR details request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    subject_name:
+                      type: string
+                      description: "Updated subject name"
+                    suspicious_amount:
+                      type: number
+                      description: "Updated suspicious amount"
+                      format: double
+                      example: 15000.0
+                    activity_end_date:
+                      type: string
+                      description: "Updated activity end date"
+                      format: date
+                    violation_types:
+                      type: array
+                      description: "Updated violation types"
+                      items:
+                        type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sar_id:
+                    type: string
+                    description: "Unique SAR identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  sar_number:
+                    type: string
+                    description: "FinCEN SAR filing number"
+                    example: "SAR-31-2025-0092144"
+                  status:
+                    type: string
+                    description: "SAR lifecycle status"
+                    example: "draft"
+                    enum:
+                      - draft
+                      - narrative_in_progress
+                      - under_review
+                      - approved
+                      - submitted
+                      - acknowledged
+                      - amendment_required
+                  subject_name:
+                    type: string
+                    description: "Primary subject name"
+                    example: "John Doe"
+                  suspicious_amount:
+                    type: number
+                    description: "Total suspicious activity amount"
+                    format: double
+                    example: 15000.0
+                  filing_type:
+                    type: string
+                    description: "Filing type"
+                    example: "initial"
+                    enum:
+                      - initial
+                      - continuing
+                      - joint
+                      - corrected
+                  activity_summary:
+                    type: string
+                    description: "Brief summary of suspicious activity"
+                  fincen_tracking_number:
+                    type: string
+                    description: "FinCEN batch tracking number after submission"
+                    example: "FIN-2025-B-004821"
+                  filed_at:
+                    type: string
+                    description: "FinCEN submission timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  filing_deadline:
+                    type: string
+                    description: "30-day regulatory filing deadline"
+                    format: date
+                    example: "2025-07-15"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sar/{sar_id}/narrative:
+    get:
+      operationId: getSarNarrative
+      summary: Get SAR narrative
+      description: >-
+        Retrieve the narrative section of a SAR. The narrative is the free-text section describing the
+        suspicious activity, subjects involved, and why the activity is suspicious. Reviewed by BSA officer
+        before submission.
+      tags:
+        - Narrative
+      parameters:
+        - name: sar_id
+          in: path
+          required: true
+          description: Unique sar id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sar_id:
+                    type: string
+                    description: "SAR identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  narrative_text:
+                    type: string
+                    description: "Full SAR narrative text"
+                  word_count:
+                    type: integer
+                    description: "Narrative word count"
+                    example: 850
+                  ai_generated:
+                    type: boolean
+                    description: "Whether narrative was AI-assisted"
+                    example: true
+                  last_edited_by:
+                    type: string
+                    description: "Last editor"
+                    example: "bsa-officer-01"
+                  last_edited_at:
+                    type: string
+                    description: "Last edit timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - sar_id
+                  - narrative_text
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: generateSarNarrative
+      summary: Generate SAR narrative
+      description: >-
+        Generate an AI-assisted draft SAR narrative based on case facts, transaction data, and subject
+        information. The generated narrative follows FinCEN guidance for SAR narrative content and
+        structure. Output requires BSA officer review and approval before filing.
+      tags:
+        - Narrative
+      parameters:
+        - name: sar_id
+          in: path
+          required: true
+          description: Unique sar id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Generate SAR narrative request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    include_transaction_detail:
+                      type: boolean
+                      description: "Include transaction-level detail in narrative"
+                      example: true
+                    narrative_style:
+                      type: string
+                      description: "Narrative style preference"
+                      example: "detailed"
+                      enum:
+                        - concise
+                        - detailed
+                        - comprehensive
+                    additional_context:
+                      type: string
+                      description: "Additional context for narrative generation"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sar_id:
+                    type: string
+                    description: "SAR identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  draft_narrative:
+                    type: string
+                    description: "Generated narrative draft text"
+                  word_count:
+                    type: integer
+                    description: "Draft word count"
+                    example: 920
+                  confidence_score:
+                    type: number
+                    description: "AI confidence in narrative completeness"
+                    example: 0.88
+                  review_required:
+                    type: boolean
+                    description: "Manual review required"
+                    example: true
+                required:
+                  - sar_id
+                  - draft_narrative
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sar/{sar_id}/documents:
+    get:
+      operationId: listSarDocuments
+      summary: List SAR supporting documents
+      description: >-
+        Retrieve supporting documents attached to a SAR including transaction records, account statements,
+        correspondence, and investigation notes.
+      tags:
+        - Supporting Documents
+      parameters:
+        - name: sar_id
+          in: path
+          required: true
+          description: Unique SAR identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                          description: "Document identifier"
+                          format: uuid
+                          example: "550e8400-e29b-41d4-a716-446655440000"
+                        document_type:
+                          type: string
+                          description: "Document category"
+                          example: "transaction_record"
+                          enum:
+                            - transaction_record
+                            - account_statement
+                            - correspondence
+                            - investigation_notes
+                            - other
+                        file_name:
+                          type: string
+                          description: "Original file name"
+                          example: "wire_transfers_q1.pdf"
+                        uploaded_by:
+                          type: string
+                          description: "Uploader"
+                          example: "bsa-officer-01"
+                        uploaded_at:
+                          type: string
+                          description: "Upload timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - document_id
+                        - document_type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: uploadSarDocument
+      summary: Upload SAR supporting document
+      description: >-
+        Attach a supporting document to a SAR filing. Documents are retained per BSA record retention
+        requirements (5 years from filing date). Supports transaction records, account statements, and
+        investigation notes.
+      tags:
+        - Supporting Documents
+      parameters:
+        - name: sar_id
+          in: path
+          required: true
+          description: Unique sar id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Upload SAR supporting document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    document_type:
+                      type: string
+                      description: "Document category"
+                      example: "transaction_record"
+                      enum:
+                        - transaction_record
+                        - account_statement
+                        - correspondence
+                        - investigation_notes
+                        - other
+                    file_name:
+                      type: string
+                      description: "Original file name"
+                      example: "wire_transfers_q1.pdf"
+                    description:
+                      type: string
+                      description: "Document description"
+              required:
+                - document_type
+                - file_name
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: "Document identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  file_name:
+                    type: string
+                    description: "Stored file name"
+                    example: "wire_transfers_q1.pdf"
+                  uploaded_at:
+                    type: string
+                    description: "Upload timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - document_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sar/{sar_id}/submit:
+    post:
+      operationId: submitSarToFincen
+      summary: Submit SAR to FinCEN
+      description: >-
+        Submit an approved SAR to FinCEN via the BSA E-Filing system. Validates the SAR against FinCEN XML
+        schema requirements before submission. Returns a batch tracking number for submission status
+        monitoring. Requires SAR to be in 'approved' status with completed narrative.
+      tags:
+        - FinCEN Submission
+      parameters:
+        - name: sar_id
+          in: path
+          required: true
+          description: Unique sar id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Submit SAR to FinCEN request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    submission_method:
+                      type: string
+                      description: "E-filing submission method"
+                      example: "batch"
+                      enum:
+                        - batch
+                        - discrete
+                    priority:
+                      type: string
+                      description: "Submission priority"
+                      example: "standard"
+                      enum:
+                        - standard
+                        - expedited
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sar_id:
+                    type: string
+                    description: "SAR identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  fincen_tracking_number:
+                    type: string
+                    description: "FinCEN batch tracking number"
+                    example: "FIN-2025-B-004821"
+                  submitted_at:
+                    type: string
+                    description: "Submission timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  expected_acknowledgment:
+                    type: string
+                    description: "Expected acknowledgment timeframe"
+                    example: "24-48 hours"
+                required:
+                  - sar_id
+                  - fincen_tracking_number
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sar/{sar_id}/follow-up:
+    post:
+      operationId: createSarFollowUp
+      summary: Create SAR follow-up
+      description: >-
+        Create a follow-up action for a submitted SAR. Required when suspicious activity continues beyond
+        the initial SAR filing period. Generates a continuing SAR with reference to the original filing per
+        FinCEN continuing activity guidance.
+      tags:
+        - SAR Filing
+      parameters:
+        - name: sar_id
+          in: path
+          required: true
+          description: Unique sar id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Create SAR follow-up request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    follow_up_type:
+                      type: string
+                      description: "Follow-up type"
+                      example: "continuing_activity"
+                      enum:
+                        - continuing_activity
+                        - additional_information
+                        - law_enforcement_request
+                    new_activity_start:
+                      type: string
+                      description: "Start of new suspicious activity period"
+                      format: date
+                      example: "2025-06-11"
+                    new_activity_end:
+                      type: string
+                      description: "End of new activity period"
+                      format: date
+                      example: "2025-09-10"
+                    additional_amount:
+                      type: number
+                      description: "Additional suspicious amount in new period"
+                      format: double
+                      example: 15000.0
+              required:
+                - follow_up_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  follow_up_sar_id:
+                    type: string
+                    description: "New continuing SAR identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  follow_up_sar_number:
+                    type: string
+                    description: "New SAR number"
+                    example: "SAR-31-2025-0094821"
+                  original_sar_reference:
+                    type: string
+                    description: "Reference to original SAR"
+                    example: "SAR-31-2025-0092144"
+                  status:
+                    type: string
+                    description: "New SAR status"
+                    example: "draft"
+                required:
+                  - follow_up_sar_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sar/batch-validate:
+    post:
+      operationId: batchValidateSars
+      summary: Batch validate SARs
+      description: >-
+        Validate a batch of SAR filings against FinCEN XML schema requirements and business rules.
+        Identifies field-level validation errors, missing required sections, and formatting issues before
+        submission. Recommended as a pre-flight check before batch e-filing.
+      tags:
+        - FinCEN Submission
+      requestBody:
+        required: true
+        description: Batch validate SARs request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    sar_ids:
+                      type: array
+                      description: "SAR IDs to validate"
+                      items:
+                        type: string
+                        example: "550e8400-e29b-41d4-a716-446655440000"
+              required:
+                - sar_ids
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  validated_count:
+                    type: integer
+                    description: "Total SARs validated"
+                    example: 15
+                  passed_count:
+                    type: integer
+                    description: "SARs passing validation"
+                    example: 13
+                  failed_count:
+                    type: integer
+                    description: "SARs with validation errors"
+                    example: 2
+                  errors:
+                    type: array
+                    description: "Validation errors by SAR"
+                    items:
+                      type: object
+                required:
+                  - validated_count
+                  - passed_count
+                  - failed_count
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

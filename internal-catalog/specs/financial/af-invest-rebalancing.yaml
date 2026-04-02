@@ -1,0 +1,1034 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Rebalancing API
+  description: Portfolio rebalancing services with drift analysis, trade preview, tax-aware optimization, and automated execution.
+    Compares current holdings against model portfolio targets, generates minimum-turnover trade lists, identifies wash sale
+    conflicts, and supports one-click rebalance execution with order tracking.
+  version: 2.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-invest-rebalancing
+  x-acme-domain: invest
+servers:
+- url: https://af-invest-rebalancing.api.acmefin.com/v1
+  description: Production
+- url: https://af-invest-rebalancing.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Drift Analysis
+  description: Portfolio drift monitoring and threshold-based rebalance recommendations
+- name: Trade Preview
+  description: Proposed rebalancing trade lists with cost and tax impact estimates
+- name: Execution
+  description: Rebalance execution, order tracking, and historical rebalance log
+paths:
+  /rebalancing/{account_id}/drift:
+    get:
+      operationId: analyzeDrift
+      summary: Analyze portfolio drift
+      description: Calculate the drift of current portfolio allocations from the assigned model portfolio targets. Returns
+        per-asset-class drift percentages and an overall drift score. Recommends rebalancing when drift exceeds the configured
+        threshold.
+      tags:
+      - Drift Analysis
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: model_id
+        in: query
+        required: false
+        description: Model portfolio to compare against (defaults to assigned model)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  model_id:
+                    type: string
+                    description: Model portfolio identifier
+                    format: uuid
+                    example: mp-a1b2c3d4
+                  model_name:
+                    type: string
+                    description: Model portfolio name
+                    example: Growth-70-30
+                  as_of:
+                    type: string
+                    description: Analysis timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  overall_drift_pct:
+                    type: number
+                    description: Overall portfolio drift from target (root mean square)
+                    format: double
+                    example: 4.2
+                  drift_details:
+                    type: array
+                    description: Per-asset-class drift from target allocation
+                    items:
+                      type: object
+                  rebalance_recommended:
+                    type: boolean
+                    description: Whether drift exceeds threshold and rebalance is recommended
+                    example: true
+                  drift_threshold_pct:
+                    type: number
+                    description: Configured drift trigger threshold
+                    format: double
+                    example: 5.0
+                required:
+                - account_id
+                - overall_drift_pct
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /rebalancing/{account_id}/preview:
+    post:
+      operationId: previewRebalance
+      summary: Preview rebalancing trades
+      description: Generate a proposed trade list to bring the portfolio back to model portfolio targets with minimum turnover.
+        Estimates transaction costs, tax impact from realized gains, and flags any trades that would trigger wash sale violations.
+      tags:
+      - Trade Preview
+      requestBody:
+        required: true
+        description: Preview rebalancing trades request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model_id:
+                  type: string
+                  description: Target model portfolio
+                  format: uuid
+                  example: mp-a1b2c3d4
+                tax_aware:
+                  type: boolean
+                  description: Enable tax-loss harvesting optimization
+                  example: true
+                exclude_tickers:
+                  type: array
+                  description: Tickers to exclude from rebalancing
+                  items:
+                    type: string
+                min_trade_amount:
+                  type: object
+                  description: Minimum trade size threshold
+                  properties:
+                    amount:
+                      type: number
+                      description: Monetary amount
+                      format: double
+                      example: 100.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: USD
+              required:
+              - model_id
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  model_id:
+                    type: string
+                    description: Target model portfolio
+                    format: uuid
+                    example: mp-a1b2c3d4
+                  trades:
+                    type: array
+                    description: Proposed rebalancing trades
+                    items:
+                      type: object
+                  trade_count:
+                    type: integer
+                    description: Number of proposed trades
+                    example: 8
+                  estimated_turnover_pct:
+                    type: number
+                    description: Estimated portfolio turnover from rebalance
+                    format: double
+                    example: 12.5
+                  estimated_cost:
+                    type: object
+                    description: Estimated total transaction cost
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 8.5
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  estimated_tax_impact:
+                    type: object
+                    description: Estimated realized capital gains tax impact
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 450.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  wash_sale_conflicts:
+                    type: array
+                    description: Trades that would trigger wash sale violations
+                    items:
+                      type: object
+                required:
+                - account_id
+                - trades
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /rebalancing/{account_id}/execute:
+    post:
+      operationId: executeRebalance
+      summary: Execute rebalance
+      description: Execute the proposed rebalancing trades for the account. Submits all orders and returns a rebalance execution
+        identifier for tracking. Orders are submitted as market orders during regular trading hours.
+      tags:
+      - Execution
+      requestBody:
+        required: true
+        description: Execute rebalance request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model_id:
+                  type: string
+                  description: Target model portfolio
+                  format: uuid
+                  example: mp-a1b2c3d4
+                tax_aware:
+                  type: boolean
+                  description: Use tax-aware optimization
+                  example: true
+                confirm:
+                  type: boolean
+                  description: Confirmation flag (must be true to execute)
+                  example: true
+              required:
+              - model_id
+              - confirm
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rebalance_id:
+                    type: string
+                    description: Rebalance execution identifier
+                    format: uuid
+                    example: reb-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  model_id:
+                    type: string
+                    description: Target model portfolio
+                    format: uuid
+                    example: mp-a1b2c3d4
+                  status:
+                    type: string
+                    description: Rebalance execution status
+                    enum:
+                    - pending
+                    - executing
+                    - completed
+                    - failed
+                    - partially_completed
+                  trades_submitted:
+                    type: integer
+                    description: Orders submitted
+                    example: 8
+                  trades_filled:
+                    type: integer
+                    description: Orders filled
+                    example: 6
+                  initiated_at:
+                    type: string
+                    description: Rebalance initiation timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  completed_at:
+                    type: string
+                    description: Rebalance completion timestamp
+                    format: date-time
+                    example: ''
+                required:
+                - rebalance_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /rebalancing/{account_id}/executions/{rebalance_id}:
+    get:
+      operationId: getRebalanceStatus
+      summary: Get rebalance execution status
+      description: Check the status of a rebalance execution, including the number of trades submitted vs. filled and individual
+        order statuses.
+      tags:
+      - Execution
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account
+        schema:
+          type: string
+      - name: rebalance_id
+        in: path
+        required: true
+        description: Rebalance execution identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rebalance_id:
+                    type: string
+                    description: Rebalance execution identifier
+                    format: uuid
+                    example: reb-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  model_id:
+                    type: string
+                    description: Target model portfolio
+                    format: uuid
+                    example: mp-a1b2c3d4
+                  status:
+                    type: string
+                    description: Rebalance execution status
+                    enum:
+                    - pending
+                    - executing
+                    - completed
+                    - failed
+                    - partially_completed
+                  trades_submitted:
+                    type: integer
+                    description: Orders submitted
+                    example: 8
+                  trades_filled:
+                    type: integer
+                    description: Orders filled
+                    example: 6
+                  initiated_at:
+                    type: string
+                    description: Rebalance initiation timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  completed_at:
+                    type: string
+                    description: Rebalance completion timestamp
+                    format: date-time
+                    example: ''
+                required:
+                - rebalance_id
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /rebalancing/{account_id}/history:
+    get:
+      operationId: listRebalanceHistory
+      summary: List rebalance history
+      description: Retrieve historical rebalance executions for an account showing pre/post drift, turnover, and trade counts.
+        Useful for auditing rebalance frequency and effectiveness.
+      tags:
+      - Execution
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: from_date
+        in: query
+        required: false
+        description: Start date
+        schema:
+          type: string
+          format: date
+      - name: status
+        in: query
+        required: false
+        description: Filter by outcome
+        schema:
+          type: string
+          enum:
+          - completed
+          - partially_completed
+          - failed
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rebalance_id:
+                          type: string
+                          description: Rebalance execution identifier
+                          format: uuid
+                          example: reb-a1b2c3d4
+                        model_name:
+                          type: string
+                          description: Model portfolio name
+                          example: Growth-70-30
+                        status:
+                          type: string
+                          description: Outcome
+                          enum:
+                          - completed
+                          - partially_completed
+                          - failed
+                        trades_executed:
+                          type: integer
+                          description: Total trades executed
+                          example: 8
+                        turnover_pct:
+                          type: number
+                          description: Actual portfolio turnover
+                          format: double
+                          example: 12.5
+                        pre_drift_pct:
+                          type: number
+                          description: Drift before rebalance
+                          format: double
+                          example: 6.8
+                        post_drift_pct:
+                          type: number
+                          description: Drift after rebalance
+                          format: double
+                          example: 0.3
+                        executed_at:
+                          type: string
+                          description: Execution date
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - rebalance_id
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /rebalancing/models/{model_id}/compare:
+    post:
+      operationId: compareModels
+      summary: Compare model portfolios
+      description: Compare current portfolio allocation against multiple model portfolios to evaluate which target allocation
+        would require the least turnover and tax impact to achieve.
+      tags:
+      - Drift Analysis
+      requestBody:
+        required: true
+        description: Compare model portfolios request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                model_ids:
+                  type: array
+                  description: Model portfolio identifiers to compare
+                  items:
+                    type: string
+              required:
+              - account_id
+              - model_ids
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comparisons:
+                    type: array
+                    description: Model comparison results with drift, turnover, and tax estimates
+                    items:
+                      type: object
+                  recommended_model_id:
+                    type: string
+                    description: Model with lowest transition cost
+                    format: uuid
+                    example: mp-a1b2c3d4
+                required:
+                - comparisons
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /rebalancing/{account_id}/schedule:
+    get:
+      operationId: getRebalanceSchedule
+      summary: Get rebalance schedule
+      description: Retrieve the configured automatic rebalance schedule and drift trigger settings for an account.
+      tags:
+      - Drift Analysis
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  auto_rebalance_enabled:
+                    type: boolean
+                    description: Whether automatic rebalancing is enabled
+                    example: true
+                  frequency:
+                    type: string
+                    description: Scheduled rebalance frequency
+                    enum:
+                    - monthly
+                    - quarterly
+                    - semi_annual
+                    - annual
+                    - drift_only
+                  drift_threshold_pct:
+                    type: number
+                    description: Drift threshold to trigger rebalance
+                    format: double
+                    example: 5.0
+                  next_scheduled:
+                    type: string
+                    description: Next scheduled rebalance date
+                    format: date
+                    example: '2025-07-01'
+                  tax_aware:
+                    type: boolean
+                    description: Tax-aware optimization enabled
+                    example: true
+                required:
+                - account_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateRebalanceSchedule
+      summary: Update rebalance schedule
+      description: Configure automatic rebalance frequency, drift threshold triggers, and tax-aware optimization preferences
+        for an account.
+      tags:
+      - Drift Analysis
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Unique account id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update rebalance schedule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auto_rebalance_enabled:
+                  type: boolean
+                  description: Enable automatic rebalancing
+                  example: true
+                frequency:
+                  type: string
+                  description: Rebalance frequency
+                  enum:
+                  - monthly
+                  - quarterly
+                  - semi_annual
+                  - annual
+                  - drift_only
+                drift_threshold_pct:
+                  type: number
+                  description: Drift trigger threshold
+                  format: double
+                  example: 5.0
+                tax_aware:
+                  type: boolean
+                  description: Enable tax-aware optimization
+                  example: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  auto_rebalance_enabled:
+                    type: boolean
+                    description: Updated setting
+                    example: true
+                  frequency:
+                    type: string
+                    description: Updated frequency
+                    enum:
+                    - monthly
+                    - quarterly
+                    - semi_annual
+                    - annual
+                    - drift_only
+                  drift_threshold_pct:
+                    type: number
+                    description: Updated threshold
+                    format: double
+                    example: 5.0
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,1571 @@
+openapi: 3.0.3
+info:
+  title: VZW Incident Intake Gateway API
+  description: >-
+    Provides a normalized, secure intake gateway for multi-channel incident reports before downstream dispatch routing.
+    The service accepts emergency and operational reports from public safety channels, customer applications,
+    IoT telemetry, and assisted voice workflows, then performs schema validation, geospatial verification,
+    deduplication, and context enrichment. This API is the canonical intake boundary for Verizon incident
+    processing in the intake domain.
+  version: 1.0.0
+  contact:
+    name: Verizon Intake Platform API Team
+    email: intake-api-support@verizon.com
+    url: https://developer.verizon.com/apis/intake
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/api
+  x-verizon-catalog-id: vzw-incident-intake-gateway-api
+  x-verizon-domain: intake
+servers:
+  - url: https://vzw-incident-intake-gateway-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-incident-intake-gateway-api.staging.api.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Incident Intake
+    description: Multi-channel intake, normalization, and routing preparation
+  - name: Incident Queue
+    description: Queue visibility and triage priority management
+  - name: Incident Enrichment
+    description: Attach contextual intelligence to incoming incidents
+  - name: Channel Configuration
+    description: Retrieve configured intake channels and capabilities
+paths:
+  /v1/incidents/ingest:
+    post:
+      operationId: ingestIncident
+      summary: Ingest incident from any configured intake channel
+      description: >-
+        Accepts raw incident intake payloads from 911 dispatch integrations, customer mobile applications,
+        IoT alert devices, and voice-assisted operator workflows. The gateway normalizes channel-specific fields
+        into the canonical incident schema and returns the normalized incident plus routing signals.
+      tags:
+        - Incident Intake
+      requestBody:
+        required: true
+        description: Raw intake payload and channel metadata
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentIngestRequest"
+            example:
+              channel: "911"
+              source_event_id: "911-SF-20260327-48291"
+              reported_at: "2026-03-27T16:22:41Z"
+              caller:
+                caller_id: "call-4f8e2e71"
+                phone_number: "+14155550110"
+                display_name: "Avery Martinez"
+                language: "en-US"
+                callback_preference: "VOICE"
+              location:
+                latitude: 37.7749
+                longitude: -122.4194
+                address_line1: "1 Dr Carlton B Goodlett Pl"
+                city: "San Francisco"
+                state: "CA"
+                postal_code: "94102"
+                neighborhood: "Civic Center"
+              incident:
+                incident_type: "TRAFFIC_COLLISION"
+                severity_hint: "HIGH"
+                description: "Multi-vehicle collision with lane blockage on Market St near 10th"
+                reported_assets:
+                  - asset_type: "VEHICLE"
+                    asset_identifier: "CA-8LJX992"
+                    condition: "DISABLED"
+                hazards:
+                  - "FUEL_LEAK"
+                  - "DEBRIS"
+              attachments:
+                - attachment_id: "att-23ef9"
+                  media_type: "AUDIO"
+                  url: "https://evidence.verizon.com/intake/att-23ef9"
+              metadata:
+                ingestion_trace_id: "eb8e3e0f-87b4-4c6a-9c8f-728ab3c7f56f"
+                tenant_id: "sf-metro-ops"
+                schema_version: "2026-03"
+      responses:
+        "201":
+          description: Incident accepted and normalized for downstream triage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentIngestResponse"
+              example:
+                incident_id: "inc-20260327-7a2d11c9"
+                status: "INGESTED"
+                channel: "911"
+                normalized_incident:
+                  canonical_type: "TRAFFIC_COLLISION"
+                  severity_score: 88
+                  priority: "P1"
+                  geo_cell_id: "sfo-9q8yyk"
+                  location_confidence: "HIGH"
+                triage_signals:
+                  duplicate_risk: "MEDIUM"
+                  dispatch_recommendation: "CITY_DISPATCH"
+                  sla_target_minutes: 8
+                trace_id: "eb8e3e0f-87b4-4c6a-9c8f-728ab3c7f56f"
+                ingested_at: "2026-03-27T16:22:44Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/validate:
+    post:
+      operationId: validateIncidentPayload
+      summary: Validate incident payload schema and geospatial consistency
+      description: >-
+        Performs strict validation on candidate incident payloads before ingestion. Validation includes canonical
+        schema checks, required field checks by channel type, geospatial bounds verification, and intake policy
+        constraints for the San Francisco operating area.
+      tags:
+        - Incident Intake
+      requestBody:
+        required: true
+        description: Candidate incident payload to validate
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentValidateRequest"
+            example:
+              channel: "APP"
+              payload:
+                incident_type: "POWER_OUTAGE"
+                description: "Block-level outage reported in Mission District"
+                location:
+                  latitude: 37.7599
+                  longitude: -122.4148
+                  city: "San Francisco"
+                  state: "CA"
+                  postal_code: "94110"
+                caller:
+                  phone_number: "+14155550898"
+                  language: "en-US"
+                metadata:
+                  customer_account_id: "acct-177220"
+                  app_version: "7.12.0"
+      responses:
+        "200":
+          description: Validation completed with pass/fail details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentValidateResponse"
+              example:
+                valid: true
+                validation_result: "PASSED"
+                schema_version: "2026-03"
+                geo_validation:
+                  in_service_area: true
+                  geofence: "SF-PRIMARY"
+                  nearest_grid: "SF-MISSION-14"
+                warnings:
+                  - code: "LOW_PRECISION_LOCATION"
+                    message: "GPS precision is low; fallback geocoder was applied"
+                trace_id: "6d2b66f5-ecdb-4e43-8bb3-a0e7f94a8ea1"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/queue:
+    get:
+      operationId: listPendingIncidentQueue
+      summary: List pending incidents waiting for triage
+      description: >-
+        Returns a paginated list of pending incidents ordered by computed triage priority. Supports filtering by
+        channel, severity band, queue state, and geofence for operational triage dashboards.
+      tags:
+        - Incident Queue
+      parameters:
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+        - name: queue_state
+          in: query
+          required: false
+          description: Queue state filter
+          schema:
+            type: string
+            description: Current state of the intake queue item
+            enum:
+              - PENDING_TRIAGE
+              - ASSIGNED
+              - HOLD
+            example: "PENDING_TRIAGE"
+        - name: channel
+          in: query
+          required: false
+          description: Intake channel filter
+          schema:
+            $ref: "#/components/schemas/IntakeChannel"
+        - name: min_severity_score
+          in: query
+          required: false
+          description: Minimum normalized severity score to include
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            description: Lower bound severity score
+            example: 60
+        - name: geofence
+          in: query
+          required: false
+          description: Service geofence identifier
+          schema:
+            type: string
+            description: Geofence region used for triage zoning
+            example: "SF-DOWNTOWN"
+      responses:
+        "200":
+          description: Paginated queue page returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentQueueListResponse"
+              example:
+                items:
+                  - incident_id: "inc-20260327-7a2d11c9"
+                    queue_state: "PENDING_TRIAGE"
+                    priority: "P1"
+                    severity_score: 88
+                    channel: "911"
+                    canonical_type: "TRAFFIC_COLLISION"
+                    city: "San Francisco"
+                    neighborhood: "SOMA"
+                    reported_at: "2026-03-27T16:22:41Z"
+                    last_updated_at: "2026-03-27T16:22:44Z"
+                  - incident_id: "inc-20260327-5b4fe7a2"
+                    queue_state: "PENDING_TRIAGE"
+                    priority: "P2"
+                    severity_score: 72
+                    channel: "IOT"
+                    canonical_type: "SMOKE_ALERT"
+                    city: "San Francisco"
+                    neighborhood: "Sunset District"
+                    reported_at: "2026-03-27T16:20:03Z"
+                    last_updated_at: "2026-03-27T16:21:10Z"
+                page:
+                  page_size: 25
+                  next_page_token: "eyJvZmZzZXQiOjI1fQ=="
+                  has_more: true
+                trace_id: "1aaf9df7-42ef-4e5e-b275-082af8a8d95a"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/queue/{incidentId}/priority:
+    patch:
+      operationId: updateIncidentPriority
+      summary: Reprioritize a queued incident
+      description: >-
+        Updates triage priority for a pending incident based on supervisor action or automated model escalation.
+        Priority updates are audited and can include a required rationale for policy-sensitive overrides.
+      tags:
+        - Incident Queue
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      requestBody:
+        required: true
+        description: Priority override payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentPriorityPatchRequest"
+            example:
+              new_priority: "P1"
+              reason_code: "SUPERVISOR_ESCALATION"
+              note: "Caller update indicates active fire spread toward occupied structure"
+              changed_by: "ops-supervisor-114"
+      responses:
+        "200":
+          description: Priority updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentPriorityPatchResponse"
+              example:
+                incident_id: "inc-20260327-5b4fe7a2"
+                previous_priority: "P2"
+                new_priority: "P1"
+                reason_code: "SUPERVISOR_ESCALATION"
+                changed_by: "ops-supervisor-114"
+                changed_at: "2026-03-27T16:25:18Z"
+                trace_id: "3c60a9d2-e0ba-42ba-8d6a-fd7e43c2e0a4"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/{incidentId}/enrich:
+    post:
+      operationId: enrichIncidentContext
+      summary: Enrich incident with geospatial, caller, and history context
+      description: >-
+        Runs enrichment pipelines for an already ingested incident. Enrichment combines geospatial overlays,
+        caller reliability signals, historical incidents in nearby SF grids, and known infrastructure context.
+      tags:
+        - Incident Enrichment
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      requestBody:
+        required: true
+        description: Requested enrichment modules and execution options
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentEnrichRequest"
+            example:
+              enrichment_modules:
+                - "GEO_CONTEXT"
+                - "CALLER_HISTORY"
+                - "INCIDENT_CLUSTERING"
+              include_raw_signals: false
+              max_historical_events: 5
+              geofence: "SF-DOWNTOWN"
+      responses:
+        "200":
+          description: Enrichment completed and attached to incident
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentEnrichResponse"
+              example:
+                incident_id: "inc-20260327-7a2d11c9"
+                enrichment_status: "COMPLETED"
+                context:
+                  nearest_landmark: "San Francisco City Hall"
+                  district: "District 6"
+                  caller_reliability_score: 0.91
+                  similar_incidents_24h: 3
+                  active_infrastructure_alerts:
+                    - "TRAFFIC_SIGNAL_OUTAGE"
+                generated_at: "2026-03-27T16:26:04Z"
+                trace_id: "ea8a69b0-fad9-4dc8-91d9-b223b8fa91a7"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/channels:
+    get:
+      operationId: listIntakeChannels
+      summary: List configured intake channels
+      description: >-
+        Returns active intake channels and their capabilities, constraints, and expected schema variants.
+        Useful for onboarding upstream producers and validating operational readiness.
+      tags:
+        - Channel Configuration
+      responses:
+        "200":
+          description: Configured channels returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelListResponse"
+              example:
+                channels:
+                  - channel: "911"
+                    enabled: true
+                    display_name: "Public Safety 911"
+                    supports_attachments: true
+                    requires_caller_phone: false
+                    max_payload_kb: 512
+                  - channel: "APP"
+                    enabled: true
+                    display_name: "MyVerizon Safety App"
+                    supports_attachments: true
+                    requires_caller_phone: true
+                    max_payload_kb: 1024
+                  - channel: "IOT"
+                    enabled: true
+                    display_name: "IoT Sensor Network"
+                    supports_attachments: false
+                    requires_caller_phone: false
+                    max_payload_kb: 256
+                  - channel: "VOICE"
+                    enabled: true
+                    display_name: "Assisted Voice Intake"
+                    supports_attachments: true
+                    requires_caller_phone: true
+                    max_payload_kb: 768
+                trace_id: "4fcb8372-df50-4e28-8c9a-283f669db8e8"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/incidents/{incidentId}/deduplicate:
+    post:
+      operationId: deduplicateIncident
+      summary: Merge duplicate incident reports into canonical incident
+      description: >-
+        Evaluates the target incident against candidate duplicates and merges selected duplicates into the
+        canonical incident record. Maintains an audit trail of merged incident IDs and field-level conflict
+        resolutions.
+      tags:
+        - Incident Intake
+      parameters:
+        - $ref: "#/components/parameters/IncidentId"
+      requestBody:
+        required: true
+        description: Deduplication merge request payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentDeduplicateRequest"
+            example:
+              duplicate_incident_ids:
+                - "inc-20260327-58cb7ae1"
+                - "inc-20260327-94a6a721"
+              merge_strategy: "HIGHEST_CONFIDENCE_FIELDS"
+              preserve_channel_events: true
+              initiated_by: "dedupe-engine-v2"
+      responses:
+        "200":
+          description: Deduplication completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentDeduplicateResponse"
+              example:
+                canonical_incident_id: "inc-20260327-7a2d11c9"
+                merged_incident_ids:
+                  - "inc-20260327-58cb7ae1"
+                  - "inc-20260327-94a6a721"
+                merge_strategy: "HIGHEST_CONFIDENCE_FIELDS"
+                merged_fields:
+                  - "caller.phone_number"
+                  - "incident.description"
+                  - "location.neighborhood"
+                deduplication_score: 0.96
+                merged_at: "2026-03-27T16:27:11Z"
+                trace_id: "6fce9010-31db-46ca-b4c7-0d909cb4348f"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    IncidentId:
+      name: incidentId
+      in: path
+      required: true
+      description: Canonical incident identifier
+      schema:
+        type: string
+        description: Unique incident id generated by intake gateway
+        example: "inc-20260327-7a2d11c9"
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Number of records to return in a page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+        description: Maximum queue items in current response page
+        example: 25
+    PageToken:
+      name: page_token
+      in: query
+      required: false
+      description: Opaque token for next page retrieval
+      schema:
+        type: string
+        description: Pagination token returned by previous queue list call
+        example: "eyJvZmZzZXQiOjI1fQ=="
+  schemas:
+    IntakeChannel:
+      type: string
+      description: Intake source channel used to report the incident
+      enum:
+        - "911"
+        - "APP"
+        - "IOT"
+        - "VOICE"
+      example: "911"
+    IncidentPriority:
+      type: string
+      description: Triage priority classification
+      enum:
+        - "P1"
+        - "P2"
+        - "P3"
+        - "P4"
+      example: "P1"
+    CanonicalIncidentType:
+      type: string
+      description: Canonical incident classification
+      enum:
+        - "TRAFFIC_COLLISION"
+        - "POWER_OUTAGE"
+        - "SMOKE_ALERT"
+        - "MEDICAL_EMERGENCY"
+        - "STRUCTURE_FIRE"
+        - "UTILITY_HAZARD"
+      example: "TRAFFIC_COLLISION"
+    CallerInfo:
+      type: object
+      description: Caller identity and callback preferences
+      properties:
+        caller_id:
+          type: string
+          description: Caller identifier from upstream channel system
+          example: "call-4f8e2e71"
+        phone_number:
+          type: string
+          description: Callback phone number in E.164 format
+          example: "+14155550110"
+        display_name:
+          type: string
+          description: Caller display name if available
+          example: "Avery Martinez"
+        language:
+          type: string
+          description: Preferred language locale for callback interactions
+          example: "en-US"
+        callback_preference:
+          type: string
+          description: Preferred callback modality for follow-up communication
+          enum:
+            - "VOICE"
+            - "SMS"
+            - "NONE"
+          example: "VOICE"
+      required:
+        - phone_number
+    GeoLocation:
+      type: object
+      description: Geospatial incident location data
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          description: WGS84 latitude coordinate for incident location
+          example: 37.7749
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          description: WGS84 longitude coordinate for incident location
+          example: -122.4194
+        address_line1:
+          type: string
+          description: Primary street address line for geocoded location
+          example: "1 Dr Carlton B Goodlett Pl"
+        city:
+          type: string
+          description: City or municipality associated with incident location
+          example: "San Francisco"
+        state:
+          type: string
+          description: Two-letter US state or territory abbreviation
+          example: "CA"
+        postal_code:
+          type: string
+          description: Postal code for incident location
+          example: "94102"
+        neighborhood:
+          type: string
+          description: Neighborhood or district label from reverse geocoder
+          example: "Civic Center"
+      required:
+        - latitude
+        - longitude
+        - city
+        - state
+    ReportedAsset:
+      type: object
+      description: Asset involved in or impacted by the incident
+      properties:
+        asset_type:
+          type: string
+          description: Category of affected asset
+          enum:
+            - "VEHICLE"
+            - "UTILITY_POLE"
+            - "BUILDING"
+            - "SENSOR"
+            - "ROADWAY"
+          example: "VEHICLE"
+        asset_identifier:
+          type: string
+          description: Upstream identifier or registration of the asset
+          example: "CA-8LJX992"
+        condition:
+          type: string
+          description: Observed condition of the reported asset
+          enum:
+            - "DAMAGED"
+            - "DISABLED"
+            - "ACTIVE_ALERT"
+            - "UNKNOWN"
+          example: "DISABLED"
+      required:
+        - asset_type
+    IncidentCore:
+      type: object
+      description: Core incident details provided by intake source
+      properties:
+        incident_type:
+          $ref: "#/components/schemas/CanonicalIncidentType"
+        severity_hint:
+          type: string
+          description: Upstream severity hint provided by reporting channel
+          enum:
+            - "LOW"
+            - "MEDIUM"
+            - "HIGH"
+            - "CRITICAL"
+          example: "HIGH"
+        description:
+          type: string
+          description: Freeform incident narrative from caller or sensor parser
+          example: "Multi-vehicle collision with lane blockage on Market St near 10th"
+        reported_assets:
+          type: array
+          description: List of known assets involved in the incident
+          items:
+            $ref: "#/components/schemas/ReportedAsset"
+          example:
+            - asset_type: "VEHICLE"
+              asset_identifier: "CA-8LJX992"
+              condition: "DISABLED"
+        hazards:
+          type: array
+          description: Hazard labels detected or reported for this incident
+          items:
+            type: string
+            description: Hazard code from intake taxonomy
+            example: "FUEL_LEAK"
+          example:
+            - "FUEL_LEAK"
+            - "DEBRIS"
+      required:
+        - incident_type
+        - description
+    Attachment:
+      type: object
+      description: Media attachment linked to the incident intake event
+      properties:
+        attachment_id:
+          type: string
+          description: Unique attachment identifier from intake boundary
+          example: "att-23ef9"
+        media_type:
+          type: string
+          description: Attachment media category
+          enum:
+            - "IMAGE"
+            - "VIDEO"
+            - "AUDIO"
+            - "DOCUMENT"
+          example: "AUDIO"
+        url:
+          type: string
+          format: uri
+          description: Pre-signed retrieval URL for attachment content
+          example: "https://evidence.verizon.com/intake/att-23ef9"
+      required:
+        - attachment_id
+        - media_type
+        - url
+    IntakeMetadata:
+      type: object
+      description: Metadata associated with ingestion and tenancy
+      properties:
+        ingestion_trace_id:
+          type: string
+          format: uuid
+          description: Trace identifier propagated from upstream systems
+          example: "eb8e3e0f-87b4-4c6a-9c8f-728ab3c7f56f"
+        tenant_id:
+          type: string
+          description: Tenant or operational domain submitting intake event
+          example: "sf-metro-ops"
+        schema_version:
+          type: string
+          description: Version of source payload schema used by producer
+          example: "2026-03"
+      required:
+        - ingestion_trace_id
+        - tenant_id
+    IncidentIngestRequest:
+      type: object
+      description: Request payload for multi-channel incident ingestion
+      properties:
+        channel:
+          $ref: "#/components/schemas/IntakeChannel"
+        source_event_id:
+          type: string
+          description: Source system event identifier for idempotency and traceability
+          example: "911-SF-20260327-48291"
+        reported_at:
+          type: string
+          format: date-time
+          description: Timestamp when upstream source first recorded the incident
+          example: "2026-03-27T16:22:41Z"
+        caller:
+          $ref: "#/components/schemas/CallerInfo"
+        location:
+          $ref: "#/components/schemas/GeoLocation"
+        incident:
+          $ref: "#/components/schemas/IncidentCore"
+        attachments:
+          type: array
+          description: Optional media attachments from the reporting channel
+          items:
+            $ref: "#/components/schemas/Attachment"
+        metadata:
+          $ref: "#/components/schemas/IntakeMetadata"
+      required:
+        - channel
+        - source_event_id
+        - reported_at
+        - location
+        - incident
+        - metadata
+    NormalizedIncident:
+      type: object
+      description: Canonical normalized representation generated by intake gateway
+      properties:
+        canonical_type:
+          $ref: "#/components/schemas/CanonicalIncidentType"
+        severity_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Computed severity score from normalization and policy models
+          example: 88
+        priority:
+          $ref: "#/components/schemas/IncidentPriority"
+        geo_cell_id:
+          type: string
+          description: Derived geospatial grid cell identifier for dispatch zoning
+          example: "sfo-9q8yyk"
+        location_confidence:
+          type: string
+          description: Confidence label assigned to normalized incident location
+          enum:
+            - "LOW"
+            - "MEDIUM"
+            - "HIGH"
+          example: "HIGH"
+      required:
+        - canonical_type
+        - severity_score
+        - priority
+        - geo_cell_id
+        - location_confidence
+    TriageSignals:
+      type: object
+      description: Downstream routing and triage recommendation signals
+      properties:
+        duplicate_risk:
+          type: string
+          description: Risk level that this incident duplicates an existing active incident
+          enum:
+            - "LOW"
+            - "MEDIUM"
+            - "HIGH"
+          example: "MEDIUM"
+        dispatch_recommendation:
+          type: string
+          description: Suggested downstream dispatch service target
+          enum:
+            - "CITY_DISPATCH"
+            - "EDGE_MONITOR"
+            - "NETWORK_OPERATIONS"
+          example: "CITY_DISPATCH"
+        sla_target_minutes:
+          type: integer
+          description: Target response SLA in minutes based on current triage policy
+          example: 8
+      required:
+        - duplicate_risk
+        - dispatch_recommendation
+        - sla_target_minutes
+    IncidentIngestResponse:
+      type: object
+      description: Response payload returned after successful incident ingestion
+      properties:
+        incident_id:
+          type: string
+          description: Canonical incident identifier assigned by intake gateway
+          example: "inc-20260327-7a2d11c9"
+        status:
+          type: string
+          description: Current intake lifecycle status
+          enum:
+            - "INGESTED"
+            - "VALIDATING"
+            - "REJECTED"
+          example: "INGESTED"
+        channel:
+          $ref: "#/components/schemas/IntakeChannel"
+        normalized_incident:
+          $ref: "#/components/schemas/NormalizedIncident"
+        triage_signals:
+          $ref: "#/components/schemas/TriageSignals"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace id for correlation across intake processing components
+          example: "eb8e3e0f-87b4-4c6a-9c8f-728ab3c7f56f"
+        ingested_at:
+          type: string
+          format: date-time
+          description: Timestamp when intake gateway persisted normalized incident
+          example: "2026-03-27T16:22:44Z"
+      required:
+        - incident_id
+        - status
+        - channel
+        - normalized_incident
+        - triage_signals
+        - trace_id
+        - ingested_at
+    IncidentValidateRequest:
+      type: object
+      description: Request payload for schema and geospatial validation
+      properties:
+        channel:
+          $ref: "#/components/schemas/IntakeChannel"
+        payload:
+          type: object
+          description: Candidate incident payload to validate before ingestion
+          properties:
+            incident_type:
+              $ref: "#/components/schemas/CanonicalIncidentType"
+            description:
+              type: string
+              description: Candidate incident description submitted by producer
+              example: "Block-level outage reported in Mission District"
+            location:
+              $ref: "#/components/schemas/GeoLocation"
+            caller:
+              $ref: "#/components/schemas/CallerInfo"
+            metadata:
+              type: object
+              description: Producer-specific metadata included in validation run
+              properties:
+                customer_account_id:
+                  type: string
+                  description: Customer account identifier for app-originated incidents
+                  example: "acct-177220"
+                app_version:
+                  type: string
+                  description: Source app version when channel is APP
+                  example: "7.12.0"
+          required:
+            - incident_type
+            - description
+            - location
+      required:
+        - channel
+        - payload
+    ValidationWarning:
+      type: object
+      description: Non-blocking validation finding
+      properties:
+        code:
+          type: string
+          description: Machine-readable warning code from validation pipeline
+          example: "LOW_PRECISION_LOCATION"
+        message:
+          type: string
+          description: Human-readable explanation of warning condition
+          example: "GPS precision is low; fallback geocoder was applied"
+      required:
+        - code
+        - message
+    GeoValidationResult:
+      type: object
+      description: Geospatial validation details for service-area routing
+      properties:
+        in_service_area:
+          type: boolean
+          description: Indicates whether location is within configured service boundaries
+          example: true
+        geofence:
+          type: string
+          description: Service geofence identifier used for validation
+          example: "SF-PRIMARY"
+        nearest_grid:
+          type: string
+          description: Nearest operational grid reference for dispatch lookup
+          example: "SF-MISSION-14"
+      required:
+        - in_service_area
+        - geofence
+        - nearest_grid
+    IncidentValidateResponse:
+      type: object
+      description: Validation outcome payload
+      properties:
+        valid:
+          type: boolean
+          description: Indicates whether candidate payload passed all blocking validations
+          example: true
+        validation_result:
+          type: string
+          description: Overall validation result classification
+          enum:
+            - "PASSED"
+            - "FAILED"
+            - "PASSED_WITH_WARNINGS"
+          example: "PASSED"
+        schema_version:
+          type: string
+          description: Validation schema version applied to candidate payload
+          example: "2026-03"
+        geo_validation:
+          $ref: "#/components/schemas/GeoValidationResult"
+        warnings:
+          type: array
+          description: Non-blocking findings emitted during validation
+          items:
+            $ref: "#/components/schemas/ValidationWarning"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace id for validation request lifecycle
+          example: "6d2b66f5-ecdb-4e43-8bb3-a0e7f94a8ea1"
+      required:
+        - valid
+        - validation_result
+        - schema_version
+        - geo_validation
+        - trace_id
+    IncidentQueueItem:
+      type: object
+      description: Queue item representing an incident awaiting triage action
+      properties:
+        incident_id:
+          type: string
+          description: Canonical incident identifier
+          example: "inc-20260327-7a2d11c9"
+        queue_state:
+          type: string
+          description: Current queue processing state for triage workflow
+          enum:
+            - "PENDING_TRIAGE"
+            - "ASSIGNED"
+            - "HOLD"
+          example: "PENDING_TRIAGE"
+        priority:
+          $ref: "#/components/schemas/IncidentPriority"
+        severity_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Computed severity score used for queue ordering
+          example: 88
+        channel:
+          $ref: "#/components/schemas/IntakeChannel"
+        canonical_type:
+          $ref: "#/components/schemas/CanonicalIncidentType"
+        city:
+          type: string
+          description: Incident city used for queue filtering and jurisdiction checks
+          example: "San Francisco"
+        neighborhood:
+          type: string
+          description: Neighborhood label for local triage workload distribution
+          example: "SOMA"
+        reported_at:
+          type: string
+          format: date-time
+          description: Timestamp when incident was first reported upstream
+          example: "2026-03-27T16:22:41Z"
+        last_updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when queue item was last updated
+          example: "2026-03-27T16:22:44Z"
+      required:
+        - incident_id
+        - queue_state
+        - priority
+        - severity_score
+        - channel
+        - canonical_type
+        - city
+        - reported_at
+        - last_updated_at
+    PaginationMetadata:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page_size:
+          type: integer
+          description: Effective number of records requested for this page
+          example: 25
+        next_page_token:
+          type: string
+          description: Opaque token for retrieving the next page of results
+          example: "eyJvZmZzZXQiOjI1fQ=="
+        has_more:
+          type: boolean
+          description: Indicates whether additional pages are available
+          example: true
+      required:
+        - page_size
+        - has_more
+    IncidentQueueListResponse:
+      type: object
+      description: Paginated queue list response payload
+      properties:
+        items:
+          type: array
+          description: Queue items matching current list filters
+          items:
+            $ref: "#/components/schemas/IncidentQueueItem"
+        page:
+          $ref: "#/components/schemas/PaginationMetadata"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace id for queue listing request
+          example: "1aaf9df7-42ef-4e5e-b275-082af8a8d95a"
+      required:
+        - items
+        - page
+        - trace_id
+    IncidentPriorityPatchRequest:
+      type: object
+      description: Request payload for incident priority update
+      properties:
+        new_priority:
+          $ref: "#/components/schemas/IncidentPriority"
+        reason_code:
+          type: string
+          description: Policy reason code for priority change
+          enum:
+            - "SUPERVISOR_ESCALATION"
+            - "AUTOMATED_RESCORING"
+            - "FIELD_UPDATE"
+            - "FALSE_POSITIVE_DEMOTION"
+          example: "SUPERVISOR_ESCALATION"
+        note:
+          type: string
+          description: Optional operator note explaining context for priority change
+          example: "Caller update indicates active fire spread toward occupied structure"
+        changed_by:
+          type: string
+          description: Operator or service principal performing the priority update
+          example: "ops-supervisor-114"
+      required:
+        - new_priority
+        - reason_code
+        - changed_by
+    IncidentPriorityPatchResponse:
+      type: object
+      description: Response payload after incident priority change
+      properties:
+        incident_id:
+          type: string
+          description: Canonical incident identifier
+          example: "inc-20260327-5b4fe7a2"
+        previous_priority:
+          $ref: "#/components/schemas/IncidentPriority"
+        new_priority:
+          $ref: "#/components/schemas/IncidentPriority"
+        reason_code:
+          type: string
+          description: Applied reason code for priority change
+          example: "SUPERVISOR_ESCALATION"
+        changed_by:
+          type: string
+          description: Identity that performed the update
+          example: "ops-supervisor-114"
+        changed_at:
+          type: string
+          format: date-time
+          description: Timestamp when priority update was persisted
+          example: "2026-03-27T16:25:18Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace id for priority update workflow
+          example: "3c60a9d2-e0ba-42ba-8d6a-fd7e43c2e0a4"
+      required:
+        - incident_id
+        - previous_priority
+        - new_priority
+        - reason_code
+        - changed_by
+        - changed_at
+        - trace_id
+    IncidentEnrichmentModule:
+      type: string
+      description: Named enrichment pipeline module
+      enum:
+        - "GEO_CONTEXT"
+        - "CALLER_HISTORY"
+        - "INCIDENT_CLUSTERING"
+        - "INFRASTRUCTURE_CONTEXT"
+      example: "GEO_CONTEXT"
+    IncidentEnrichRequest:
+      type: object
+      description: Request payload for contextual incident enrichment
+      properties:
+        enrichment_modules:
+          type: array
+          description: Ordered enrichment modules to execute for this incident
+          items:
+            $ref: "#/components/schemas/IncidentEnrichmentModule"
+          example:
+            - "GEO_CONTEXT"
+            - "CALLER_HISTORY"
+        include_raw_signals:
+          type: boolean
+          description: Include raw feature values alongside summarized enrichment output
+          example: false
+        max_historical_events:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: Maximum number of historical incidents used in enrichment
+          example: 5
+        geofence:
+          type: string
+          description: Optional geofence hint for contextual lookups
+          example: "SF-DOWNTOWN"
+      required:
+        - enrichment_modules
+    IncidentEnrichmentContext:
+      type: object
+      description: Enrichment context generated for the incident
+      properties:
+        nearest_landmark:
+          type: string
+          description: Closest notable landmark to incident location
+          example: "San Francisco City Hall"
+        district:
+          type: string
+          description: Administrative district associated with incident coordinates
+          example: "District 6"
+        caller_reliability_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Probability-like confidence score for caller reliability model
+          example: 0.91
+        similar_incidents_24h:
+          type: integer
+          description: Number of similar incidents observed in past 24 hours nearby
+          example: 3
+        active_infrastructure_alerts:
+          type: array
+          description: Active infrastructure alerts relevant to this incident context
+          items:
+            type: string
+            description: Infrastructure alert code
+            example: "TRAFFIC_SIGNAL_OUTAGE"
+          example:
+            - "TRAFFIC_SIGNAL_OUTAGE"
+      required:
+        - nearest_landmark
+        - district
+        - caller_reliability_score
+        - similar_incidents_24h
+    IncidentEnrichResponse:
+      type: object
+      description: Response payload for incident enrichment execution
+      properties:
+        incident_id:
+          type: string
+          description: Canonical incident identifier
+          example: "inc-20260327-7a2d11c9"
+        enrichment_status:
+          type: string
+          description: Status of enrichment pipeline execution
+          enum:
+            - "COMPLETED"
+            - "PARTIAL"
+            - "FAILED"
+          example: "COMPLETED"
+        context:
+          $ref: "#/components/schemas/IncidentEnrichmentContext"
+        generated_at:
+          type: string
+          format: date-time
+          description: Timestamp when enrichment context was generated
+          example: "2026-03-27T16:26:04Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace id for enrichment execution lifecycle
+          example: "ea8a69b0-fad9-4dc8-91d9-b223b8fa91a7"
+      required:
+        - incident_id
+        - enrichment_status
+        - context
+        - generated_at
+        - trace_id
+    ChannelCapabilities:
+      type: object
+      description: Configured intake channel capability profile
+      properties:
+        channel:
+          $ref: "#/components/schemas/IntakeChannel"
+        enabled:
+          type: boolean
+          description: Indicates whether channel is currently active for intake
+          example: true
+        display_name:
+          type: string
+          description: Human-readable channel display name
+          example: "Public Safety 911"
+        supports_attachments:
+          type: boolean
+          description: Indicates whether channel payload supports media attachments
+          example: true
+        requires_caller_phone:
+          type: boolean
+          description: Indicates whether caller phone number is mandatory for channel
+          example: false
+        max_payload_kb:
+          type: integer
+          description: Maximum allowed payload size in kilobytes for channel requests
+          example: 512
+      required:
+        - channel
+        - enabled
+        - display_name
+        - supports_attachments
+        - requires_caller_phone
+        - max_payload_kb
+    ChannelListResponse:
+      type: object
+      description: Response payload listing configured intake channels
+      properties:
+        channels:
+          type: array
+          description: Active and inactive intake channel capability entries
+          items:
+            $ref: "#/components/schemas/ChannelCapabilities"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace id for channel listing request
+          example: "4fcb8372-df50-4e28-8c9a-283f669db8e8"
+      required:
+        - channels
+        - trace_id
+    IncidentDeduplicateRequest:
+      type: object
+      description: Request payload for incident deduplication merge operation
+      properties:
+        duplicate_incident_ids:
+          type: array
+          minItems: 1
+          description: List of incident IDs considered duplicates of the canonical incident
+          items:
+            type: string
+            description: Duplicate incident identifier
+            example: "inc-20260327-58cb7ae1"
+          example:
+            - "inc-20260327-58cb7ae1"
+            - "inc-20260327-94a6a721"
+        merge_strategy:
+          type: string
+          description: Strategy used to resolve field conflicts across duplicate reports
+          enum:
+            - "HIGHEST_CONFIDENCE_FIELDS"
+            - "MOST_RECENT_REPORT"
+            - "CANONICAL_SOURCE_PRIORITY"
+          example: "HIGHEST_CONFIDENCE_FIELDS"
+        preserve_channel_events:
+          type: boolean
+          description: Preserve per-channel event lineage after merge completion
+          example: true
+        initiated_by:
+          type: string
+          description: Identity of service or operator initiating deduplication
+          example: "dedupe-engine-v2"
+      required:
+        - duplicate_incident_ids
+        - merge_strategy
+        - preserve_channel_events
+        - initiated_by
+    IncidentDeduplicateResponse:
+      type: object
+      description: Result payload for deduplication and merge operation
+      properties:
+        canonical_incident_id:
+          type: string
+          description: Canonical incident id retained after merge
+          example: "inc-20260327-7a2d11c9"
+        merged_incident_ids:
+          type: array
+          description: Duplicate incident ids merged into canonical incident
+          items:
+            type: string
+            description: Merged duplicate incident id
+            example: "inc-20260327-58cb7ae1"
+        merge_strategy:
+          type: string
+          description: Effective merge strategy used during deduplication
+          example: "HIGHEST_CONFIDENCE_FIELDS"
+        merged_fields:
+          type: array
+          description: Canonical fields updated during merge operation
+          items:
+            type: string
+            description: Updated canonical field path
+            example: "incident.description"
+          example:
+            - "caller.phone_number"
+            - "incident.description"
+            - "location.neighborhood"
+        deduplication_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Confidence score that merged incidents represented same event
+          example: 0.96
+        merged_at:
+          type: string
+          format: date-time
+          description: Timestamp when deduplication merge completed
+          example: "2026-03-27T16:27:11Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Trace id for deduplication workflow
+          example: "6fce9010-31db-46ca-b4c7-0d909cb4348f"
+      required:
+        - canonical_incident_id
+        - merged_incident_ids
+        - merge_strategy
+        - merged_fields
+        - deduplication_score
+        - merged_at
+        - trace_id
+    ErrorDetail:
+      type: object
+      description: Structured field-level validation or processing error detail
+      properties:
+        field:
+          type: string
+          description: Request field path associated with the error detail
+          example: "location.latitude"
+        reason:
+          type: string
+          description: Human-readable reason for the field-level error
+          example: "Must be within configured San Francisco geofence bounds"
+      required:
+        - field
+        - reason
+    ErrorEnvelope:
+      type: object
+      description: Standard error envelope for API error responses
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code for programmatic handling
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: Human-readable error summary
+          example: "The request body contains invalid fields."
+        details:
+          type: array
+          description: Optional detailed error list for field-level issues
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+        request_id:
+          type: string
+          description: Request identifier for support and troubleshooting correlation
+          example: "req-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      required:
+        - code
+        - message
+        - request_id
+    Error:
+      type: object
+      description: API error response wrapper
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorEnvelope"
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token issued by Verizon Identity Platform
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for trusted service-to-service integrations
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "VALIDATION_ERROR"
+              message: "The request body contains invalid fields."
+              details:
+                - field: "location.latitude"
+                  reason: "Must be within configured San Francisco geofence bounds"
+              request_id: "req-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "UNAUTHORIZED"
+              message: "Invalid or expired authentication token."
+              request_id: "req-b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "FORBIDDEN"
+              message: "You do not have the required permissions for this action."
+              request_id: "req-c3d4e5f6-a7b8-9012-cdef-123456789012"
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "NOT_FOUND"
+              message: "The requested resource was not found."
+              request_id: "req-d4e5f6a7-b8c9-0123-defa-234567890123"
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "CONFLICT"
+              message: "The resource has been modified by another request."
+              request_id: "req-a1b2c3d4-e5f6-0123-abcd-ef1234560000"
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "UNPROCESSABLE_ENTITY"
+              message: "The request could not be processed due to business rule violations."
+              details:
+                - field: "duplicate_incident_ids"
+                  reason: "At least one duplicate incident id must be provided"
+              request_id: "req-b2c3d4e5-f6a7-0123-bcde-f12345670000"
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "RATE_LIMIT_EXCEEDED"
+              message: "You have exceeded the rate limit. Please retry after 30 seconds."
+              request_id: "req-e5f6a7b8-c9d0-1234-efab-345678901234"
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred. Please try again later."
+              request_id: "req-f6a7b8c9-d0e1-2345-fabc-456789012345"

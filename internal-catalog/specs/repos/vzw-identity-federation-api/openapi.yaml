@@ -1,0 +1,1276 @@
+openapi: 3.0.3
+info:
+  title: VZW Identity Federation API
+  description: >-
+    Provides enterprise identity federation capabilities for Verizon partner
+    integrations. The API exchanges external identity provider assertions for
+    Verizon-issued OAuth tokens, manages trusted API clients, and exposes
+    signing key metadata used by relying parties to validate token signatures.
+    It is designed for service-to-service trust mediation, delegated API access,
+    and controlled lifecycle management of federated client credentials.
+  version: 1.0.0
+  contact:
+    name: Verizon Identity Platform API Team
+    email: identity-api-team@verizon.com
+    url: https://developer.verizon.com/identity
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/network-api-license
+  x-verizon-catalog-id: vzw-identity-federation-api
+  x-verizon-domain: identity
+servers:
+  - url: https://vzw-identity-federation-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-identity-federation-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Token Exchange
+    description: Exchange external enterprise assertions for Verizon OAuth tokens
+  - name: Client Management
+    description: Register and maintain trusted OAuth clients and redirect policy
+  - name: Key Management
+    description: Rotate signing keys and publish JWKS metadata for verifiers
+paths:
+  /v1/token/exchange:
+    post:
+      operationId: exchangeEnterpriseToken
+      summary: Exchange enterprise SSO assertion for Verizon access token
+      description: >-
+        Exchanges a trusted enterprise identity assertion for a Verizon-issued
+        OAuth2 token. The incoming assertion can be an OIDC ID token or SAML2
+        bearer assertion depending on federated client policy. The token
+        exchange enforces audience binding, issuer trust, and client policy
+        constraints before minting an access token for downstream Verizon APIs.
+      tags:
+        - Token Exchange
+      security: []
+      requestBody:
+        required: true
+        description: OAuth2 token exchange request compliant with RFC 8693 profile
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenExchangeRequest'
+            examples:
+              oidc_id_token:
+                summary: Exchange OIDC ID token for access token
+                value:
+                  grant_type: urn:ietf:params:oauth:grant-type:token-exchange
+                  subject_token_type: urn:ietf:params:oauth:token-type:id_token
+                  subject_token: eyJraWQiOiJpZHAta2lkLTIwMjYiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lkcC5wYXJ0bmVyLmNvbSIsImF1ZCI6InZ6dy1pZGVudGl0eS1mZWRlcmF0aW9uLWFwaSIsInN1YiI6InVzZXItNzQyIn0.signature
+                  requested_token_type: urn:ietf:params:oauth:token-type:access_token
+                  audience: vzw-network-operations-api
+                  scope: network.read network.location
+                  client_id: acme-incident-console
+                  trace_id: 8f7b2f9f-1220-4e20-bf0d-84e6d5d8cb69
+              saml_assertion:
+                summary: Exchange SAML2 bearer assertion
+                value:
+                  grant_type: urn:ietf:params:oauth:grant-type:token-exchange
+                  subject_token_type: urn:ietf:params:oauth:token-type:saml2
+                  subject_token: PHNhbWxwOlJlc3BvbnNlIElEPSJfN2I2IiBWZXJzaW9uPSIyLjAiIElzc3VlSW5zdGFudD0iMjAyNi0wMy0xNFQxMjo1NDo0NloiPjxzYW1sOklzc3Vlcj5odHRwczovL2lkcC5wYXJ0bmVyLmNvbS88L3NhbWw6SXNzdWVyPjwvc2FtbHA6UmVzcG9uc2U+
+                  requested_token_type: urn:ietf:params:oauth:token-type:access_token
+                  audience: vzw-edge-monitor-api
+                  scope: monitor.read
+                  client_id: acme-observability-agent
+                  trace_id: 6605ed2f-0a5c-4d0a-ab16-09f96df63d90
+      responses:
+        '200':
+          description: Token exchange successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenExchangeResponse'
+              examples:
+                access_token_issued:
+                  summary: Access token with key id for verifier pinning
+                  value:
+                    access_token: eyJraWQiOiJ2encta2lkLTIwMjYtMDMtMjciLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lkZW50aXR5LnZlcml6b24uY29tIiwiYXVkIjoidnp3LW5ldHdvcmstb3BlcmF0aW9ucy1hcGkiLCJzY29wZSI6Im5ldHdvcmsucmVhZCBuZXR3b3JrLmxvY2F0aW9uIn0.signature
+                    token_type: Bearer
+                    expires_in: 900
+                    issued_token_type: urn:ietf:params:oauth:token-type:access_token
+                    scope: network.read network.location
+                    client_id: acme-incident-console
+                    audience: vzw-network-operations-api
+                    jwk_kid: vzw-kid-2026-03-27
+                    trace_id: 8f7b2f9f-1220-4e20-bf0d-84e6d5d8cb69
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/clients:
+    post:
+      operationId: createFederatedClient
+      summary: Register federated OAuth client
+      description: >-
+        Creates a trusted client registration for enterprise federation. The
+        client metadata controls allowed grant types, redirect URI policy,
+        token lifetime limits, and issuer trust boundaries used during token
+        exchange. Registered clients are scoped to a tenant and can be managed
+        later through update operations.
+      tags:
+        - Client Management
+      requestBody:
+        required: true
+        description: Federated client registration payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientCreateRequest'
+            examples:
+              service_client:
+                summary: Service client using JWT assertion auth
+                value:
+                  name: Acme Incident Console
+                  tenant_id: ent-acme-prod
+                  redirect_uris:
+                    - https://console.acme.example.com/auth/callback
+                    - https://console.acme.example.com/oauth/oidc
+                  grant_types:
+                    - client_credentials
+                    - urn:ietf:params:oauth:grant-type:token-exchange
+                  token_endpoint_auth_method: private_key_jwt
+                  issuer: https://idp.partner.com
+                  audience_allowlist:
+                    - vzw-network-operations-api
+                    - vzw-edge-monitor-api
+                  scopes:
+                    - network.read
+                    - network.location
+                    - monitor.read
+                  jwks_uri: https://console.acme.example.com/.well-known/jwks.json
+                  access_token_ttl_seconds: 900
+                  refresh_token_ttl_seconds: 0
+      responses:
+        '201':
+          description: Federated client created
+          headers:
+            Location:
+              description: URI of the newly created client resource
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientResponse'
+              examples:
+                created_client:
+                  summary: Newly registered client metadata
+                  value:
+                    client_id: cli_7f2f10f8f3a4
+                    name: Acme Incident Console
+                    tenant_id: ent-acme-prod
+                    status: ACTIVE
+                    redirect_uris:
+                      - https://console.acme.example.com/auth/callback
+                      - https://console.acme.example.com/oauth/oidc
+                    grant_types:
+                      - client_credentials
+                      - urn:ietf:params:oauth:grant-type:token-exchange
+                    token_endpoint_auth_method: private_key_jwt
+                    issuer: https://idp.partner.com
+                    audience_allowlist:
+                      - vzw-network-operations-api
+                      - vzw-edge-monitor-api
+                    scopes:
+                      - network.read
+                      - network.location
+                      - monitor.read
+                    jwks_uri: https://console.acme.example.com/.well-known/jwks.json
+                    access_token_ttl_seconds: 900
+                    refresh_token_ttl_seconds: 0
+                    created_at: '2026-03-27T10:24:30Z'
+                    updated_at: '2026-03-27T10:24:30Z'
+                    created_by: iam-admin@acme.example.com
+                    updated_by: iam-admin@acme.example.com
+                    trace_id: 6ea8921c-45b8-46dc-9ad1-3bb4caa16b0b
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/clients/{clientId}:
+    get:
+      operationId: getFederatedClient
+      summary: Get federated client details
+      description: >-
+        Retrieves the current configuration and trust policy of a federated
+        OAuth client registration. Use this endpoint to verify redirect URI
+        allowlists, auth method settings, active key references, and status
+        prior to operational rollout.
+      tags:
+        - Client Management
+      parameters:
+        - $ref: '#/components/parameters/ClientIdPath'
+      responses:
+        '200':
+          description: Federated client retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientResponse'
+              examples:
+                active_client:
+                  summary: Existing active client registration
+                  value:
+                    client_id: cli_7f2f10f8f3a4
+                    name: Acme Incident Console
+                    tenant_id: ent-acme-prod
+                    status: ACTIVE
+                    redirect_uris:
+                      - https://console.acme.example.com/auth/callback
+                      - https://console.acme.example.com/oauth/oidc
+                    grant_types:
+                      - client_credentials
+                      - urn:ietf:params:oauth:grant-type:token-exchange
+                    token_endpoint_auth_method: private_key_jwt
+                    issuer: https://idp.partner.com
+                    audience_allowlist:
+                      - vzw-network-operations-api
+                      - vzw-edge-monitor-api
+                    scopes:
+                      - network.read
+                      - network.location
+                      - monitor.read
+                    jwks_uri: https://console.acme.example.com/.well-known/jwks.json
+                    jwk_kid: acme-kid-2026-q1
+                    access_token_ttl_seconds: 900
+                    refresh_token_ttl_seconds: 0
+                    created_at: '2026-03-27T10:24:30Z'
+                    updated_at: '2026-03-27T14:07:05Z'
+                    created_by: iam-admin@acme.example.com
+                    updated_by: secops@acme.example.com
+                    trace_id: 2f3564be-8813-46fd-8241-16f0f7de1151
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateFederatedClient
+      summary: Update federated client policy
+      description: >-
+        Applies partial updates to a federated client registration. Only fields
+        included in the request are modified. Policy updates are audited and may
+        trigger key validation checks when authentication metadata changes.
+      tags:
+        - Client Management
+      parameters:
+        - $ref: '#/components/parameters/ClientIdPath'
+      requestBody:
+        required: true
+        description: Partial federated client update payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientPatchRequest'
+            examples:
+              rotate_redirect_and_scope:
+                summary: Add callback URI and adjust scopes
+                value:
+                  redirect_uris:
+                    - https://console.acme.example.com/auth/callback
+                    - https://console.acme.example.com/oauth/oidc
+                    - https://console.acme.example.com/oauth/incident-callback
+                  scopes:
+                    - network.read
+                    - network.location
+                  access_token_ttl_seconds: 600
+                  status: ACTIVE
+                  trace_id: dccf4d4f-8b83-4d2e-a0fc-6f13b8dcb380
+      responses:
+        '200':
+          description: Federated client updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientResponse'
+              examples:
+                updated_client:
+                  summary: Updated client metadata
+                  value:
+                    client_id: cli_7f2f10f8f3a4
+                    name: Acme Incident Console
+                    tenant_id: ent-acme-prod
+                    status: ACTIVE
+                    redirect_uris:
+                      - https://console.acme.example.com/auth/callback
+                      - https://console.acme.example.com/oauth/oidc
+                      - https://console.acme.example.com/oauth/incident-callback
+                    grant_types:
+                      - client_credentials
+                      - urn:ietf:params:oauth:grant-type:token-exchange
+                    token_endpoint_auth_method: private_key_jwt
+                    issuer: https://idp.partner.com
+                    audience_allowlist:
+                      - vzw-network-operations-api
+                      - vzw-edge-monitor-api
+                    scopes:
+                      - network.read
+                      - network.location
+                    jwks_uri: https://console.acme.example.com/.well-known/jwks.json
+                    jwk_kid: acme-kid-2026-q2
+                    access_token_ttl_seconds: 600
+                    refresh_token_ttl_seconds: 0
+                    created_at: '2026-03-27T10:24:30Z'
+                    updated_at: '2026-03-27T15:16:44Z'
+                    created_by: iam-admin@acme.example.com
+                    updated_by: secops@acme.example.com
+                    trace_id: dccf4d4f-8b83-4d2e-a0fc-6f13b8dcb380
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/keys/rotate:
+    post:
+      operationId: rotateSigningKey
+      summary: Rotate federation signing keys
+      description: >-
+        Rotates the active Verizon signing key used for token issuance by the
+        identity federation service. Rotation creates a new active key id while
+        preserving prior keys in JWKS until their deprecation window expires.
+        This endpoint is restricted to security administrators.
+      tags:
+        - Key Management
+      requestBody:
+        required: true
+        description: Signing key rotation request payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeyRotateRequest'
+            examples:
+              standard_rotation:
+                summary: Planned key rotation with overlap period
+                value:
+                  reason: Scheduled quarterly cryptographic hygiene rotation
+                  algorithm: RS256
+                  overlap_seconds: 259200
+                  notify_webhook: https://secops.acme.example.com/hooks/vzw-key-events
+                  requested_by: secops@verizon.com
+                  trace_id: 51d242c5-cdc4-4f08-969a-50d35623f8b2
+      responses:
+        '202':
+          description: Key rotation accepted and processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotateResponse'
+              examples:
+                rotation_accepted:
+                  summary: Key rotation job accepted
+                  value:
+                    rotation_id: rot_4f22b0d0d8d1
+                    status: ACCEPTED
+                    previous_jwk_kid: vzw-kid-2026-03-27
+                    new_jwk_kid: vzw-kid-2026-06-30
+                    effective_at: '2026-06-30T00:00:00Z'
+                    overlap_seconds: 259200
+                    trace_id: 51d242c5-cdc4-4f08-969a-50d35623f8b2
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/.well-known/jwks.json:
+    get:
+      operationId: getJsonWebKeySet
+      summary: Get JWKS document for token signature verification
+      description: >-
+        Returns the JSON Web Key Set used by Verizon Identity Federation for
+        signing JWT access tokens. Relying parties should cache this response
+        and refresh based on cache-control policy or key id misses.
+      tags:
+        - Key Management
+      security: []
+      responses:
+        '200':
+          description: Current JWKS published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JwksResponse'
+              examples:
+                active_and_grace_keys:
+                  summary: Active key and prior key during overlap period
+                  value:
+                    keys:
+                      - kty: RSA
+                        use: sig
+                        alg: RS256
+                        kid: vzw-kid-2026-06-30
+                        n: sXchhA5KrX0liP-6kP7K7C8w6mvtYx58vEtA0M02fM2aEwCC4N64KDs5mww9wv3OmjTTjzE8gca1W4C4pcN2lQYIn8QjZDxGOQuD4dV3YFT6nYq5qA7JpFIihjz3Y0jB8GXrRynLCrMifVvuz1hdG8gkXIvVpWl0YzKMSQ3p8Zb7QkGx7Uh4w2gI2vTgNqK4Zpl7_M-S8q5HupCk3-2mH8C9ek3L5YY8sjkK8fH3qfRk4jZ_sV0I8SXw0WfQ7vCI6gUz5IgaLhXvNn7rP4Jlz0f5Yt6S0
+                        e: AQAB
+                        x5t#S256: NdShW4Nq_Dn3m1-8U2VQPT2fNQzGw3X69B1N8a5q7lM
+                      - kty: RSA
+                        use: sig
+                        alg: RS256
+                        kid: vzw-kid-2026-03-27
+                        n: pR95aX7h3NbA3a5L9qP5QonbW24LWs2S3yME2D7M8zP48rK9rSfhA8Xj0fJxYj1XQaf8uCuFfSda4AN9ryPOIuU9hGxU2hFGkVgo6s3kviJuBcaZaI6P4nRrX0xA8m7l9s2vQYScV8g3wYfB8dQ8h6K3vE9eW9iE2P3U6W7Y8xA9mL0vQ3bR2nS5tU6wP7eX8zY9A0bB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uV1wX2yZ3
+                        e: AQAB
+                    issuer: https://identity.verizon.com
+                    published_at: '2026-06-30T00:00:00Z'
+                    trace_id: 9d6fd0fd-b4f9-4e3a-b094-d983b95f62a8
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  parameters:
+    ClientIdPath:
+      name: clientId
+      in: path
+      required: true
+      description: Federated client identifier generated at client registration
+      schema:
+        type: string
+        pattern: '^cli_[A-Za-z0-9]{12,32}$'
+        example: cli_7f2f10f8f3a4
+  schemas:
+    TokenExchangeRequest:
+      type: object
+      description: Request payload for enterprise token exchange
+      properties:
+        grant_type:
+          type: string
+          description: OAuth2 grant type for token exchange
+          enum:
+            - urn:ietf:params:oauth:grant-type:token-exchange
+          example: urn:ietf:params:oauth:grant-type:token-exchange
+        subject_token_type:
+          type: string
+          description: Token type of the incoming enterprise assertion
+          enum:
+            - urn:ietf:params:oauth:token-type:id_token
+            - urn:ietf:params:oauth:token-type:saml2
+          example: urn:ietf:params:oauth:token-type:id_token
+        subject_token:
+          type: string
+          description: Signed enterprise assertion (JWT or base64 SAML)
+          minLength: 32
+          example: eyJhbGciOiJSUzI1NiIsImtpZCI6ImlkcC1raWQtMjAyNiJ9.eyJpc3MiOiJodHRwczovL2lkcC5wYXJ0bmVyLmNvbSJ9.signature
+        requested_token_type:
+          type: string
+          description: Desired token type to issue
+          enum:
+            - urn:ietf:params:oauth:token-type:access_token
+          example: urn:ietf:params:oauth:token-type:access_token
+        audience:
+          type: string
+          description: Identifier of the target Verizon API audience
+          minLength: 3
+          maxLength: 128
+          example: vzw-network-operations-api
+        scope:
+          type: string
+          description: Space-delimited scopes requested for issued token
+          example: network.read network.location
+        client_id:
+          type: string
+          description: Registered federated client identifier
+          pattern: '^([A-Za-z0-9_-]{3,64}|cli_[A-Za-z0-9]{12,32})$'
+          example: acme-incident-console
+        actor_token:
+          type: string
+          description: Optional delegated actor token for chained exchanges
+          minLength: 32
+          example: eyJraWQiOiJhY3Rvci1raWQtMSJ9.eyJzdWIiOiJzdmMtaWRlbnRpdHkifQ.signature
+        actor_token_type:
+          type: string
+          description: Token type of actor_token when present
+          enum:
+            - urn:ietf:params:oauth:token-type:jwt
+          example: urn:ietf:params:oauth:token-type:jwt
+        trace_id:
+          type: string
+          format: uuid
+          description: Correlation id propagated to audit and observability systems
+          example: 8f7b2f9f-1220-4e20-bf0d-84e6d5d8cb69
+      required:
+        - grant_type
+        - subject_token_type
+        - subject_token
+        - requested_token_type
+        - audience
+        - client_id
+    TokenExchangeResponse:
+      type: object
+      description: OAuth2 token exchange response payload
+      properties:
+        access_token:
+          type: string
+          description: Verizon-issued OAuth2 access token
+          minLength: 32
+          example: eyJraWQiOiJ2encta2lkLTIwMjYtMDMtMjciLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2lkZW50aXR5LnZlcml6b24uY29tIn0.signature
+        token_type:
+          type: string
+          description: Token type for Authorization header
+          enum:
+            - Bearer
+          example: Bearer
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds
+          minimum: 60
+          maximum: 3600
+          example: 900
+        issued_token_type:
+          type: string
+          description: Type of token issued by the server
+          enum:
+            - urn:ietf:params:oauth:token-type:access_token
+          example: urn:ietf:params:oauth:token-type:access_token
+        scope:
+          type: string
+          description: Granted scopes after policy and consent evaluation
+          example: network.read network.location
+        client_id:
+          type: string
+          description: Client registration id bound to issued token
+          example: acme-incident-console
+        audience:
+          type: string
+          description: Audience claim embedded in issued token
+          example: vzw-network-operations-api
+        jwk_kid:
+          type: string
+          description: Key id used to sign the returned access token
+          example: vzw-kid-2026-03-27
+        trace_id:
+          type: string
+          format: uuid
+          description: Correlation id for troubleshooting this token issuance
+          example: 8f7b2f9f-1220-4e20-bf0d-84e6d5d8cb69
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - issued_token_type
+        - client_id
+        - audience
+        - jwk_kid
+    ClientCreateRequest:
+      type: object
+      description: Create request for a federated OAuth client
+      properties:
+        name:
+          type: string
+          description: Human-readable client name used in administration consoles
+          minLength: 3
+          maxLength: 120
+          example: Acme Incident Console
+        tenant_id:
+          type: string
+          description: Partner enterprise tenant identifier
+          pattern: '^ent-[a-z0-9-]{3,48}$'
+          example: ent-acme-prod
+        redirect_uris:
+          type: array
+          description: Allowed redirect URIs for browser-based OAuth flows
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            format: uri
+          example:
+            - https://console.acme.example.com/auth/callback
+            - https://console.acme.example.com/oauth/oidc
+        grant_types:
+          type: array
+          description: OAuth2 grant types enabled for the client
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - authorization_code
+              - refresh_token
+              - client_credentials
+              - urn:ietf:params:oauth:grant-type:token-exchange
+          example:
+            - client_credentials
+            - urn:ietf:params:oauth:grant-type:token-exchange
+        token_endpoint_auth_method:
+          type: string
+          description: Client authentication method at token endpoint
+          enum:
+            - client_secret_basic
+            - client_secret_post
+            - private_key_jwt
+            - tls_client_auth
+          example: private_key_jwt
+        issuer:
+          type: string
+          format: uri
+          description: Trusted enterprise IdP issuer URI for subject assertions
+          example: https://idp.partner.com
+        audience_allowlist:
+          type: array
+          description: Verizon API audiences allowed for token exchange
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 3
+            maxLength: 128
+          example:
+            - vzw-network-operations-api
+            - vzw-edge-monitor-api
+        scopes:
+          type: array
+          description: Scopes this client can request
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 3
+            maxLength: 80
+          example:
+            - network.read
+            - network.location
+            - monitor.read
+        jwks_uri:
+          type: string
+          format: uri
+          description: URI of client public keys for private_key_jwt validation
+          example: https://console.acme.example.com/.well-known/jwks.json
+        access_token_ttl_seconds:
+          type: integer
+          description: Maximum access token lifetime for this client
+          minimum: 60
+          maximum: 3600
+          example: 900
+        refresh_token_ttl_seconds:
+          type: integer
+          description: Refresh token lifetime. Use 0 for disabled refresh tokens
+          minimum: 0
+          maximum: 2592000
+          example: 0
+      required:
+        - name
+        - tenant_id
+        - redirect_uris
+        - grant_types
+        - token_endpoint_auth_method
+        - issuer
+        - audience_allowlist
+        - scopes
+        - access_token_ttl_seconds
+        - refresh_token_ttl_seconds
+    ClientPatchRequest:
+      type: object
+      description: Patch request for partial federated client updates
+      properties:
+        name:
+          type: string
+          description: Updated client display name
+          minLength: 3
+          maxLength: 120
+          example: Acme Incident Console - EMEA
+        redirect_uris:
+          type: array
+          description: Replacement redirect URI allowlist
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            format: uri
+          example:
+            - https://console.acme.example.com/auth/callback
+            - https://console.acme.example.com/oauth/incident-callback
+        grant_types:
+          type: array
+          description: Replacement grant type list
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - authorization_code
+              - refresh_token
+              - client_credentials
+              - urn:ietf:params:oauth:grant-type:token-exchange
+          example:
+            - client_credentials
+            - urn:ietf:params:oauth:grant-type:token-exchange
+        token_endpoint_auth_method:
+          type: string
+          description: Updated token endpoint auth method
+          enum:
+            - client_secret_basic
+            - client_secret_post
+            - private_key_jwt
+            - tls_client_auth
+          example: private_key_jwt
+        audience_allowlist:
+          type: array
+          description: Replacement list of target audiences
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+          example:
+            - vzw-network-operations-api
+            - vzw-edge-monitor-api
+        scopes:
+          type: array
+          description: Replacement list of granted scopes
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+          example:
+            - network.read
+            - network.location
+        jwks_uri:
+          type: string
+          format: uri
+          description: Updated URI containing client public signing keys
+          example: https://console.acme.example.com/.well-known/jwks.json
+        jwk_kid:
+          type: string
+          description: Preferred active key id expected in client assertions
+          minLength: 3
+          maxLength: 128
+          example: acme-kid-2026-q2
+        access_token_ttl_seconds:
+          type: integer
+          description: New access token TTL in seconds
+          minimum: 60
+          maximum: 3600
+          example: 600
+        refresh_token_ttl_seconds:
+          type: integer
+          description: New refresh token TTL in seconds, 0 to disable
+          minimum: 0
+          maximum: 2592000
+          example: 0
+        status:
+          type: string
+          description: Operational status of the client registration
+          enum:
+            - ACTIVE
+            - DISABLED
+            - SUSPENDED
+          example: ACTIVE
+        trace_id:
+          type: string
+          format: uuid
+          description: Correlation id for policy update workflows
+          example: dccf4d4f-8b83-4d2e-a0fc-6f13b8dcb380
+      additionalProperties: false
+    ClientResponse:
+      type: object
+      description: Federated client representation
+      properties:
+        client_id:
+          type: string
+          description: Immutable federated client identifier
+          example: cli_7f2f10f8f3a4
+        name:
+          type: string
+          description: Human-readable client name
+          example: Acme Incident Console
+        tenant_id:
+          type: string
+          description: Partner enterprise tenant identifier
+          example: ent-acme-prod
+        status:
+          type: string
+          description: Current lifecycle status of the client registration
+          enum:
+            - ACTIVE
+            - DISABLED
+            - SUSPENDED
+            - DECOMMISSIONED
+          example: ACTIVE
+        redirect_uris:
+          type: array
+          description: Allowed redirect URIs
+          items:
+            type: string
+            format: uri
+          example:
+            - https://console.acme.example.com/auth/callback
+            - https://console.acme.example.com/oauth/oidc
+        grant_types:
+          type: array
+          description: Enabled OAuth2 grant types
+          items:
+            type: string
+          example:
+            - client_credentials
+            - urn:ietf:params:oauth:grant-type:token-exchange
+        token_endpoint_auth_method:
+          type: string
+          description: Active token endpoint auth method
+          example: private_key_jwt
+        issuer:
+          type: string
+          format: uri
+          description: Federated issuer bound to this client
+          example: https://idp.partner.com
+        audience_allowlist:
+          type: array
+          description: Allowed target API audiences
+          items:
+            type: string
+          example:
+            - vzw-network-operations-api
+            - vzw-edge-monitor-api
+        scopes:
+          type: array
+          description: Scopes available to this client
+          items:
+            type: string
+          example:
+            - network.read
+            - network.location
+        jwks_uri:
+          type: string
+          format: uri
+          description: URI to retrieve client JWKs
+          example: https://console.acme.example.com/.well-known/jwks.json
+        jwk_kid:
+          type: string
+          description: Currently selected client key identifier
+          example: acme-kid-2026-q2
+        access_token_ttl_seconds:
+          type: integer
+          description: Effective access token TTL
+          example: 600
+        refresh_token_ttl_seconds:
+          type: integer
+          description: Effective refresh token TTL
+          example: 0
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the client was created
+          example: '2026-03-27T10:24:30Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp of the most recent update
+          example: '2026-03-27T15:16:44Z'
+        created_by:
+          type: string
+          description: User or service that created the client
+          example: iam-admin@acme.example.com
+        updated_by:
+          type: string
+          description: User or service that most recently updated the client
+          example: secops@acme.example.com
+        trace_id:
+          type: string
+          format: uuid
+          description: Correlation id for the returned operation
+          example: dccf4d4f-8b83-4d2e-a0fc-6f13b8dcb380
+      required:
+        - client_id
+        - name
+        - tenant_id
+        - status
+        - redirect_uris
+        - grant_types
+        - token_endpoint_auth_method
+        - issuer
+        - audience_allowlist
+        - scopes
+        - access_token_ttl_seconds
+        - refresh_token_ttl_seconds
+        - created_at
+        - updated_at
+    KeyRotateRequest:
+      type: object
+      description: Request body for initiating a signing key rotation
+      properties:
+        reason:
+          type: string
+          description: Operational reason captured in security audit logs
+          minLength: 8
+          maxLength: 300
+          example: Scheduled quarterly cryptographic hygiene rotation
+        algorithm:
+          type: string
+          description: Signature algorithm for newly generated key pair
+          enum:
+            - RS256
+            - ES256
+          example: RS256
+        overlap_seconds:
+          type: integer
+          description: Grace period where previous signing key remains in JWKS
+          minimum: 300
+          maximum: 1209600
+          example: 259200
+        notify_webhook:
+          type: string
+          format: uri
+          description: Optional webhook notified when key state transitions occur
+          example: https://secops.acme.example.com/hooks/vzw-key-events
+        requested_by:
+          type: string
+          description: Principal requesting key rotation
+          minLength: 3
+          maxLength: 120
+          example: secops@verizon.com
+        trace_id:
+          type: string
+          format: uuid
+          description: Correlation id for key operation audit chain
+          example: 51d242c5-cdc4-4f08-969a-50d35623f8b2
+      required:
+        - reason
+        - algorithm
+        - overlap_seconds
+        - requested_by
+    KeyRotateResponse:
+      type: object
+      description: Key rotation acceptance response
+      properties:
+        rotation_id:
+          type: string
+          description: Rotation job identifier
+          pattern: '^rot_[A-Za-z0-9]{10,24}$'
+          example: rot_4f22b0d0d8d1
+        status:
+          type: string
+          description: Current status of key rotation workflow
+          enum:
+            - ACCEPTED
+            - IN_PROGRESS
+            - COMPLETE
+            - FAILED
+          example: ACCEPTED
+        previous_jwk_kid:
+          type: string
+          description: Previously active signing key id
+          example: vzw-kid-2026-03-27
+        new_jwk_kid:
+          type: string
+          description: New signing key id to become active
+          example: vzw-kid-2026-06-30
+        effective_at:
+          type: string
+          format: date-time
+          description: Scheduled activation timestamp for new key
+          example: '2026-06-30T00:00:00Z'
+        overlap_seconds:
+          type: integer
+          description: Grace interval where both old and new keys are published
+          example: 259200
+        trace_id:
+          type: string
+          format: uuid
+          description: Correlation id for the key rotation workflow
+          example: 51d242c5-cdc4-4f08-969a-50d35623f8b2
+      required:
+        - rotation_id
+        - status
+        - previous_jwk_kid
+        - new_jwk_kid
+        - effective_at
+        - overlap_seconds
+    JwksResponse:
+      type: object
+      description: JSON Web Key Set payload for Verizon token verification
+      properties:
+        keys:
+          type: array
+          description: Collection of JWKs currently valid for signature verification
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Jwk'
+        issuer:
+          type: string
+          format: uri
+          description: JWT issuer represented by this key set
+          example: https://identity.verizon.com
+        published_at:
+          type: string
+          format: date-time
+          description: Timestamp when this JWKS document was generated
+          example: '2026-06-30T00:00:00Z'
+        trace_id:
+          type: string
+          format: uuid
+          description: Correlation id for edge response tracing
+          example: 9d6fd0fd-b4f9-4e3a-b094-d983b95f62a8
+      required:
+        - keys
+        - issuer
+        - published_at
+    Jwk:
+      type: object
+      description: JSON Web Key element for signature verification
+      properties:
+        kty:
+          type: string
+          description: Key type
+          enum:
+            - RSA
+            - EC
+          example: RSA
+        use:
+          type: string
+          description: Intended key usage
+          enum:
+            - sig
+          example: sig
+        alg:
+          type: string
+          description: JWS algorithm supported by this key
+          enum:
+            - RS256
+            - ES256
+          example: RS256
+        kid:
+          type: string
+          description: Key id referenced by JWT header
+          minLength: 3
+          maxLength: 128
+          example: vzw-kid-2026-06-30
+        n:
+          type: string
+          description: RSA modulus in base64url format
+          example: sXchhA5KrX0liP-6kP7K7C8w6mvtYx58vEtA0M02fM2aEwCC4N64KDs5mww9wv3OmjTTjzE8gca1W4C4pcN2lQYIn8QjZDxGOQuD4dV3YFT6nYq5qA7JpFIihjz3Y0jB8GXrRynLCrMifVvuz1hdG8gkXIvVpWl0YzKMSQ3p8Zb7QkGx7Uh4w2gI2vTgNqK4Zpl7_M-S8q5HupCk3-2mH8C9ek3L5YY8sjkK8fH3qfRk4jZ_sV0I8SXw0WfQ7vCI6gUz5IgaLhXvNn7rP4Jlz0f5Yt6S0
+        e:
+          type: string
+          description: RSA public exponent in base64url format
+          example: AQAB
+        x:
+          type: string
+          description: Elliptic curve x coordinate for EC keys
+          example: f83OJ3D2xF4YVf6j7l2M9uA2M6hWz0PO6nD7x8kP4q0
+        y:
+          type: string
+          description: Elliptic curve y coordinate for EC keys
+          example: x_FEzRu9x0Xv4fH6uA4A1nR3X9R1K2gV2fM8mY8v6aQ
+        crv:
+          type: string
+          description: Named curve for EC keys
+          enum:
+            - P-256
+          example: P-256
+        x5t#S256:
+          type: string
+          description: Base64url SHA-256 thumbprint of x509 certificate
+          example: NdShW4Nq_Dn3m1-8U2VQPT2fNQzGw3X69B1N8a5q7lM
+      required:
+        - kty
+        - use
+        - alg
+        - kid
+    Error:
+      type: object
+      description: Standard error envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error description
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Optional field or policy-specific errors
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: Request field associated with the error
+                    example: redirect_uris[0]
+                  reason:
+                    type: string
+                    description: Detailed reason for this error entry
+                    example: URI must use https scheme
+            request_id:
+              type: string
+              description: Request identifier for support and traceability
+              format: uuid
+              example: e74d4f8f-6f1d-4ca6-b949-11f0d0f7c4b0
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: OAuth2 bearer token issued by Verizon Identity Federation
+    OAuth2:
+      type: oauth2
+      description: OAuth2 support for federated client and token exchange flows
+      flows:
+        clientCredentials:
+          tokenUrl: https://identity.verizon.com/oauth2/token
+          scopes:
+            identity.clients.read: Read federated client metadata
+            identity.clients.write: Create and update federated clients
+            identity.keys.rotate: Trigger key rotation workflows
+            identity.token.exchange: Perform enterprise token exchange
+        authorizationCode:
+          authorizationUrl: https://identity.verizon.com/oauth2/authorize
+          tokenUrl: https://identity.verizon.com/oauth2/token
+          scopes:
+            identity.clients.read: Read federated client metadata
+            identity.clients.write: Create and update federated clients
+  responses:
+    '400':
+      description: Bad Request — Malformed request payload or invalid parameter format.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: grant_type
+                  reason: Value must be urn:ietf:params:oauth:grant-type:token-exchange
+              request_id: e74d4f8f-6f1d-4ca6-b949-11f0d0f7c4b0
+    '401':
+      description: Unauthorized — Authentication credentials are missing, invalid, or expired.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: 2f8b2fd9-9f41-4271-844e-e833f53afde7
+    '403':
+      description: Forbidden — Authenticated principal is not authorized for this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: Insufficient privileges to modify key material.
+              request_id: 5f3a5fca-b5f2-4ccf-87f4-58c7417ee3de
+    '404':
+      description: Not Found — Requested resource identifier does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: No federated client found for provided clientId.
+              request_id: b24af415-6f9f-47be-9154-b4f9db5f462e
+    '409':
+      description: Conflict — Request conflicts with current resource or key state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: A key rotation is already in progress for this environment.
+              request_id: 10e7ec8c-0894-4f8d-9a0f-59f06f149fca
+    '422':
+      description: Unprocessable Entity — Request is syntactically valid but violates business policy.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: POLICY_VIOLATION
+              message: Requested audience is not allowed for this client.
+              details:
+                - field: audience
+                  reason: vzw-telemetry-ingest-api is not configured in audience_allowlist
+              request_id: d8ebcfe0-e6c6-47eb-af17-807ecf790094
+    '429':
+      description: Too Many Requests — Rate limit exceeded for caller or tenant.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests. Retry after 60 seconds.
+              request_id: 433a4789-898d-45e0-9204-d4c4ec183096
+    '500':
+      description: Internal Server Error — Unexpected service failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please retry later.
+              request_id: 53c16c34-4c8f-4de8-b953-aa3e645adf59

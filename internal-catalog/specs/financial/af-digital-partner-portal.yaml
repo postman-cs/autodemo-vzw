@@ -1,0 +1,1458 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Partner Portal API
+  description: >-
+    Partner integration management portal for onboarding external organizations, configuring API and data
+    integrations, managing webhook event subscriptions, and monitoring partner ecosystem analytics. Supports API,
+    SFTP, webhook, batch file, and real-time streaming integration types with full lifecycle management from
+    onboarding through decommissioning.
+  version: 1.5.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-digital-partner-portal
+  x-acme-domain: digital
+servers:
+  - url: https://af-digital-partner-portal.api.acmefin.com/v1
+    description: Production
+  - url: https://af-digital-partner-portal.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Integrations
+    description: Configure and manage partner integrations
+  - name: Onboarding
+    description: Partner onboarding application workflow
+  - name: Webhooks
+    description: Manage webhook event subscriptions and delivery
+  - name: Partner Analytics
+    description: Monitor partner integration performance and usage
+paths:
+  /integrations:
+    get:
+      operationId: listIntegrations
+      summary: List integrations
+      description: Retrieve partner integrations with type, status, and activity metrics.
+      tags:
+        - Integrations
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: type
+          in: query
+          required: false
+          description: Filter by integration type
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        integration_id:
+                          type: string
+                          description: "Integration identifier"
+                          format: uuid
+                          readOnly: true
+                        partner_id:
+                          type: string
+                          description: "Partner organization identifier"
+                        name:
+                          type: string
+                          description: "Integration name"
+                          example: "Payroll Direct Deposit"
+                        type:
+                          type: string
+                          description: "Integration type"
+                          enum:
+                            - api
+                            - sftp
+                            - webhook
+                            - batch_file
+                            - real_time_stream
+                        status:
+                          type: string
+                          description: "Integration lifecycle status"
+                          enum:
+                            - draft
+                            - testing
+                            - active
+                            - suspended
+                            - decommissioned
+                        api_version:
+                          type: string
+                        last_activity_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - integration_id
+                        - name
+                        - type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createIntegration
+      summary: Create integration
+      description: >-
+        Configure a new partner integration with type, API version, and connectivity settings.
+      tags:
+        - Integrations
+      requestBody:
+        required: true
+        description: Create integration request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    type:
+                      type: string
+                      enum:
+                        - api
+                        - sftp
+                        - webhook
+                        - batch_file
+                        - real_time_stream
+                    api_version:
+                      type: string
+                    configuration:
+                      type: object
+                      description: "Type-specific connection configuration"
+              required:
+                - name
+                - type
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration_id:
+                    type: string
+                    description: "Integration identifier"
+                    format: uuid
+                    readOnly: true
+                  partner_id:
+                    type: string
+                    description: "Partner organization identifier"
+                  name:
+                    type: string
+                    description: "Integration name"
+                    example: "Payroll Direct Deposit"
+                  type:
+                    type: string
+                    description: "Integration type"
+                    enum:
+                      - api
+                      - sftp
+                      - webhook
+                      - batch_file
+                      - real_time_stream
+                  status:
+                    type: string
+                    description: "Integration lifecycle status"
+                    enum:
+                      - draft
+                      - testing
+                      - active
+                      - suspended
+                      - decommissioned
+                  api_version:
+                    type: string
+                  last_activity_at:
+                    type: string
+                    format: date-time
+                required:
+                  - integration_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /integrations/{integration_id}:
+    get:
+      operationId: getIntegration
+      summary: Get integration details
+      description: Retrieve integration configuration, health metrics, and recent activity log.
+      tags:
+        - Integrations
+      parameters:
+        - name: integration_id
+          in: path
+          required: true
+          description: Unique integration id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration_id:
+                    type: string
+                    description: "Integration identifier"
+                    format: uuid
+                    readOnly: true
+                  partner_id:
+                    type: string
+                    description: "Partner organization identifier"
+                  name:
+                    type: string
+                    description: "Integration name"
+                    example: "Payroll Direct Deposit"
+                  type:
+                    type: string
+                    description: "Integration type"
+                    enum:
+                      - api
+                      - sftp
+                      - webhook
+                      - batch_file
+                      - real_time_stream
+                  status:
+                    type: string
+                    description: "Integration lifecycle status"
+                    enum:
+                      - draft
+                      - testing
+                      - active
+                      - suspended
+                      - decommissioned
+                  api_version:
+                    type: string
+                  last_activity_at:
+                    type: string
+                    format: date-time
+                required:
+                  - integration_id
+                  - name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateIntegration
+      summary: Update integration
+      description: Modify integration configuration or lifecycle status.
+      tags:
+        - Integrations
+      parameters:
+        - name: integration_id
+          in: path
+          required: true
+          description: Unique integration id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update integration request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    configuration:
+                      type: object
+                    status:
+                      type: string
+                      enum:
+                        - testing
+                        - active
+                        - suspended
+                        - decommissioned
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration_id:
+                    type: string
+                    description: "Integration identifier"
+                    format: uuid
+                    readOnly: true
+                  partner_id:
+                    type: string
+                    description: "Partner organization identifier"
+                  name:
+                    type: string
+                    description: "Integration name"
+                    example: "Payroll Direct Deposit"
+                  type:
+                    type: string
+                    description: "Integration type"
+                    enum:
+                      - api
+                      - sftp
+                      - webhook
+                      - batch_file
+                      - real_time_stream
+                  status:
+                    type: string
+                    description: "Integration lifecycle status"
+                    enum:
+                      - draft
+                      - testing
+                      - active
+                      - suspended
+                      - decommissioned
+                  api_version:
+                    type: string
+                  last_activity_at:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /onboarding/applications:
+    get:
+      operationId: listOnboardingApps
+      summary: List onboarding applications
+      description: Retrieve partner onboarding applications with review status.
+      tags:
+        - Onboarding
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        application_id:
+                          type: string
+                          description: "Onboarding application identifier"
+                          format: uuid
+                          readOnly: true
+                        company_name:
+                          type: string
+                        contact_email:
+                          type: string
+                        use_case:
+                          type: string
+                          description: "Planned integration use case"
+                        status:
+                          type: string
+                          description: "Onboarding status"
+                          enum:
+                            - submitted
+                            - under_review
+                            - approved
+                            - rejected
+                            - onboarded
+                        submitted_at:
+                          type: string
+                          format: date-time
+                        reviewed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - application_id
+                        - company_name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: submitOnboardingApp
+      summary: Submit onboarding application
+      description: Submit a new partner onboarding application for review.
+      tags:
+        - Onboarding
+      requestBody:
+        required: true
+        description: Submit onboarding application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    company_name:
+                      type: string
+                    contact_email:
+                      type: string
+                    use_case:
+                      type: string
+                    expected_volume:
+                      type: string
+                      description: "Expected monthly API call volume"
+                    compliance_certifications:
+                      type: array
+                      description: "Held certifications (SOC2, PCI-DSS, etc.)"
+                      items:
+                        type: string
+              required:
+                - company_name
+                - contact_email
+                - use_case
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Onboarding application identifier"
+                    format: uuid
+                    readOnly: true
+                  company_name:
+                    type: string
+                  contact_email:
+                    type: string
+                  use_case:
+                    type: string
+                    description: "Planned integration use case"
+                  status:
+                    type: string
+                    description: "Onboarding status"
+                    enum:
+                      - submitted
+                      - under_review
+                      - approved
+                      - rejected
+                      - onboarded
+                  submitted_at:
+                    type: string
+                    format: date-time
+                  reviewed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                required:
+                  - application_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /onboarding/applications/{application_id}:
+    get:
+      operationId: getOnboardingApp
+      summary: Get onboarding application
+      description: Retrieve onboarding application details with review notes and approval status.
+      tags:
+        - Onboarding
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: Unique application id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Onboarding application identifier"
+                    format: uuid
+                    readOnly: true
+                  company_name:
+                    type: string
+                  contact_email:
+                    type: string
+                  use_case:
+                    type: string
+                    description: "Planned integration use case"
+                  status:
+                    type: string
+                    description: "Onboarding status"
+                    enum:
+                      - submitted
+                      - under_review
+                      - approved
+                      - rejected
+                      - onboarded
+                  submitted_at:
+                    type: string
+                    format: date-time
+                  reviewed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                required:
+                  - application_id
+                  - company_name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: reviewOnboardingApp
+      summary: Review onboarding application
+      description: Approve or reject a partner onboarding application.
+      tags:
+        - Onboarding
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: Unique application id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Review onboarding application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    status:
+                      type: string
+                      enum:
+                        - approved
+                        - rejected
+                    review_notes:
+                      type: string
+              required:
+                - status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Onboarding application identifier"
+                    format: uuid
+                    readOnly: true
+                  company_name:
+                    type: string
+                  contact_email:
+                    type: string
+                  use_case:
+                    type: string
+                    description: "Planned integration use case"
+                  status:
+                    type: string
+                    description: "Onboarding status"
+                    enum:
+                      - submitted
+                      - under_review
+                      - approved
+                      - rejected
+                      - onboarded
+                  submitted_at:
+                    type: string
+                    format: date-time
+                  reviewed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /webhooks:
+    get:
+      operationId: listWebhooks
+      summary: List webhooks
+      description: Retrieve webhook subscriptions with delivery status and failure counts.
+      tags:
+        - Webhooks
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        webhook_id:
+                          type: string
+                          description: "Webhook identifier"
+                          format: uuid
+                          readOnly: true
+                        url:
+                          type: string
+                          description: "Webhook delivery URL"
+                        events:
+                          type: array
+                          description: "Subscribed event types"
+                          items:
+                            type: string
+                        status:
+                          type: string
+                          description: "Webhook delivery status"
+                          enum:
+                            - active
+                            - paused
+                            - failed
+                        secret:
+                          type: string
+                          description: "HMAC signing secret (returned only at creation)"
+                        failure_count:
+                          type: integer
+                          description: "Consecutive delivery failures"
+                        last_delivered_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - webhook_id
+                        - url
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createWebhook
+      summary: Create webhook
+      description: >-
+        Register a webhook endpoint for event delivery. Returns an HMAC signing secret for payload
+        verification.
+      tags:
+        - Webhooks
+      requestBody:
+        required: true
+        description: Create webhook request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    url:
+                      type: string
+                    events:
+                      type: array
+                      description: "Event types to subscribe to"
+                      items:
+                        type: string
+              required:
+                - url
+                - events
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook_id:
+                    type: string
+                    description: "Webhook identifier"
+                    format: uuid
+                    readOnly: true
+                  url:
+                    type: string
+                    description: "Webhook delivery URL"
+                  events:
+                    type: array
+                    description: "Subscribed event types"
+                    items:
+                      type: string
+                  status:
+                    type: string
+                    description: "Webhook delivery status"
+                    enum:
+                      - active
+                      - paused
+                      - failed
+                  secret:
+                    type: string
+                    description: "HMAC signing secret (returned only at creation)"
+                  failure_count:
+                    type: integer
+                    description: "Consecutive delivery failures"
+                  last_delivered_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                required:
+                  - webhook_id
+                  - url
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /webhooks/{webhook_id}:
+    get:
+      operationId: getWebhook
+      summary: Get webhook details
+      description: Retrieve webhook configuration with delivery log and failure diagnostics.
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhook_id
+          in: path
+          required: true
+          description: Unique webhook id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook_id:
+                    type: string
+                    description: "Webhook identifier"
+                    format: uuid
+                    readOnly: true
+                  url:
+                    type: string
+                    description: "Webhook delivery URL"
+                  events:
+                    type: array
+                    description: "Subscribed event types"
+                    items:
+                      type: string
+                  status:
+                    type: string
+                    description: "Webhook delivery status"
+                    enum:
+                      - active
+                      - paused
+                      - failed
+                  secret:
+                    type: string
+                    description: "HMAC signing secret (returned only at creation)"
+                  failure_count:
+                    type: integer
+                    description: "Consecutive delivery failures"
+                  last_delivered_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                required:
+                  - webhook_id
+                  - url
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateWebhook
+      summary: Update webhook
+      description: Modify webhook URL, subscribed events, or pause/resume delivery.
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhook_id
+          in: path
+          required: true
+          description: Unique webhook id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update webhook request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    url:
+                      type: string
+                    events:
+                      type: array
+                      items:
+                        type: string
+                    status:
+                      type: string
+                      enum:
+                        - active
+                        - paused
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook_id:
+                    type: string
+                    description: "Webhook identifier"
+                    format: uuid
+                    readOnly: true
+                  url:
+                    type: string
+                    description: "Webhook delivery URL"
+                  events:
+                    type: array
+                    description: "Subscribed event types"
+                    items:
+                      type: string
+                  status:
+                    type: string
+                    description: "Webhook delivery status"
+                    enum:
+                      - active
+                      - paused
+                      - failed
+                  secret:
+                    type: string
+                    description: "HMAC signing secret (returned only at creation)"
+                  failure_count:
+                    type: integer
+                    description: "Consecutive delivery failures"
+                  last_delivered_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteWebhook
+      summary: Delete webhook
+      description: Remove a webhook subscription.
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhook_id
+          in: path
+          required: true
+          description: Unique webhook id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /analytics/overview:
+    get:
+      operationId: getPartnerAnalytics
+      summary: Get partner analytics
+      description: >-
+        Retrieve aggregate partner ecosystem analytics including integration health, API call volume, error
+        rates, and onboarding funnel metrics.
+      tags:
+        - Partner Analytics
+      parameters:
+        - name: period
+          in: query
+          required: false
+          description: Reporting period
+          schema:
+            type: "string"
+            enum:
+              - 7d
+              - 30d
+              - 90d
+            default: "30d"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_integrations:
+                    type: integer
+                  active_integrations:
+                    type: integer
+                  total_api_calls_30d:
+                    type: integer
+                  error_rate:
+                    type: number
+                    format: double
+                  onboarding_funnel:
+                    type: object
+                    description: "Onboarding conversion metrics by stage"
+                  top_partners:
+                    type: array
+                    description: "Most active partners by API volume"
+                    items:
+                      type: object
+                required:
+                  - total_integrations
+                  - active_integrations
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /analytics/integrations/{integration_id}:
+    get:
+      operationId: getIntegrationAnalytics
+      summary: Get integration analytics
+      description: >-
+        Retrieve per-integration analytics with request volume, latency, and error breakdown.
+      tags:
+        - Partner Analytics
+      parameters:
+        - name: integration_id
+          in: path
+          required: true
+          description: Unique integration id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration_id:
+                    type: string
+                  total_requests:
+                    type: integer
+                  success_rate:
+                    type: number
+                    format: double
+                  avg_latency_ms:
+                    type: integer
+                  error_breakdown:
+                    type: object
+                    description: "Errors by HTTP status code"
+                required:
+                  - integration_id
+                  - total_requests
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

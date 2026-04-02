@@ -1,0 +1,1530 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Transaction Monitoring API
+  description: BSA/AML transaction monitoring platform for detecting suspicious patterns across all payment channels. Supports
+    configurable detection rules, threshold tuning with statistical validation, scenario-based monitoring aligned to FFIEC
+    BSA/AML Examination Manual guidance, automated alert generation and triage, and historical backtesting for rule effectiveness
+    analysis.
+  version: 2.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-risk-transaction-monitoring
+  x-acme-domain: risk
+servers:
+- url: https://af-risk-transaction-monitoring.api.acmefin.com/v1
+  description: Production
+- url: https://af-risk-transaction-monitoring.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Rules
+  description: Transaction monitoring rule configuration and lifecycle management
+- name: Alerts
+  description: Automated alert generation, triage, and disposition
+- name: Scenarios
+  description: Monitoring scenario management and backtesting
+- name: Analytics
+  description: Monitoring effectiveness analytics and threshold optimization
+paths:
+  /monitoring/rules:
+    get:
+      operationId: listMonitoringRules
+      summary: List monitoring rules
+      description: Retrieve all configured transaction monitoring rules with performance metrics including alert volumes,
+        false positive rates, and last trigger dates. Supports filtering by category and status for rule inventory management.
+      tags:
+      - Rules
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: category
+        in: query
+        required: false
+        description: Filter by rule category
+        schema:
+          type: string
+          enum:
+          - velocity
+          - amount
+          - pattern
+          - geographic
+          - behavioral
+          - structuring
+      - name: status
+        in: query
+        required: false
+        description: Filter by rule status
+        schema:
+          type: string
+          enum:
+          - active
+          - inactive
+          - tuning
+          - retired
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rule_id:
+                          type: string
+                          description: Monitoring rule identifier
+                          example: TMR-VEL-042
+                        rule_name:
+                          type: string
+                          description: Rule display name
+                          example: High-value wire transfers to high-risk jurisdictions
+                        category:
+                          type: string
+                          description: Rule category
+                          example: geographic
+                          enum:
+                          - velocity
+                          - amount
+                          - pattern
+                          - geographic
+                          - behavioral
+                          - structuring
+                        status:
+                          type: string
+                          description: Rule activation status
+                          example: active
+                          enum:
+                          - active
+                          - inactive
+                          - tuning
+                          - retired
+                        threshold:
+                          type: object
+                          description: Rule threshold configuration
+                          properties:
+                            metric:
+                              type: string
+                              description: Monitored metric
+                              example: wire_amount
+                            operator:
+                              type: string
+                              description: Comparison operator
+                              example: greater_than
+                            value:
+                              type: number
+                              description: Threshold value
+                              example: 50000
+                        alert_count_30d:
+                          type: integer
+                          description: Alerts generated in last 30 days
+                          example: 142
+                        false_positive_rate:
+                          type: number
+                          description: 30-day false positive rate
+                          example: 0.34
+                      required:
+                      - rule_id
+                      - rule_name
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createMonitoringRule
+      summary: Create monitoring rule
+      description: Define a new transaction monitoring rule with detection logic, thresholds, and alert parameters. New rules
+        are created in 'inactive' status and require validation via backtesting before activation. Rule design should align
+        with FFIEC BSA/AML Examination Manual risk categories.
+      tags:
+      - Rules
+      requestBody:
+        required: true
+        description: Create monitoring rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rule_name:
+                  type: string
+                  description: Rule display name
+                  example: Rapid fund transfers post-deposit
+                category:
+                  type: string
+                  description: Rule category
+                  enum:
+                  - velocity
+                  - amount
+                  - pattern
+                  - geographic
+                  - behavioral
+                  - structuring
+                description:
+                  type: string
+                  description: Rule description and detection rationale
+                threshold:
+                  type: object
+                  description: Threshold configuration
+                lookback_window:
+                  type: string
+                  description: Monitoring time window
+                  example: 24h
+                alert_severity:
+                  type: string
+                  description: Default alert severity
+                  enum:
+                  - low
+                  - medium
+                  - high
+                  - critical
+              required:
+              - rule_name
+              - category
+              - threshold
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: Monitoring rule identifier
+                    example: TMR-VEL-042
+                  rule_name:
+                    type: string
+                    description: Rule display name
+                    example: High-value wire transfers to high-risk jurisdictions
+                  category:
+                    type: string
+                    description: Rule category
+                    example: geographic
+                    enum:
+                    - velocity
+                    - amount
+                    - pattern
+                    - geographic
+                    - behavioral
+                    - structuring
+                  status:
+                    type: string
+                    description: Rule activation status
+                    example: active
+                    enum:
+                    - active
+                    - inactive
+                    - tuning
+                    - retired
+                  threshold:
+                    type: object
+                    description: Rule threshold configuration
+                    properties:
+                      metric:
+                        type: string
+                        description: Monitored metric
+                        example: wire_amount
+                      operator:
+                        type: string
+                        description: Comparison operator
+                        example: greater_than
+                      value:
+                        type: number
+                        description: Threshold value
+                        example: 50000
+                  alert_count_30d:
+                    type: integer
+                    description: Alerts generated in last 30 days
+                    example: 142
+                  false_positive_rate:
+                    type: number
+                    description: 30-day false positive rate
+                    example: 0.34
+                required:
+                - rule_id
+                - rule_name
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /monitoring/rules/{rule_id}:
+    get:
+      operationId: getMonitoringRule
+      summary: Get monitoring rule details
+      description: Retrieve a monitoring rule's full configuration including detection logic, threshold parameters, performance
+        metrics, and change history.
+      tags:
+      - Rules
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        description: Unique rule id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: Monitoring rule identifier
+                    example: TMR-VEL-042
+                  rule_name:
+                    type: string
+                    description: Rule display name
+                    example: High-value wire transfers to high-risk jurisdictions
+                  category:
+                    type: string
+                    description: Rule category
+                    example: geographic
+                    enum:
+                    - velocity
+                    - amount
+                    - pattern
+                    - geographic
+                    - behavioral
+                    - structuring
+                  status:
+                    type: string
+                    description: Rule activation status
+                    example: active
+                    enum:
+                    - active
+                    - inactive
+                    - tuning
+                    - retired
+                  threshold:
+                    type: object
+                    description: Rule threshold configuration
+                    properties:
+                      metric:
+                        type: string
+                        description: Monitored metric
+                        example: wire_amount
+                      operator:
+                        type: string
+                        description: Comparison operator
+                        example: greater_than
+                      value:
+                        type: number
+                        description: Threshold value
+                        example: 50000
+                  alert_count_30d:
+                    type: integer
+                    description: Alerts generated in last 30 days
+                    example: 142
+                  false_positive_rate:
+                    type: number
+                    description: 30-day false positive rate
+                    example: 0.34
+                required:
+                - rule_id
+                - rule_name
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateMonitoringRule
+      summary: Update monitoring rule
+      description: Modify a monitoring rule's thresholds, detection parameters, or status. Threshold changes to active rules
+        are automatically validated against recent data to estimate impact on alert volumes and false positive rates.
+      tags:
+      - Rules
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        description: Unique rule id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update monitoring rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rule_name:
+                  type: string
+                  description: Updated rule name
+                status:
+                  type: string
+                  description: Updated status
+                  enum:
+                  - active
+                  - inactive
+                  - tuning
+                  - retired
+                threshold:
+                  type: object
+                  description: Updated threshold configuration
+                lookback_window:
+                  type: string
+                  description: Updated monitoring window
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: Monitoring rule identifier
+                    example: TMR-VEL-042
+                  rule_name:
+                    type: string
+                    description: Rule display name
+                    example: High-value wire transfers to high-risk jurisdictions
+                  category:
+                    type: string
+                    description: Rule category
+                    example: geographic
+                    enum:
+                    - velocity
+                    - amount
+                    - pattern
+                    - geographic
+                    - behavioral
+                    - structuring
+                  status:
+                    type: string
+                    description: Rule activation status
+                    example: active
+                    enum:
+                    - active
+                    - inactive
+                    - tuning
+                    - retired
+                  threshold:
+                    type: object
+                    description: Rule threshold configuration
+                    properties:
+                      metric:
+                        type: string
+                        description: Monitored metric
+                        example: wire_amount
+                      operator:
+                        type: string
+                        description: Comparison operator
+                        example: greater_than
+                      value:
+                        type: number
+                        description: Threshold value
+                        example: 50000
+                  alert_count_30d:
+                    type: integer
+                    description: Alerts generated in last 30 days
+                    example: 142
+                  false_positive_rate:
+                    type: number
+                    description: 30-day false positive rate
+                    example: 0.34
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /monitoring/alerts:
+    get:
+      operationId: listMonitoringAlerts
+      summary: List monitoring alerts
+      description: Retrieve transaction monitoring alerts with filtering by severity, status, rule, customer, and date range.
+        Supports investigator queue management and alert triage workflows.
+      tags:
+      - Alerts
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: severity
+        in: query
+        required: false
+        description: Filter by severity
+        schema:
+          type: string
+          enum:
+          - low
+          - medium
+          - high
+          - critical
+      - name: status
+        in: query
+        required: false
+        description: Filter by alert status
+        schema:
+          type: string
+      - name: rule_id
+        in: query
+        required: false
+        description: Filter by originating rule
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alert_id:
+                          type: string
+                          description: Unique monitoring alert identifier
+                          format: uuid
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        rule_id:
+                          type: string
+                          description: Rule that generated this alert
+                          example: TMR-VEL-042
+                        severity:
+                          type: string
+                          description: Alert severity
+                          example: high
+                          enum:
+                          - low
+                          - medium
+                          - high
+                          - critical
+                        status:
+                          type: string
+                          description: Alert status
+                          example: new
+                          enum:
+                          - new
+                          - under_review
+                          - escalated
+                          - closed_true_positive
+                          - closed_false_positive
+                        customer_id:
+                          type: string
+                          description: Alerted customer ID
+                          example: CUST-72910
+                        transaction_count:
+                          type: integer
+                          description: Number of transactions in alert
+                          example: 8
+                        aggregate_amount:
+                          type: number
+                          description: Aggregate transaction amount
+                          format: double
+                          example: 15000.0
+                        generated_at:
+                          type: string
+                          description: Alert generation timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - alert_id
+                      - severity
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /monitoring/alerts/{alert_id}:
+    get:
+      operationId: getMonitoringAlert
+      summary: Get monitoring alert details
+      description: Retrieve complete alert details including triggering transactions, rule parameters at time of detection,
+        customer context, and investigation history.
+      tags:
+      - Alerts
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        description: Unique alert id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_id:
+                    type: string
+                    description: Unique monitoring alert identifier
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  rule_id:
+                    type: string
+                    description: Rule that generated this alert
+                    example: TMR-VEL-042
+                  severity:
+                    type: string
+                    description: Alert severity
+                    example: high
+                    enum:
+                    - low
+                    - medium
+                    - high
+                    - critical
+                  status:
+                    type: string
+                    description: Alert status
+                    example: new
+                    enum:
+                    - new
+                    - under_review
+                    - escalated
+                    - closed_true_positive
+                    - closed_false_positive
+                  customer_id:
+                    type: string
+                    description: Alerted customer ID
+                    example: CUST-72910
+                  transaction_count:
+                    type: integer
+                    description: Number of transactions in alert
+                    example: 8
+                  aggregate_amount:
+                    type: number
+                    description: Aggregate transaction amount
+                    format: double
+                    example: 15000.0
+                  generated_at:
+                    type: string
+                    description: Alert generation timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - alert_id
+                - severity
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateMonitoringAlert
+      summary: Update monitoring alert
+      description: Update alert status and investigation notes. Status transitions follow the alert triage workflow. Closing
+        an alert as false positive feeds back to rule tuning analytics.
+      tags:
+      - Alerts
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        description: Unique alert id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update monitoring alert request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: Updated status
+                  enum:
+                  - under_review
+                  - escalated
+                  - closed_true_positive
+                  - closed_false_positive
+                investigator_notes:
+                  type: string
+                  description: Investigation notes
+                escalation_reason:
+                  type: string
+                  description: Reason for escalation if applicable
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_id:
+                    type: string
+                    description: Unique monitoring alert identifier
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  rule_id:
+                    type: string
+                    description: Rule that generated this alert
+                    example: TMR-VEL-042
+                  severity:
+                    type: string
+                    description: Alert severity
+                    example: high
+                    enum:
+                    - low
+                    - medium
+                    - high
+                    - critical
+                  status:
+                    type: string
+                    description: Alert status
+                    example: new
+                    enum:
+                    - new
+                    - under_review
+                    - escalated
+                    - closed_true_positive
+                    - closed_false_positive
+                  customer_id:
+                    type: string
+                    description: Alerted customer ID
+                    example: CUST-72910
+                  transaction_count:
+                    type: integer
+                    description: Number of transactions in alert
+                    example: 8
+                  aggregate_amount:
+                    type: number
+                    description: Aggregate transaction amount
+                    format: double
+                    example: 15000.0
+                  generated_at:
+                    type: string
+                    description: Alert generation timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /monitoring/scenarios:
+    get:
+      operationId: listScenarios
+      summary: List monitoring scenarios
+      description: Retrieve monitoring scenarios which group related rules into logical detection packages aligned with BSA/AML
+        risk categories (e.g., structuring, rapid movement, high-risk geography).
+      tags:
+      - Scenarios
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        scenario_id:
+                          type: string
+                          description: Scenario identifier
+                          example: SCN-STRUCT-001
+                        name:
+                          type: string
+                          description: Scenario name
+                          example: Cash Structuring Detection
+                        description:
+                          type: string
+                          description: Scenario purpose and coverage
+                        rule_count:
+                          type: integer
+                          description: Number of rules in scenario
+                          example: 5
+                        status:
+                          type: string
+                          description: Scenario status
+                          example: active
+                          enum:
+                          - active
+                          - draft
+                          - retired
+                        risk_category:
+                          type: string
+                          description: BSA/AML risk category
+                          example: Structuring
+                      required:
+                      - scenario_id
+                      - name
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createScenario
+      summary: Create monitoring scenario
+      description: Create a new monitoring scenario grouping related detection rules. Scenarios provide a logical framework
+        for coverage analysis and regulatory examination response.
+      tags:
+      - Scenarios
+      requestBody:
+        required: true
+        description: Create monitoring scenario request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Scenario name
+                  example: Trade-Based Money Laundering
+                description:
+                  type: string
+                  description: Scenario description and coverage rationale
+                risk_category:
+                  type: string
+                  description: BSA/AML risk category
+                rule_ids:
+                  type: array
+                  description: Rules to include in scenario
+                  items:
+                    type: string
+              required:
+              - name
+              - risk_category
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenario_id:
+                    type: string
+                    description: Scenario identifier
+                    example: SCN-TBML-001
+                  name:
+                    type: string
+                    description: Scenario name
+                    example: Trade-Based Money Laundering
+                  status:
+                    type: string
+                    description: Initial status
+                    example: draft
+                  rule_count:
+                    type: integer
+                    description: Rules in scenario
+                    example: 0
+                required:
+                - scenario_id
+                - name
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /monitoring/scenarios/{scenario_id}/backtest:
+    post:
+      operationId: backtestScenario
+      summary: Backtest monitoring scenario
+      description: Execute a historical backtest of a monitoring scenario against past transaction data. Evaluates detection
+        coverage, alert volumes, false positive rates, and processing time. Used to validate new scenarios and threshold changes
+        before production deployment.
+      tags:
+      - Scenarios
+      parameters:
+      - name: scenario_id
+        in: path
+        required: true
+        description: Unique scenario id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Backtest monitoring scenario request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start_date:
+                  type: string
+                  description: Backtest period start
+                  format: date
+                  example: '2025-01-01'
+                end_date:
+                  type: string
+                  description: Backtest period end
+                  format: date
+                  example: '2025-06-30'
+                sample_size:
+                  type: integer
+                  description: Transaction sample size (0 for all)
+                  example: 0
+              required:
+              - start_date
+              - end_date
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  backtest_id:
+                    type: string
+                    description: Backtest run identifier
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  scenario_id:
+                    type: string
+                    description: Tested scenario
+                    example: SCN-STRUCT-001
+                  transactions_evaluated:
+                    type: integer
+                    description: Total transactions in backtest
+                    example: 2450000
+                  alerts_generated:
+                    type: integer
+                    description: Alerts that would have been generated
+                    example: 342
+                  true_positive_rate:
+                    type: number
+                    description: Estimated true positive rate
+                    example: 0.62
+                  false_positive_rate:
+                    type: number
+                    description: Estimated false positive rate
+                    example: 0.38
+                  processing_time_seconds:
+                    type: integer
+                    description: Backtest duration in seconds
+                    example: 847
+                required:
+                - backtest_id
+                - transactions_evaluated
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /monitoring/thresholds/tune:
+    post:
+      operationId: tuneThresholds
+      summary: Tune rule thresholds
+      description: Run threshold optimization analysis for a monitoring rule. Uses statistical methods to recommend threshold
+        adjustments that optimize the tradeoff between detection coverage and false positive rates. Returns proposed thresholds
+        with projected impact metrics.
+      tags:
+      - Analytics
+      requestBody:
+        required: true
+        description: Tune rule thresholds request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rule_id:
+                  type: string
+                  description: Rule to tune
+                  example: TMR-VEL-042
+                target_false_positive_rate:
+                  type: number
+                  description: Desired false positive rate
+                  example: 0.2
+                analysis_period_days:
+                  type: integer
+                  description: Historical data period for analysis
+                  example: 90
+                optimization_method:
+                  type: string
+                  description: Optimization approach
+                  example: statistical
+                  enum:
+                  - statistical
+                  - ml_based
+                  - manual_simulation
+              required:
+              - rule_id
+              - target_false_positive_rate
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: Analyzed rule
+                    example: TMR-VEL-042
+                  current_threshold:
+                    type: number
+                    description: Current threshold value
+                    example: 50000
+                  recommended_threshold:
+                    type: number
+                    description: Recommended threshold
+                    example: 35000
+                  current_fpr:
+                    type: number
+                    description: Current false positive rate
+                    example: 0.34
+                  projected_fpr:
+                    type: number
+                    description: Projected FPR at recommended threshold
+                    example: 0.21
+                  projected_alert_change:
+                    type: number
+                    description: Projected alert volume change (%)
+                    example: 18.5
+                required:
+                - rule_id
+                - recommended_threshold
+                - projected_fpr
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /monitoring/analytics/volume:
+    get:
+      operationId: getAlertVolumeAnalytics
+      summary: Get alert volume analytics
+      description: Retrieve alert volume analytics including trends, rule effectiveness, category distribution, and investigator
+        throughput metrics. Used for BSA/AML program effectiveness reporting and resource planning.
+      tags:
+      - Analytics
+      parameters:
+      - name: period
+        in: query
+        required: true
+        description: Reporting period (e.g., 2025-Q2)
+        schema:
+          type: string
+      - name: granularity
+        in: query
+        required: false
+        description: Time granularity for trend data
+        schema:
+          type: string
+          enum:
+          - daily
+          - weekly
+          - monthly
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  period:
+                    type: string
+                    description: Reporting period
+                    example: 2025-Q2
+                  total_alerts:
+                    type: integer
+                    description: Total alerts generated
+                    example: 8421
+                  true_positive_count:
+                    type: integer
+                    description: Confirmed true positives
+                    example: 1284
+                  false_positive_count:
+                    type: integer
+                    description: Confirmed false positives
+                    example: 4892
+                  pending_count:
+                    type: integer
+                    description: Alerts still under review
+                    example: 2245
+                  overall_fpr:
+                    type: number
+                    description: Overall false positive rate
+                    example: 0.58
+                  avg_resolution_hours:
+                    type: number
+                    description: Average alert resolution time in hours
+                    example: 18.4
+                required:
+                - period
+                - total_alerts
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

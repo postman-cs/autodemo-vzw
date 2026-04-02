@@ -1,0 +1,1485 @@
+openapi: 3.0.3
+info:
+  title: VZW Billing Rating API
+  description: >-
+    Usage rating and charge calculation API for Verizon API and network service consumption.
+    This service prices metered usage in near-real time by using effective tariffs,
+    commitment allowances, and overage policy. Integrators can request pre-billing quotes,
+    submit usage records for rating, inspect immutable rating decisions, manage tariff catalog
+    lifecycle, and recalculate invoice rollups when tariff or entitlement changes occur.
+  version: 1.0.0
+  contact:
+    name: Verizon Billing Platform API Team
+    email: billing-api-team@verizon.com
+    url: https://developer.verizon.com/billing-apis
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/network-api-license
+  x-verizon-catalog-id: vzw-billing-rating-api
+  x-verizon-domain: billing
+servers:
+  - url: https://vzw-billing-rating-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-billing-rating-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Rating
+    description: Quote generation, usage rating, and rating record retrieval operations
+  - name: Tariffs
+    description: Tariff catalog listing, publication, and controlled patch updates
+  - name: Invoices
+    description: Invoice-level recalculation and repricing orchestration operations
+paths:
+  /v1/rating/quotes:
+    post:
+      operationId: createRatingQuote
+      summary: Create a usage rating quote
+      description: >-
+        Calculates a non-posting quote for projected usage under the effective tariff and
+        customer commitment profile. Quotes are advisory only and do not create billable
+        ledger entries. Use this endpoint before high-volume usage submission to estimate
+        expected rated amount, tier assignment, and overage impact.
+      tags:
+        - Rating
+      requestBody:
+        required: true
+        description: Usage quote request payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatingQuoteRequest'
+            example:
+              account_id: acct_7f6e9120
+              service_id: svc_edge_monitoring
+              usage_quantity: 1875.25
+              usage_uom: API_CALL
+              usage_start_at: '2026-03-01T00:00:00Z'
+              usage_end_at: '2026-03-01T23:59:59Z'
+              billing_cycle: '2026-03'
+              currency: USD
+      responses:
+        '200':
+          description: Rating quote calculated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatingQuoteResponse'
+              example:
+                quote_id: quote_24a8af2b
+                account_id: acct_7f6e9120
+                service_id: svc_edge_monitoring
+                usage_quantity: 1875.25
+                usage_uom: API_CALL
+                tariff_id: trf_api_call_2026_01
+                tariff_tier: TIER_2
+                overage_rate: 0.0025
+                commitment_mrc: 750.0
+                rated_amount_usd: 892.19
+                estimated_tax_usd: 62.45
+                currency: USD
+                billing_cycle: '2026-03'
+                quote_expires_at: '2026-03-27T18:45:00Z'
+                trace_id: trace_6f79c8de18
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/rating/records:
+    post:
+      operationId: createRatingRecord
+      summary: Submit usage for final rating
+      description: >-
+        Rates a finalized usage event and persists an immutable rating record used by downstream
+        invoice generation. The request is idempotent by client_record_id. A successful response
+        includes the pricing decision, resolved tariff tier, and rated amount.
+      tags:
+        - Rating
+      requestBody:
+        required: true
+        description: Usage rating submission payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatingRecordCreateRequest'
+            example:
+              client_record_id: clrec_20260327_993712
+              account_id: acct_7f6e9120
+              invoice_id: inv_2026_03_000482
+              service_id: svc_edge_monitoring
+              meter_id: meter_api_call_global
+              usage_quantity: 2015.0
+              usage_uom: API_CALL
+              usage_start_at: '2026-03-15T00:00:00Z'
+              usage_end_at: '2026-03-15T23:59:59Z'
+              billing_cycle: '2026-03'
+              currency: USD
+              metadata:
+                region: us-east-1
+                partner_id: ptr_44218
+      responses:
+        '201':
+          description: Usage record rated and persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatingRecordResponse'
+              example:
+                record_id: rr_5b5f4934f8
+                client_record_id: clrec_20260327_993712
+                account_id: acct_7f6e9120
+                invoice_id: inv_2026_03_000482
+                service_id: svc_edge_monitoring
+                meter_id: meter_api_call_global
+                usage_quantity: 2015.0
+                usage_uom: API_CALL
+                tariff_id: trf_api_call_2026_01
+                tariff_tier: TIER_3
+                overage_rate: 0.0031
+                commitment_mrc: 750.0
+                rated_amount_usd: 947.65
+                currency: USD
+                billing_cycle: '2026-03'
+                status: RATED
+                rated_at: '2026-03-27T17:44:51Z'
+                trace_id: trace_4b4f0ff90f
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/rating/records/{recordId}:
+    get:
+      operationId: getRatingRecord
+      summary: Get a rating record
+      description: >-
+        Retrieves an immutable rating record by record identifier. The response includes source
+        usage fields, selected tariff tier, overage and commitment context, and final rated
+        amount in USD for billing reconciliation.
+      tags:
+        - Rating
+      parameters:
+        - $ref: '#/components/parameters/RecordIdPathParam'
+      responses:
+        '200':
+          description: Rating record returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatingRecordResponse'
+              example:
+                record_id: rr_5b5f4934f8
+                client_record_id: clrec_20260327_993712
+                account_id: acct_7f6e9120
+                invoice_id: inv_2026_03_000482
+                service_id: svc_edge_monitoring
+                meter_id: meter_api_call_global
+                usage_quantity: 2015.0
+                usage_uom: API_CALL
+                tariff_id: trf_api_call_2026_01
+                tariff_tier: TIER_3
+                overage_rate: 0.0031
+                commitment_mrc: 750.0
+                rated_amount_usd: 947.65
+                currency: USD
+                billing_cycle: '2026-03'
+                status: RATED
+                rated_at: '2026-03-27T17:44:51Z'
+                trace_id: trace_4b4f0ff90f
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/tariffs:
+    get:
+      operationId: listTariffs
+      summary: List tariffs
+      description: >-
+        Returns a paginated tariff catalog view. Results can be filtered by service, status,
+        and effective window. Tariffs are returned in descending effective date by default.
+      tags:
+        - Tariffs
+      parameters:
+        - $ref: '#/components/parameters/PageQueryParam'
+        - $ref: '#/components/parameters/PerPageQueryParam'
+        - $ref: '#/components/parameters/SortByQueryParam'
+        - $ref: '#/components/parameters/SortOrderQueryParam'
+        - $ref: '#/components/parameters/TariffStatusQueryParam'
+        - $ref: '#/components/parameters/ServiceIdQueryParam'
+      responses:
+        '200':
+          description: Tariffs returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffListResponse'
+              example:
+                data:
+                  - tariff_id: trf_api_call_2026_01
+                    service_id: svc_edge_monitoring
+                    meter_id: meter_api_call_global
+                    name: Edge Monitoring API Calls 2026
+                    status: ACTIVE
+                    currency: USD
+                    commitment_mrc: 750.0
+                    overage_rate: 0.0031
+                    effective_from: '2026-01-01T00:00:00Z'
+                    effective_to: null
+                    billing_cycle: MONTHLY
+                    tiers:
+                      - tier_name: TIER_1
+                        start_quantity: 0
+                        end_quantity: 1000
+                        unit_rate: 0.0018
+                      - tier_name: TIER_2
+                        start_quantity: 1000
+                        end_quantity: 2000
+                        unit_rate: 0.0025
+                      - tier_name: TIER_3
+                        start_quantity: 2000
+                        end_quantity: null
+                        unit_rate: 0.0031
+                pagination:
+                  page: 1
+                  per_page: 20
+                  total_items: 48
+                  total_pages: 3
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createTariff
+      summary: Create tariff
+      description: >-
+        Creates a new tariff definition for a specific service and meter. Newly created tariffs
+        may start as DRAFT and later transition to ACTIVE through patch updates. Tier boundaries
+        must be monotonic and non-overlapping.
+      tags:
+        - Tariffs
+      requestBody:
+        required: true
+        description: Tariff creation payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TariffCreateRequest'
+            example:
+              service_id: svc_edge_monitoring
+              meter_id: meter_api_call_global
+              name: Edge Monitoring API Calls 2026
+              description: Tiered API call pricing for enterprise edge workloads
+              status: DRAFT
+              currency: USD
+              commitment_mrc: 750.0
+              overage_rate: 0.0031
+              effective_from: '2026-01-01T00:00:00Z'
+              effective_to: null
+              billing_cycle: MONTHLY
+              tiers:
+                - tier_name: TIER_1
+                  start_quantity: 0
+                  end_quantity: 1000
+                  unit_rate: 0.0018
+                - tier_name: TIER_2
+                  start_quantity: 1000
+                  end_quantity: 2000
+                  unit_rate: 0.0025
+                - tier_name: TIER_3
+                  start_quantity: 2000
+                  end_quantity: null
+                  unit_rate: 0.0031
+      responses:
+        '201':
+          description: Tariff created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffResponse'
+              example:
+                tariff_id: trf_api_call_2026_01
+                service_id: svc_edge_monitoring
+                meter_id: meter_api_call_global
+                name: Edge Monitoring API Calls 2026
+                description: Tiered API call pricing for enterprise edge workloads
+                status: DRAFT
+                currency: USD
+                commitment_mrc: 750.0
+                overage_rate: 0.0031
+                effective_from: '2026-01-01T00:00:00Z'
+                effective_to: null
+                billing_cycle: MONTHLY
+                tiers:
+                  - tier_name: TIER_1
+                    start_quantity: 0
+                    end_quantity: 1000
+                    unit_rate: 0.0018
+                  - tier_name: TIER_2
+                    start_quantity: 1000
+                    end_quantity: 2000
+                    unit_rate: 0.0025
+                  - tier_name: TIER_3
+                    start_quantity: 2000
+                    end_quantity: null
+                    unit_rate: 0.0031
+                created_at: '2026-03-27T17:55:02Z'
+                updated_at: '2026-03-27T17:55:02Z'
+                created_by: api_partner_2291
+                updated_by: api_partner_2291
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/tariffs/{tariffId}:
+    patch:
+      operationId: patchTariff
+      summary: Patch tariff
+      description: >-
+        Applies partial updates to an existing tariff. Supported updates include status transitions,
+        effective window adjustments, commitment and overage values, and tier price changes.
+        Existing billing records are not mutated; downstream invoice recalculation is required to
+        apply new pricing to impacted open invoices.
+      tags:
+        - Tariffs
+      parameters:
+        - $ref: '#/components/parameters/TariffIdPathParam'
+      requestBody:
+        required: true
+        description: Tariff patch payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TariffPatchRequest'
+            example:
+              status: ACTIVE
+              overage_rate: 0.003
+              commitment_mrc: 700.0
+              tiers:
+                - tier_name: TIER_1
+                  start_quantity: 0
+                  end_quantity: 1000
+                  unit_rate: 0.0017
+                - tier_name: TIER_2
+                  start_quantity: 1000
+                  end_quantity: 2000
+                  unit_rate: 0.0024
+                - tier_name: TIER_3
+                  start_quantity: 2000
+                  end_quantity: null
+                  unit_rate: 0.003
+      responses:
+        '200':
+          description: Tariff updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffResponse'
+              example:
+                tariff_id: trf_api_call_2026_01
+                service_id: svc_edge_monitoring
+                meter_id: meter_api_call_global
+                name: Edge Monitoring API Calls 2026
+                description: Tiered API call pricing for enterprise edge workloads
+                status: ACTIVE
+                currency: USD
+                commitment_mrc: 700.0
+                overage_rate: 0.003
+                effective_from: '2026-01-01T00:00:00Z'
+                effective_to: null
+                billing_cycle: MONTHLY
+                tiers:
+                  - tier_name: TIER_1
+                    start_quantity: 0
+                    end_quantity: 1000
+                    unit_rate: 0.0017
+                  - tier_name: TIER_2
+                    start_quantity: 1000
+                    end_quantity: 2000
+                    unit_rate: 0.0024
+                  - tier_name: TIER_3
+                    start_quantity: 2000
+                    end_quantity: null
+                    unit_rate: 0.003
+                created_at: '2026-03-27T17:55:02Z'
+                updated_at: '2026-03-27T18:03:41Z'
+                created_by: api_partner_2291
+                updated_by: api_partner_2291
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/invoices/{invoiceId}:recalculate:
+    post:
+      operationId: recalculateInvoice
+      summary: Recalculate invoice charges
+      description: >-
+        Recomputes rating aggregates for an invoice by replaying included usage records against
+        currently effective tariffs and entitlement context. This operation is asynchronous and
+        returns a recalculation job descriptor with current status.
+      tags:
+        - Invoices
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdPathParam'
+      requestBody:
+        required: true
+        description: Invoice recalculation request payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceRecalculateRequest'
+            example:
+              reason_code: TARIFF_CHANGE
+              dry_run: false
+              include_adjustments: true
+              billing_cycle: '2026-03'
+              initiated_by: api_partner_2291
+      responses:
+        '202':
+          description: Recalculation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceRecalculateResponse'
+              example:
+                job_id: job_inv_recalc_24bd92
+                invoice_id: inv_2026_03_000482
+                status: QUEUED
+                reason_code: TARIFF_CHANGE
+                dry_run: false
+                include_adjustments: true
+                billing_cycle: '2026-03'
+                requested_at: '2026-03-27T18:06:12Z'
+                requested_by: api_partner_2291
+                trace_id: trace_8fddf9e97a
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer token issued by Verizon identity infrastructure
+  parameters:
+    RecordIdPathParam:
+      name: recordId
+      in: path
+      required: true
+      description: Unique rating record identifier
+      schema:
+        type: string
+        description: Unique rating record identifier
+        example: rr_5b5f4934f8
+    TariffIdPathParam:
+      name: tariffId
+      in: path
+      required: true
+      description: Unique tariff identifier
+      schema:
+        type: string
+        description: Unique tariff identifier
+        example: trf_api_call_2026_01
+    InvoiceIdPathParam:
+      name: invoiceId
+      in: path
+      required: true
+      description: Unique invoice identifier
+      schema:
+        type: string
+        description: Unique invoice identifier
+        example: inv_2026_03_000482
+    PageQueryParam:
+      name: page
+      in: query
+      required: false
+      description: Page number for paginated tariff results
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+        example: 1
+    PerPageQueryParam:
+      name: per_page
+      in: query
+      required: false
+      description: Number of items per page, max 100
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+        example: 20
+    SortByQueryParam:
+      name: sort_by
+      in: query
+      required: false
+      description: Field used for ordering tariff list responses
+      schema:
+        type: string
+        enum:
+          - effective_from
+          - created_at
+          - updated_at
+          - name
+        default: effective_from
+    SortOrderQueryParam:
+      name: sort_order
+      in: query
+      required: false
+      description: Sort direction for tariff results
+      schema:
+        type: string
+        enum:
+          - asc
+          - desc
+        default: desc
+    TariffStatusQueryParam:
+      name: status
+      in: query
+      required: false
+      description: Filter tariffs by status
+      schema:
+        type: string
+        enum:
+          - DRAFT
+          - ACTIVE
+          - RETIRED
+    ServiceIdQueryParam:
+      name: service_id
+      in: query
+      required: false
+      description: Filter tariffs by service identifier
+      schema:
+        type: string
+        example: svc_edge_monitoring
+  schemas:
+    RatingQuoteRequest:
+      type: object
+      description: Request payload for calculating a non-posting rating quote
+      properties:
+        account_id:
+          type: string
+          description: Billing account identifier
+          example: acct_7f6e9120
+        service_id:
+          type: string
+          description: Catalog service identifier
+          example: svc_edge_monitoring
+        usage_quantity:
+          type: number
+          format: double
+          minimum: 0
+          description: Metered quantity to be rated
+          example: 1875.25
+        usage_uom:
+          type: string
+          description: Usage unit of measure
+          enum:
+            - API_CALL
+            - GB_TRANSFER
+            - DEVICE_HOUR
+            - SESSION
+          example: API_CALL
+        usage_start_at:
+          type: string
+          format: date-time
+          description: Usage interval start timestamp in UTC
+          example: '2026-03-01T00:00:00Z'
+        usage_end_at:
+          type: string
+          format: date-time
+          description: Usage interval end timestamp in UTC
+          example: '2026-03-01T23:59:59Z'
+        billing_cycle:
+          type: string
+          description: Billing cycle key in YYYY-MM format
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+          example: '2026-03'
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          minLength: 3
+          maxLength: 3
+          example: USD
+      required:
+        - account_id
+        - service_id
+        - usage_quantity
+        - usage_uom
+        - usage_start_at
+        - usage_end_at
+        - billing_cycle
+        - currency
+    RatingQuoteResponse:
+      type: object
+      description: Output of quote-only rating computation
+      properties:
+        quote_id:
+          type: string
+          description: Quote identifier for support and audit traceability
+          example: quote_24a8af2b
+        account_id:
+          type: string
+          description: Billing account identifier
+          example: acct_7f6e9120
+        service_id:
+          type: string
+          description: Catalog service identifier
+          example: svc_edge_monitoring
+        usage_quantity:
+          type: number
+          format: double
+          description: Metered quantity used in quote
+          example: 1875.25
+        usage_uom:
+          type: string
+          description: Usage unit of measure
+          example: API_CALL
+        tariff_id:
+          type: string
+          description: Effective tariff identifier used for quote
+          example: trf_api_call_2026_01
+        tariff_tier:
+          type: string
+          description: Resolved tariff tier for quoted quantity
+          example: TIER_2
+        overage_rate:
+          type: number
+          format: double
+          minimum: 0
+          description: Applied overage unit rate in USD
+          example: 0.0025
+        commitment_mrc:
+          type: number
+          format: double
+          minimum: 0
+          description: Monthly recurring commitment amount in USD
+          example: 750.0
+        rated_amount_usd:
+          type: number
+          format: double
+          minimum: 0
+          description: Estimated rated usage amount in USD before tax
+          example: 892.19
+        estimated_tax_usd:
+          type: number
+          format: double
+          minimum: 0
+          description: Estimated tax amount in USD
+          example: 62.45
+        currency:
+          type: string
+          description: Quote currency
+          example: USD
+        billing_cycle:
+          type: string
+          description: Billing cycle key in YYYY-MM format
+          example: '2026-03'
+        quote_expires_at:
+          type: string
+          format: date-time
+          description: Time when the quote should no longer be treated as current
+          example: '2026-03-27T18:45:00Z'
+        trace_id:
+          type: string
+          description: Internal trace identifier for observability
+          example: trace_6f79c8de18
+      required:
+        - quote_id
+        - account_id
+        - service_id
+        - usage_quantity
+        - usage_uom
+        - tariff_id
+        - tariff_tier
+        - overage_rate
+        - commitment_mrc
+        - rated_amount_usd
+        - currency
+        - billing_cycle
+        - quote_expires_at
+        - trace_id
+    RatingRecordCreateRequest:
+      type: object
+      description: Payload for final rating record creation
+      properties:
+        client_record_id:
+          type: string
+          description: Caller-defined idempotency identifier
+          maxLength: 128
+          example: clrec_20260327_993712
+        account_id:
+          type: string
+          description: Billing account identifier
+          example: acct_7f6e9120
+        invoice_id:
+          type: string
+          description: Invoice identifier to associate this record with
+          example: inv_2026_03_000482
+        service_id:
+          type: string
+          description: Catalog service identifier
+          example: svc_edge_monitoring
+        meter_id:
+          type: string
+          description: Meter identifier for pricing lookup
+          example: meter_api_call_global
+        usage_quantity:
+          type: number
+          format: double
+          minimum: 0
+          description: Final usage quantity to rate
+          example: 2015.0
+        usage_uom:
+          type: string
+          description: Usage unit of measure
+          enum:
+            - API_CALL
+            - GB_TRANSFER
+            - DEVICE_HOUR
+            - SESSION
+          example: API_CALL
+        usage_start_at:
+          type: string
+          format: date-time
+          description: Start of usage interval
+          example: '2026-03-15T00:00:00Z'
+        usage_end_at:
+          type: string
+          format: date-time
+          description: End of usage interval
+          example: '2026-03-15T23:59:59Z'
+        billing_cycle:
+          type: string
+          description: Billing cycle key in YYYY-MM format
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+          example: '2026-03'
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          minLength: 3
+          maxLength: 3
+          example: USD
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional metadata included in rating context and audit
+      required:
+        - client_record_id
+        - account_id
+        - invoice_id
+        - service_id
+        - meter_id
+        - usage_quantity
+        - usage_uom
+        - usage_start_at
+        - usage_end_at
+        - billing_cycle
+        - currency
+    RatingRecordResponse:
+      type: object
+      description: Immutable persisted rating record
+      properties:
+        record_id:
+          type: string
+          description: System-generated record identifier
+          example: rr_5b5f4934f8
+        client_record_id:
+          type: string
+          description: Caller-provided idempotency key
+          example: clrec_20260327_993712
+        account_id:
+          type: string
+          description: Billing account identifier
+          example: acct_7f6e9120
+        invoice_id:
+          type: string
+          description: Associated invoice identifier
+          example: inv_2026_03_000482
+        service_id:
+          type: string
+          description: Catalog service identifier
+          example: svc_edge_monitoring
+        meter_id:
+          type: string
+          description: Meter identifier
+          example: meter_api_call_global
+        usage_quantity:
+          type: number
+          format: double
+          description: Final usage quantity that was rated
+          example: 2015.0
+        usage_uom:
+          type: string
+          description: Usage unit of measure
+          example: API_CALL
+        tariff_id:
+          type: string
+          description: Tariff identifier used for rating
+          example: trf_api_call_2026_01
+        tariff_tier:
+          type: string
+          description: Selected tier under tariff rules
+          example: TIER_3
+        overage_rate:
+          type: number
+          format: double
+          minimum: 0
+          description: Applied overage unit rate in USD
+          example: 0.0031
+        commitment_mrc:
+          type: number
+          format: double
+          minimum: 0
+          description: Commitment monthly recurring charge in USD
+          example: 750.0
+        rated_amount_usd:
+          type: number
+          format: double
+          minimum: 0
+          description: Final rated amount in USD
+          example: 947.65
+        currency:
+          type: string
+          description: Billing currency
+          example: USD
+        billing_cycle:
+          type: string
+          description: Billing cycle key in YYYY-MM format
+          example: '2026-03'
+        status:
+          type: string
+          description: Rating workflow status
+          enum:
+            - RATED
+            - REVERSED
+            - ADJUSTED
+          example: RATED
+        rated_at:
+          type: string
+          format: date-time
+          description: UTC timestamp when rating completed
+          example: '2026-03-27T17:44:51Z'
+        trace_id:
+          type: string
+          description: Internal trace identifier
+          example: trace_4b4f0ff90f
+      required:
+        - record_id
+        - client_record_id
+        - account_id
+        - invoice_id
+        - service_id
+        - meter_id
+        - usage_quantity
+        - usage_uom
+        - tariff_id
+        - tariff_tier
+        - overage_rate
+        - commitment_mrc
+        - rated_amount_usd
+        - currency
+        - billing_cycle
+        - status
+        - rated_at
+        - trace_id
+    TariffTier:
+      type: object
+      description: A quantity band and unit rate within a tariff definition
+      properties:
+        tier_name:
+          type: string
+          description: Logical tier label
+          example: TIER_1
+        start_quantity:
+          type: number
+          format: double
+          minimum: 0
+          description: Inclusive lower quantity bound for this tier
+          example: 0
+        end_quantity:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          description: Exclusive upper quantity bound, null means no upper bound
+          example: 1000
+        unit_rate:
+          type: number
+          format: double
+          minimum: 0
+          description: Price per unit for quantities in this tier
+          example: 0.0018
+      required:
+        - tier_name
+        - start_quantity
+        - unit_rate
+    TariffCreateRequest:
+      type: object
+      description: Payload for creating a tariff definition
+      properties:
+        service_id:
+          type: string
+          description: Catalog service identifier
+          example: svc_edge_monitoring
+        meter_id:
+          type: string
+          description: Meter identifier
+          example: meter_api_call_global
+        name:
+          type: string
+          description: Human-readable tariff name
+          maxLength: 140
+          example: Edge Monitoring API Calls 2026
+        description:
+          type: string
+          description: Tariff narrative for billing operators
+          maxLength: 1000
+          example: Tiered API call pricing for enterprise edge workloads
+        status:
+          type: string
+          description: Initial tariff status
+          enum:
+            - DRAFT
+            - ACTIVE
+            - RETIRED
+          example: DRAFT
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          minLength: 3
+          maxLength: 3
+          example: USD
+        commitment_mrc:
+          type: number
+          format: double
+          minimum: 0
+          description: Monthly recurring commitment amount in USD
+          example: 750.0
+        overage_rate:
+          type: number
+          format: double
+          minimum: 0
+          description: Fallback overage unit rate in USD
+          example: 0.0031
+        effective_from:
+          type: string
+          format: date-time
+          description: Tariff effective start timestamp in UTC
+          example: '2026-01-01T00:00:00Z'
+        effective_to:
+          type: string
+          format: date-time
+          nullable: true
+          description: Tariff effective end timestamp in UTC, null for open-ended
+        billing_cycle:
+          type: string
+          description: Billing cycle granularity applied to this tariff
+          enum:
+            - MONTHLY
+            - QUARTERLY
+          example: MONTHLY
+        tiers:
+          type: array
+          description: Ordered set of quantity tiers and rates
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/TariffTier'
+      required:
+        - service_id
+        - meter_id
+        - name
+        - status
+        - currency
+        - commitment_mrc
+        - overage_rate
+        - effective_from
+        - billing_cycle
+        - tiers
+    TariffPatchRequest:
+      type: object
+      description: Partial update payload for tariff resources
+      properties:
+        name:
+          type: string
+          description: Updated tariff name
+          maxLength: 140
+          example: Edge Monitoring API Calls 2026 Rev A
+        description:
+          type: string
+          description: Updated tariff narrative
+          maxLength: 1000
+        status:
+          type: string
+          description: Target status after patch
+          enum:
+            - DRAFT
+            - ACTIVE
+            - RETIRED
+        commitment_mrc:
+          type: number
+          format: double
+          minimum: 0
+          description: Updated monthly recurring commitment in USD
+          example: 700.0
+        overage_rate:
+          type: number
+          format: double
+          minimum: 0
+          description: Updated fallback overage rate in USD
+          example: 0.003
+        effective_from:
+          type: string
+          format: date-time
+          description: Updated effective start timestamp
+        effective_to:
+          type: string
+          format: date-time
+          nullable: true
+          description: Updated effective end timestamp
+        tiers:
+          type: array
+          description: Entire replacement tier list
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/TariffTier'
+      minProperties: 1
+    TariffResponse:
+      type: object
+      description: Tariff resource representation
+      properties:
+        tariff_id:
+          type: string
+          description: Unique tariff identifier
+          example: trf_api_call_2026_01
+        service_id:
+          type: string
+          description: Catalog service identifier
+          example: svc_edge_monitoring
+        meter_id:
+          type: string
+          description: Meter identifier
+          example: meter_api_call_global
+        name:
+          type: string
+          description: Tariff name
+          example: Edge Monitoring API Calls 2026
+        description:
+          type: string
+          description: Tariff narrative
+        status:
+          type: string
+          description: Current tariff status
+          enum:
+            - DRAFT
+            - ACTIVE
+            - RETIRED
+          example: ACTIVE
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+        commitment_mrc:
+          type: number
+          format: double
+          minimum: 0
+          description: Monthly recurring commitment amount in USD
+          example: 700.0
+        overage_rate:
+          type: number
+          format: double
+          minimum: 0
+          description: Fallback overage unit rate in USD
+          example: 0.003
+        effective_from:
+          type: string
+          format: date-time
+          description: Effective start timestamp
+          example: '2026-01-01T00:00:00Z'
+        effective_to:
+          type: string
+          format: date-time
+          nullable: true
+          description: Effective end timestamp
+        billing_cycle:
+          type: string
+          description: Billing cycle granularity
+          enum:
+            - MONTHLY
+            - QUARTERLY
+          example: MONTHLY
+        tiers:
+          type: array
+          description: Ordered quantity tiers
+          items:
+            $ref: '#/components/schemas/TariffTier'
+        created_at:
+          type: string
+          format: date-time
+          description: Resource creation timestamp
+          example: '2026-03-27T17:55:02Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Resource last update timestamp
+          example: '2026-03-27T18:03:41Z'
+        created_by:
+          type: string
+          description: Principal that created the tariff
+          example: api_partner_2291
+        updated_by:
+          type: string
+          description: Principal that last updated the tariff
+          example: api_partner_2291
+      required:
+        - tariff_id
+        - service_id
+        - meter_id
+        - name
+        - status
+        - currency
+        - commitment_mrc
+        - overage_rate
+        - effective_from
+        - billing_cycle
+        - tiers
+        - created_at
+        - updated_at
+        - created_by
+        - updated_by
+    TariffListResponse:
+      type: object
+      description: Paginated tariff collection response
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TariffResponse'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+        - data
+        - pagination
+    InvoiceRecalculateRequest:
+      type: object
+      description: Request payload for invoice-level recalculation
+      properties:
+        reason_code:
+          type: string
+          description: Reason for triggering recalculation
+          enum:
+            - TARIFF_CHANGE
+            - CONTRACT_UPDATE
+            - USAGE_CORRECTION
+            - MANUAL_REVIEW
+          example: TARIFF_CHANGE
+        dry_run:
+          type: boolean
+          description: If true, computes impact without persisting new totals
+          default: false
+          example: false
+        include_adjustments:
+          type: boolean
+          description: Include generated adjustment lines in recalc output
+          default: true
+          example: true
+        billing_cycle:
+          type: string
+          description: Billing cycle key in YYYY-MM format
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+          example: '2026-03'
+        initiated_by:
+          type: string
+          description: Initiator identity for audit
+          maxLength: 128
+          example: api_partner_2291
+      required:
+        - reason_code
+        - dry_run
+        - include_adjustments
+        - billing_cycle
+        - initiated_by
+    InvoiceRecalculateResponse:
+      type: object
+      description: Acknowledgement and status of invoice recalculation job
+      properties:
+        job_id:
+          type: string
+          description: Recalculation job identifier
+          example: job_inv_recalc_24bd92
+        invoice_id:
+          type: string
+          description: Invoice identifier
+          example: inv_2026_03_000482
+        status:
+          type: string
+          description: Current job status
+          enum:
+            - QUEUED
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+          example: QUEUED
+        reason_code:
+          type: string
+          description: Reason code carried from request
+          example: TARIFF_CHANGE
+        dry_run:
+          type: boolean
+          description: Indicates dry-run execution mode
+          example: false
+        include_adjustments:
+          type: boolean
+          description: Indicates whether adjustments are included
+          example: true
+        billing_cycle:
+          type: string
+          description: Billing cycle under recalculation
+          example: '2026-03'
+        requested_at:
+          type: string
+          format: date-time
+          description: Job enqueue timestamp
+          example: '2026-03-27T18:06:12Z'
+        requested_by:
+          type: string
+          description: Principal that requested recalculation
+          example: api_partner_2291
+        trace_id:
+          type: string
+          description: Internal trace identifier
+          example: trace_8fddf9e97a
+      required:
+        - job_id
+        - invoice_id
+        - status
+        - reason_code
+        - dry_run
+        - include_adjustments
+        - billing_cycle
+        - requested_at
+        - requested_by
+        - trace_id
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 48
+        total_pages:
+          type: integer
+          description: Total available pages
+          example: 3
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error summary
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Field-level or rule-level validation details
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: Request field that failed validation
+                    example: usage_quantity
+                  reason:
+                    type: string
+                    description: Validation failure reason
+                    example: Must be greater than or equal to 0.
+            request_id:
+              type: string
+              description: Correlation identifier for support and traceability
+              example: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+  responses:
+    '400':
+      description: Bad Request - Request is malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: billing_cycle
+                  reason: Must match YYYY-MM format.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '401':
+      description: Unauthorized - Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '403':
+      description: Forbidden - Caller is not permitted to access the requested resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-0123-cdef-123456780000
+    '404':
+      description: Not Found - The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested tariff was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict - Request conflicts with current state of target resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: A record with this client_record_id already exists.
+              request_id: req-e5f6a7b8-c9d0-0123-efab-345678901234
+    '422':
+      description: Unprocessable Entity - Request is valid but violates business rules.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Usage interval overlaps with an existing immutable period.
+              request_id: req-f6a7b8c9-d0e1-0123-fabc-456789012345
+    '429':
+      description: Too Many Requests - Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Rate limit exceeded. Retry after 30 seconds.
+              request_id: req-07b8c9d0-e1f2-0123-abcd-567890123456
+    '500':
+      description: Internal Server Error - An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please retry later.
+              request_id: req-18c9d0e1-f203-0123-bcde-678901234567

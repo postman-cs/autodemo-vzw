@@ -1,0 +1,1385 @@
+openapi: 3.0.3
+info:
+  title: VZW Meter Connectivity API
+  description: >-
+    Monitor and control smart meter connectivity across LTE, NB-IoT, and 5G
+    access networks for utility grid operations. The API provides connectivity
+    session lifecycle management, near real-time meter health telemetry,
+    remote network profile updates, and anomaly reporting for operations
+    centers and automation systems.
+  version: 1.0.0
+  contact:
+    name: Verizon Grid Connectivity API Team
+    email: api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms
+  x-verizon-catalog-id: vzw-meter-connectivity-api
+  x-verizon-domain: connectivity
+servers:
+  - url: https://vzw-meter-connectivity-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-meter-connectivity-api.staging.api.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Sessions
+    description: Connectivity session lifecycle and access control
+  - name: Meter Connectivity
+    description: Meter-level radio and packet health visibility
+  - name: Network Profiles
+    description: Meter network profile and APN configuration updates
+  - name: Anomalies
+    description: Detection and listing of connectivity anomalies
+paths:
+  /v1/sessions:
+    post:
+      operationId: createConnectivitySession
+      summary: Create connectivity session
+      description: >-
+        Creates a scoped connectivity session used to manage and monitor meter
+        connectivity workflows. Sessions can be bound to a utility operator,
+        meter groups, and policy constraints such as read-only operation.
+      tags:
+        - Sessions
+      requestBody:
+        required: true
+        description: Session creation payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+            examples:
+              regionalOperatorSession:
+                summary: Regional operator session with write access
+                value:
+                  utility_id: util-ne-grid-01
+                  operator_id: op-4472
+                  scope:
+                    meter_ids:
+                      - meter-10001892
+                      - meter-10001893
+                    regions:
+                      - us-ne-boston
+                      - us-ne-cambridge
+                  permissions:
+                    can_ping: true
+                    can_update_network_profile: true
+                  expires_in_seconds: 3600
+      responses:
+        '201':
+          description: Session created
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+              examples:
+                created:
+                  value:
+                    data:
+                      session_id: sess_8f50ef7654b9
+                      utility_id: util-ne-grid-01
+                      operator_id: op-4472
+                      scope:
+                        meter_ids:
+                          - meter-10001892
+                          - meter-10001893
+                        regions:
+                          - us-ne-boston
+                          - us-ne-cambridge
+                      permissions:
+                        can_ping: true
+                        can_update_network_profile: true
+                      status: active
+                      created_at: '2026-03-27T09:24:18Z'
+                      expires_at: '2026-03-27T10:24:18Z'
+                    meta:
+                      request_id: req_79f0d857ecf2
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+    get:
+      operationId: listConnectivitySessions
+      summary: List connectivity sessions
+      description: >-
+        Returns paginated connectivity sessions for a utility account or
+        operator. Results can be filtered by session status and sorted by
+        creation or expiration timestamps.
+      tags:
+        - Sessions
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortBySessionParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+        - $ref: '#/components/parameters/SessionStatusParam'
+        - $ref: '#/components/parameters/UtilityIdParam'
+        - $ref: '#/components/parameters/OperatorIdParam'
+      responses:
+        '200':
+          description: Paginated session list
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+              examples:
+                firstPage:
+                  value:
+                    data:
+                      - session_id: sess_8f50ef7654b9
+                        utility_id: util-ne-grid-01
+                        operator_id: op-4472
+                        scope:
+                          meter_ids:
+                            - meter-10001892
+                            - meter-10001893
+                          regions:
+                            - us-ne-boston
+                        permissions:
+                          can_ping: true
+                          can_update_network_profile: true
+                        status: active
+                        created_at: '2026-03-27T09:24:18Z'
+                        expires_at: '2026-03-27T10:24:18Z'
+                      - session_id: sess_1311dbf1d0a9
+                        utility_id: util-ne-grid-01
+                        operator_id: op-3110
+                        scope:
+                          meter_ids:
+                            - meter-10001899
+                          regions:
+                            - us-ne-cambridge
+                        permissions:
+                          can_ping: true
+                          can_update_network_profile: false
+                        status: expired
+                        created_at: '2026-03-27T06:10:00Z'
+                        expires_at: '2026-03-27T07:10:00Z'
+                    meta:
+                      page: 1
+                      per_page: 20
+                      total: 2
+                      total_pages: 1
+                      request_id: req_94adf8fc51d6
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+  /v1/meters/{meterId}/connectivity:
+    get:
+      operationId: getMeterConnectivity
+      summary: Get meter connectivity state
+      description: >-
+        Returns current and recent connectivity telemetry for a smart meter,
+        including radio metrics, packet reliability, APN assignment, access
+        technology, and last activity timestamp.
+      tags:
+        - Meter Connectivity
+      parameters:
+        - $ref: '#/components/parameters/MeterIdParam'
+        - $ref: '#/components/parameters/IncludeHistoryParam'
+      responses:
+        '200':
+          description: Meter connectivity state returned
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeterConnectivityResponse'
+              examples:
+                connectedMeter:
+                  value:
+                    data:
+                      meter_id: meter-10001892
+                      utility_id: util-ne-grid-01
+                      site:
+                        site_id: site-1401
+                        feeder_id: feeder-77
+                        latitude: 42.3601
+                        longitude: -71.0589
+                      connectivity:
+                        status: connected
+                        rat_type: LTE
+                        apn: util-grid-core.vzw.iot
+                        rsrp_dbm: -94
+                        sinr_db: 17.2
+                        packet_delivery_ratio: 0.998
+                        uplink_latency_ms_p50: 81
+                        last_seen_at: '2026-03-27T09:57:10Z'
+                        ip_address: 10.11.27.45
+                      roaming:
+                        is_roaming: false
+                        visited_plmn: null
+                      history:
+                        - observed_at: '2026-03-27T09:52:00Z'
+                          status: connected
+                          rat_type: LTE
+                          rsrp_dbm: -96
+                          packet_delivery_ratio: 0.996
+                        - observed_at: '2026-03-27T09:47:00Z'
+                          status: connected
+                          rat_type: LTE
+                          rsrp_dbm: -95
+                          packet_delivery_ratio: 0.997
+                    meta:
+                      request_id: req_d0f5387e4b30
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+  /v1/meters/{meterId}:ping:
+    post:
+      operationId: pingMeterConnectivity
+      summary: Trigger meter network ping
+      description: >-
+        Sends an asynchronous ping operation to validate active network reachability
+        for the meter and returns accepted operation details. Use this endpoint for
+        rapid troubleshooting and post-change validation.
+      tags:
+        - Meter Connectivity
+      parameters:
+        - $ref: '#/components/parameters/MeterIdParam'
+      requestBody:
+        required: true
+        description: Ping request options
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PingRequest'
+            examples:
+              defaultPing:
+                value:
+                  timeout_ms: 3000
+                  packet_count: 3
+                  correlation_id: outage-triage-3321
+      responses:
+        '202':
+          description: Ping operation accepted
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+              examples:
+                accepted:
+                  value:
+                    data:
+                      operation_id: op_ping_4ea54d189f
+                      meter_id: meter-10001892
+                      status: queued
+                      queued_at: '2026-03-27T10:00:01Z'
+                      estimated_completion_at: '2026-03-27T10:00:06Z'
+                    meta:
+                      request_id: req_8b15afb2f1be
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+  /v1/meters/{meterId}/network-profile:
+    patch:
+      operationId: updateMeterNetworkProfile
+      summary: Update meter network profile
+      description: >-
+        Updates network profile settings for a meter including APN, preferred
+        radio access technology, fallback behavior, and policy-level retry
+        controls. The operation is asynchronous and may trigger profile
+        reprovisioning on the serving core network.
+      tags:
+        - Network Profiles
+      parameters:
+        - $ref: '#/components/parameters/MeterIdParam'
+      requestBody:
+        required: true
+        description: Partial network profile update payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNetworkProfileRequest'
+            examples:
+              ratAndApnUpdate:
+                value:
+                  apn: util-grid-core.vzw.iot
+                  preferred_rat_type: NB-IoT
+                  allowed_rat_types:
+                    - NB-IoT
+                    - LTE
+                  fallback_enabled: true
+                  max_retries: 5
+                  reason: Improve underground vault coverage
+      responses:
+        '202':
+          description: Network profile update accepted
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkProfileUpdateResponse'
+              examples:
+                accepted:
+                  value:
+                    data:
+                      operation_id: op_nw_93665cb8fd
+                      meter_id: meter-10001892
+                      status: pending
+                      requested_profile:
+                        apn: util-grid-core.vzw.iot
+                        preferred_rat_type: NB-IoT
+                        allowed_rat_types:
+                          - NB-IoT
+                          - LTE
+                        fallback_enabled: true
+                        max_retries: 5
+                      submitted_at: '2026-03-27T10:05:02Z'
+                    meta:
+                      request_id: req_578df5c91995
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+  /v1/connectivity/anomalies:
+    get:
+      operationId: listConnectivityAnomalies
+      summary: List connectivity anomalies
+      description: >-
+        Returns recent connectivity anomalies detected across meters, such as
+        persistent packet loss, severe signal degradation, or frequent RAT
+        flapping. Supports filtering by severity, utility, and time range.
+      tags:
+        - Anomalies
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/UtilityIdParam'
+        - $ref: '#/components/parameters/MeterIdFilterParam'
+        - $ref: '#/components/parameters/SeverityParam'
+        - $ref: '#/components/parameters/AnomalyTypeParam'
+        - $ref: '#/components/parameters/DetectedAfterParam'
+        - $ref: '#/components/parameters/DetectedBeforeParam'
+      responses:
+        '200':
+          description: Paginated anomalies list
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnomalyListResponse'
+              examples:
+                anomaliesPage:
+                  value:
+                    data:
+                      - anomaly_id: anom_1f88f6eb
+                        meter_id: meter-10001892
+                        utility_id: util-ne-grid-01
+                        type: low_signal
+                        severity: high
+                        detected_at: '2026-03-27T09:50:00Z'
+                        status: open
+                        metrics:
+                          rsrp_dbm: -122
+                          packet_delivery_ratio: 0.812
+                          rat_type: NB-IoT
+                          last_seen_at: '2026-03-27T09:49:41Z'
+                        description: >-
+                          RSRP below threshold for 15 minutes with packet loss
+                          above configured alarm policy.
+                      - anomaly_id: anom_53a9dd92
+                        meter_id: meter-10004111
+                        utility_id: util-ne-grid-01
+                        type: rat_flapping
+                        severity: medium
+                        detected_at: '2026-03-27T09:48:00Z'
+                        status: investigating
+                        metrics:
+                          rsrp_dbm: -109
+                          packet_delivery_ratio: 0.953
+                          rat_type: LTE
+                          last_seen_at: '2026-03-27T09:47:58Z'
+                        description: Meter switched RAT six times in ten minutes.
+                    meta:
+                      page: 1
+                      per_page: 20
+                      total: 2
+                      total_pages: 1
+                      request_id: req_4f24ff9f9153
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  headers:
+    RequestId:
+      description: Unique request identifier for support and traceability
+      schema:
+        type: string
+        example: req_79f0d857ecf2
+  parameters:
+    MeterIdParam:
+      name: meterId
+      in: path
+      required: true
+      description: Unique smart meter identifier
+      schema:
+        type: string
+        minLength: 5
+        maxLength: 64
+        pattern: '^[A-Za-z0-9._:-]+$'
+      example: meter-10001892
+    MeterIdFilterParam:
+      name: meter_id
+      in: query
+      required: false
+      description: Optional meter identifier filter
+      schema:
+        type: string
+    UtilityIdParam:
+      name: utility_id
+      in: query
+      required: false
+      description: Utility account identifier
+      schema:
+        type: string
+        example: util-ne-grid-01
+    OperatorIdParam:
+      name: operator_id
+      in: query
+      required: false
+      description: Operator identifier used to filter sessions
+      schema:
+        type: string
+        example: op-4472
+    PageParam:
+      name: page
+      in: query
+      required: false
+      description: Page number for paginated responses
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    PerPageParam:
+      name: per_page
+      in: query
+      required: false
+      description: Number of records per page
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+    SortBySessionParam:
+      name: sort_by
+      in: query
+      required: false
+      description: Field used for sorting session results
+      schema:
+        type: string
+        enum:
+          - created_at
+          - expires_at
+          - status
+        default: created_at
+    SortOrderParam:
+      name: sort_order
+      in: query
+      required: false
+      description: Sort direction
+      schema:
+        type: string
+        enum:
+          - asc
+          - desc
+        default: desc
+    SessionStatusParam:
+      name: status
+      in: query
+      required: false
+      description: Session status filter
+      schema:
+        type: string
+        enum:
+          - active
+          - expired
+          - revoked
+    IncludeHistoryParam:
+      name: include_history
+      in: query
+      required: false
+      description: Include recent connectivity history snapshots
+      schema:
+        type: boolean
+        default: true
+    SeverityParam:
+      name: severity
+      in: query
+      required: false
+      description: Anomaly severity filter
+      schema:
+        type: string
+        enum:
+          - low
+          - medium
+          - high
+          - critical
+    AnomalyTypeParam:
+      name: type
+      in: query
+      required: false
+      description: Anomaly classification filter
+      schema:
+        type: string
+        enum:
+          - low_signal
+          - packet_loss
+          - rat_flapping
+          - prolonged_offline
+          - apn_mismatch
+    DetectedAfterParam:
+      name: detected_after
+      in: query
+      required: false
+      description: Return anomalies detected on or after this timestamp
+      schema:
+        type: string
+        format: date-time
+    DetectedBeforeParam:
+      name: detected_before
+      in: query
+      required: false
+      description: Return anomalies detected on or before this timestamp
+      schema:
+        type: string
+        format: date-time
+  responses:
+    BadRequestError:
+      description: Invalid request syntax or parameter values
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidParameter:
+              value:
+                error:
+                  code: BAD_REQUEST
+                  message: Query parameter per_page must be <= 100
+                  details:
+                    - field: per_page
+                      issue: value_above_maximum
+                meta:
+                  request_id: req_8e8dc755c45d
+    UnauthorizedError:
+      description: Missing or invalid authentication token
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missingAuth:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Bearer token is required
+                meta:
+                  request_id: req_78ef7648d8e3
+    ForbiddenError:
+      description: Token is valid but lacks required scope or account access
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missingScope:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: Missing required scope connectivity:write
+                meta:
+                  request_id: req_55948633695d
+    NotFoundError:
+      description: Requested resource was not found
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            meterMissing:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Meter meter-10009999 was not found
+                meta:
+                  request_id: req_dfa1f31f7bda
+    ConflictError:
+      description: Request conflicts with current state
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            operationInProgress:
+              value:
+                error:
+                  code: CONFLICT
+                  message: A network profile update is already in progress
+                  details:
+                    - field: meterId
+                      issue: operation_already_in_progress
+                meta:
+                  request_id: req_1473caf22a18
+    UnprocessableEntityError:
+      description: Request was syntactically valid but semantically invalid
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidRatCombination:
+              value:
+                error:
+                  code: UNPROCESSABLE_ENTITY
+                  message: preferred_rat_type must be included in allowed_rat_types
+                  details:
+                    - field: preferred_rat_type
+                      issue: not_in_allowed_set
+                meta:
+                  request_id: req_14c680af7d0b
+    RateLimitError:
+      description: Too many requests for the current token or account
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+            example: 30
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            throttled:
+              value:
+                error:
+                  code: RATE_LIMITED
+                  message: Rate limit exceeded for utility util-ne-grid-01
+                meta:
+                  request_id: req_3f5a35985f3c
+    InternalServerError:
+      description: Unexpected server-side error
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            generic:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: Unexpected error while processing request
+                meta:
+                  request_id: req_5817f23f2462
+    ServiceUnavailableError:
+      description: Service is temporarily unavailable
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+            example: 60
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            maintenance:
+              value:
+                error:
+                  code: SERVICE_UNAVAILABLE
+                  message: Connectivity telemetry backend is under maintenance
+                meta:
+                  request_id: req_2de06e82e511
+  schemas:
+    CreateSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        utility_id:
+          type: string
+          description: Utility account identifier
+          example: util-ne-grid-01
+        operator_id:
+          type: string
+          description: Operator principal identifier
+          example: op-4472
+        scope:
+          $ref: '#/components/schemas/SessionScope'
+        permissions:
+          $ref: '#/components/schemas/SessionPermissions'
+        expires_in_seconds:
+          type: integer
+          minimum: 300
+          maximum: 86400
+          description: Session duration in seconds
+          example: 3600
+      required:
+        - utility_id
+        - operator_id
+        - scope
+        - permissions
+        - expires_in_seconds
+    SessionScope:
+      type: object
+      additionalProperties: false
+      properties:
+        meter_ids:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            type: string
+          description: Meter identifiers accessible in this session
+        regions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+          description: Geographic regions covered by this session
+      required:
+        - meter_ids
+        - regions
+    SessionPermissions:
+      type: object
+      additionalProperties: false
+      properties:
+        can_ping:
+          type: boolean
+          description: Permission to trigger meter ping operations
+        can_update_network_profile:
+          type: boolean
+          description: Permission to update meter network profile settings
+      required:
+        - can_ping
+        - can_update_network_profile
+    Session:
+      type: object
+      properties:
+        session_id:
+          type: string
+          example: sess_8f50ef7654b9
+        utility_id:
+          type: string
+          example: util-ne-grid-01
+        operator_id:
+          type: string
+          example: op-4472
+        scope:
+          $ref: '#/components/schemas/SessionScope'
+        permissions:
+          $ref: '#/components/schemas/SessionPermissions'
+        status:
+          $ref: '#/components/schemas/SessionStatus'
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+      required:
+        - session_id
+        - utility_id
+        - operator_id
+        - scope
+        - permissions
+        - status
+        - created_at
+        - expires_at
+    SessionStatus:
+      type: string
+      enum:
+        - active
+        - expired
+        - revoked
+    SessionResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Session'
+        meta:
+          $ref: '#/components/schemas/RequestMeta'
+      required:
+        - data
+        - meta
+    SessionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+        - data
+        - meta
+    MeterConnectivityResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/MeterConnectivity'
+        meta:
+          $ref: '#/components/schemas/RequestMeta'
+      required:
+        - data
+        - meta
+    MeterConnectivity:
+      type: object
+      properties:
+        meter_id:
+          type: string
+        utility_id:
+          type: string
+        site:
+          $ref: '#/components/schemas/MeterSite'
+        connectivity:
+          $ref: '#/components/schemas/ConnectivityMetrics'
+        roaming:
+          $ref: '#/components/schemas/RoamingInfo'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConnectivityHistorySample'
+      required:
+        - meter_id
+        - utility_id
+        - site
+        - connectivity
+        - roaming
+    MeterSite:
+      type: object
+      properties:
+        site_id:
+          type: string
+        feeder_id:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+      required:
+        - site_id
+        - feeder_id
+        - latitude
+        - longitude
+    ConnectivityMetrics:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/ConnectivityStatus'
+        rat_type:
+          $ref: '#/components/schemas/RatType'
+        apn:
+          type: string
+          description: APN currently assigned to the meter SIM profile
+          example: util-grid-core.vzw.iot
+        rsrp_dbm:
+          type: integer
+          minimum: -160
+          maximum: -44
+          description: Reference signal received power in dBm
+          example: -94
+        sinr_db:
+          type: number
+          format: float
+          minimum: -20
+          maximum: 40
+          description: Signal-to-interference-plus-noise ratio in dB
+          example: 17.2
+        packet_delivery_ratio:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Successful packet ratio over the rolling interval
+          example: 0.998
+        uplink_latency_ms_p50:
+          type: integer
+          minimum: 0
+          description: Median uplink latency over the rolling interval
+          example: 81
+        last_seen_at:
+          type: string
+          format: date-time
+          description: Most recent successful meter network activity timestamp
+        ip_address:
+          type: string
+          description: Last known private IP address used by the meter
+          example: 10.11.27.45
+      required:
+        - status
+        - rat_type
+        - apn
+        - rsrp_dbm
+        - packet_delivery_ratio
+        - last_seen_at
+    ConnectivityHistorySample:
+      type: object
+      properties:
+        observed_at:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/ConnectivityStatus'
+        rat_type:
+          $ref: '#/components/schemas/RatType'
+        rsrp_dbm:
+          type: integer
+        packet_delivery_ratio:
+          type: number
+          format: float
+      required:
+        - observed_at
+        - status
+        - rat_type
+        - rsrp_dbm
+        - packet_delivery_ratio
+    ConnectivityStatus:
+      type: string
+      enum:
+        - connected
+        - degraded
+        - disconnected
+        - dormant
+    RoamingInfo:
+      type: object
+      properties:
+        is_roaming:
+          type: boolean
+        visited_plmn:
+          type: string
+          nullable: true
+          description: PLMN identifier when roaming is active
+          example: '310260'
+      required:
+        - is_roaming
+    RatType:
+      type: string
+      description: Radio access technology
+      enum:
+        - LTE
+        - NB-IoT
+        - 5G
+    PingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        timeout_ms:
+          type: integer
+          minimum: 500
+          maximum: 10000
+          default: 3000
+        packet_count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 3
+        correlation_id:
+          type: string
+          maxLength: 128
+          description: Client correlation identifier for audit and tracing
+      required:
+        - timeout_ms
+        - packet_count
+    PingResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PingOperation'
+        meta:
+          $ref: '#/components/schemas/RequestMeta'
+      required:
+        - data
+        - meta
+    PingOperation:
+      type: object
+      properties:
+        operation_id:
+          type: string
+          example: op_ping_4ea54d189f
+        meter_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+        queued_at:
+          type: string
+          format: date-time
+        estimated_completion_at:
+          type: string
+          format: date-time
+      required:
+        - operation_id
+        - meter_id
+        - status
+        - queued_at
+    UpdateNetworkProfileRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        apn:
+          type: string
+          minLength: 3
+          maxLength: 100
+          description: APN to assign to meter profile
+          example: util-grid-core.vzw.iot
+        preferred_rat_type:
+          $ref: '#/components/schemas/RatType'
+        allowed_rat_types:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/RatType'
+        fallback_enabled:
+          type: boolean
+          default: true
+          description: Allow fallback from preferred RAT to alternate options
+        max_retries:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 3
+          description: Retry attempts for profile attach during reprovisioning
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 200
+          description: Operational reason for the profile change
+      required:
+        - apn
+        - preferred_rat_type
+        - allowed_rat_types
+    NetworkProfileUpdateResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/NetworkProfileUpdateOperation'
+        meta:
+          $ref: '#/components/schemas/RequestMeta'
+      required:
+        - data
+        - meta
+    NetworkProfileUpdateOperation:
+      type: object
+      properties:
+        operation_id:
+          type: string
+          example: op_nw_93665cb8fd
+        meter_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - processing
+            - completed
+            - failed
+        requested_profile:
+          $ref: '#/components/schemas/NetworkProfile'
+        submitted_at:
+          type: string
+          format: date-time
+      required:
+        - operation_id
+        - meter_id
+        - status
+        - requested_profile
+        - submitted_at
+    NetworkProfile:
+      type: object
+      properties:
+        apn:
+          type: string
+        preferred_rat_type:
+          $ref: '#/components/schemas/RatType'
+        allowed_rat_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/RatType'
+        fallback_enabled:
+          type: boolean
+        max_retries:
+          type: integer
+      required:
+        - apn
+        - preferred_rat_type
+        - allowed_rat_types
+        - fallback_enabled
+        - max_retries
+    AnomalyListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConnectivityAnomaly'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+        - data
+        - meta
+    ConnectivityAnomaly:
+      type: object
+      properties:
+        anomaly_id:
+          type: string
+          example: anom_1f88f6eb
+        meter_id:
+          type: string
+        utility_id:
+          type: string
+        type:
+          type: string
+          enum:
+            - low_signal
+            - packet_loss
+            - rat_flapping
+            - prolonged_offline
+            - apn_mismatch
+        severity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+            - critical
+        detected_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - open
+            - investigating
+            - resolved
+            - suppressed
+        metrics:
+          $ref: '#/components/schemas/AnomalyMetrics'
+        description:
+          type: string
+      required:
+        - anomaly_id
+        - meter_id
+        - utility_id
+        - type
+        - severity
+        - detected_at
+        - status
+        - metrics
+        - description
+    AnomalyMetrics:
+      type: object
+      properties:
+        rsrp_dbm:
+          type: integer
+          minimum: -160
+          maximum: -44
+        packet_delivery_ratio:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        rat_type:
+          $ref: '#/components/schemas/RatType'
+        last_seen_at:
+          type: string
+          format: date-time
+      required:
+        - rsrp_dbm
+        - packet_delivery_ratio
+        - rat_type
+        - last_seen_at
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+        meta:
+          $ref: '#/components/schemas/RequestMeta'
+      required:
+        - error
+        - meta
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      required:
+        - code
+        - message
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+        issue:
+          type: string
+      required:
+        - field
+        - issue
+    RequestMeta:
+      type: object
+      properties:
+        request_id:
+          type: string
+          example: req_79f0d857ecf2
+      required:
+        - request_id
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 126
+        total_pages:
+          type: integer
+          example: 7
+        request_id:
+          type: string
+          example: req_94adf8fc51d6
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+        - request_id

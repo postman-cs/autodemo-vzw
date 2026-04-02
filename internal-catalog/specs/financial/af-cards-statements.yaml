@@ -1,0 +1,1040 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Card Statements API
+  description: >-
+    Generates and manages monthly card statements. Provides statement summaries, detailed line-item transaction
+    listings, PDF download, and on-demand statement generation. Supports dispute initiation for individual
+    statement line items. Statements are retained for seven years to meet regulatory requirements.
+  version: 2.0.1
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-cards-statements
+  x-acme-domain: cards
+servers:
+  - url: https://af-cards-statements.api.acmefin.com/v1
+    description: Production
+  - url: https://af-cards-statements.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Statements
+    description: Monthly billing statement generation, retrieval, and download
+  - name: Statement Transactions
+    description: Individual transaction line items within a statement
+paths:
+  /statements:
+    get:
+      operationId: listStatements
+      summary: List card statements
+      description: >-
+        Returns a paginated list of monthly statements for a card account. Statements are generated
+        automatically on the billing cycle date and are available within 24 hours. Includes summary fields
+        such as opening/closing balance, minimum payment due, and payment status.
+      tags:
+        - Statements
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: card_id
+          in: query
+          required: false
+          description: Filter statements by card identifier
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by payment status
+          schema:
+            type: "string"
+            enum:
+              - GENERATED
+              - DELIVERED
+              - VIEWED
+              - PAID_MINIMUM
+              - PAID_FULL
+              - OVERDUE
+        - name: from_date
+          in: query
+          required: false
+          description: Include statements with period_end on or after this date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        statement_id:
+                          type: string
+                          description: Unique statement identifier
+                          example: "stmt-2025-06"
+                        card_id:
+                          type: string
+                          description: Unique card identifier
+                          example: "card-8a2f4b91"
+                        period_start:
+                          type: string
+                          description: Billing period start date
+                          format: date
+                          example: "2025-05-16"
+                        period_end:
+                          type: string
+                          description: Billing period end date
+                          format: date
+                          example: "2025-06-15"
+                        opening_balance:
+                          type: number
+                          description: Balance at the start of the billing period
+                          format: double
+                          example: 1245.67
+                        closing_balance:
+                          type: number
+                          description: Balance at the end of the billing period
+                          format: double
+                          example: 2890.12
+                        minimum_payment:
+                          type: number
+                          description: Minimum payment due for this statement period
+                          format: double
+                          example: 57.8
+                        payment_due_date:
+                          type: string
+                          description: Date by which the minimum payment must be received
+                          format: date
+                          example: "2025-07-10"
+                        total_purchases:
+                          type: number
+                          description: Sum of all purchase transactions in the period
+                          format: double
+                          example: 1923.45
+                        total_payments:
+                          type: number
+                          description: Sum of all payments received in the period
+                          format: double
+                          example: -279.0
+                        total_fees:
+                          type: number
+                          description: Sum of all fees charged in the period
+                          format: double
+                          example: 0.0
+                        interest_charged:
+                          type: number
+                          description: Interest charged for the billing period
+                          format: double
+                          example: 0.0
+                        status:
+                          type: string
+                          description: Statement payment status
+                          example: "DELIVERED"
+                          enum:
+                            - GENERATED
+                            - DELIVERED
+                            - VIEWED
+                            - PAID_MINIMUM
+                            - PAID_FULL
+                            - OVERDUE
+                        generated_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - statement_id
+                        - card_id
+                        - period_start
+                        - period_end
+                        - closing_balance
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /statements/{statement_id}:
+    get:
+      operationId: getStatement
+      summary: Get statement details
+      description: >-
+        Retrieves the full details of a single billing statement including opening and closing balances,
+        payment due date, minimum payment, interest charges, fees, and totals for purchases and payments.
+        Automatically marks the statement as VIEWED if its current status is DELIVERED.
+      tags:
+        - Statements
+      parameters:
+        - name: statement_id
+          in: path
+          required: true
+          description: Unique statement id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statement_id:
+                    type: string
+                    description: Unique statement identifier
+                    example: "stmt-2025-06"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  period_start:
+                    type: string
+                    description: Billing period start date
+                    format: date
+                    example: "2025-05-16"
+                  period_end:
+                    type: string
+                    description: Billing period end date
+                    format: date
+                    example: "2025-06-15"
+                  opening_balance:
+                    type: number
+                    description: Balance at the start of the billing period
+                    format: double
+                    example: 1245.67
+                  closing_balance:
+                    type: number
+                    description: Balance at the end of the billing period
+                    format: double
+                    example: 2890.12
+                  minimum_payment:
+                    type: number
+                    description: Minimum payment due for this statement period
+                    format: double
+                    example: 57.8
+                  payment_due_date:
+                    type: string
+                    description: Date by which the minimum payment must be received
+                    format: date
+                    example: "2025-07-10"
+                  total_purchases:
+                    type: number
+                    description: Sum of all purchase transactions in the period
+                    format: double
+                    example: 1923.45
+                  total_payments:
+                    type: number
+                    description: Sum of all payments received in the period
+                    format: double
+                    example: -279.0
+                  total_fees:
+                    type: number
+                    description: Sum of all fees charged in the period
+                    format: double
+                    example: 0.0
+                  interest_charged:
+                    type: number
+                    description: Interest charged for the billing period
+                    format: double
+                    example: 0.0
+                  status:
+                    type: string
+                    description: Statement payment status
+                    example: "DELIVERED"
+                    enum:
+                      - GENERATED
+                      - DELIVERED
+                      - VIEWED
+                      - PAID_MINIMUM
+                      - PAID_FULL
+                      - OVERDUE
+                  generated_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - statement_id
+                  - card_id
+                  - closing_balance
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /statements/{statement_id}/transactions:
+    get:
+      operationId: listStatementTransactions
+      summary: List statement line items
+      description: >-
+        Returns all transactions included in a specific billing statement, sorted by posted date descending.
+        Each line item includes the merchant description, amount, category, and merchant category code. Use
+        this to display a detailed transaction breakdown for the statement period.
+      tags:
+        - Statement Transactions
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: category
+          in: query
+          required: false
+          description: Filter by transaction category
+          schema:
+            type: "string"
+            enum:
+              - PURCHASE
+              - PAYMENT
+              - REFUND
+              - FEE
+              - INTEREST
+              - ADJUSTMENT
+              - CASH_ADVANCE
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transaction_id:
+                          type: string
+                          description: Unique transaction identifier
+                          example: "txn-8f3c92"
+                        posted_date:
+                          type: string
+                          description: Date the transaction was posted to the account
+                          format: date
+                          example: "2025-06-01"
+                        transaction_date:
+                          type: string
+                          description: Date the transaction occurred
+                          format: date
+                          example: "2025-05-30"
+                        description:
+                          type: string
+                          description: Merchant name and transaction description
+                          example: "ACME GROCERY #4521 NEW YORK NY"
+                        amount:
+                          type: number
+                          description: Monetary amount
+                          format: double
+                          example: 250.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        category:
+                          type: string
+                          description: Transaction category
+                          example: "PURCHASE"
+                          enum:
+                            - PURCHASE
+                            - PAYMENT
+                            - REFUND
+                            - FEE
+                            - INTEREST
+                            - ADJUSTMENT
+                            - CASH_ADVANCE
+                        merchant_category_code:
+                          type: string
+                          description: ISO 18245 merchant category code
+                          example: "5411"
+                          pattern: '^[0-9]{4}$'
+                      required:
+                        - transaction_id
+                        - posted_date
+                        - amount
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /statements/{statement_id}/generate:
+    post:
+      operationId: generateStatement
+      summary: Generate on-demand statement
+      description: >-
+        Triggers on-demand generation of an interim statement for the current billing period. The generated
+        statement reflects all transactions posted up to the current moment. On-demand statements are marked
+        with a GENERATED status and do not affect the regular billing cycle. Limited to three on-demand
+        generations per card per month.
+      tags:
+        - Statements
+      parameters:
+        - name: statement_id
+          in: path
+          required: true
+          description: Unique statement id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statement_id:
+                    type: string
+                    description: Unique statement identifier
+                    example: "stmt-2025-06"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  period_start:
+                    type: string
+                    description: Billing period start date
+                    format: date
+                    example: "2025-05-16"
+                  period_end:
+                    type: string
+                    description: Billing period end date
+                    format: date
+                    example: "2025-06-15"
+                  opening_balance:
+                    type: number
+                    description: Balance at the start of the billing period
+                    format: double
+                    example: 1245.67
+                  closing_balance:
+                    type: number
+                    description: Balance at the end of the billing period
+                    format: double
+                    example: 2890.12
+                  minimum_payment:
+                    type: number
+                    description: Minimum payment due for this statement period
+                    format: double
+                    example: 57.8
+                  payment_due_date:
+                    type: string
+                    description: Date by which the minimum payment must be received
+                    format: date
+                    example: "2025-07-10"
+                  total_purchases:
+                    type: number
+                    description: Sum of all purchase transactions in the period
+                    format: double
+                    example: 1923.45
+                  total_payments:
+                    type: number
+                    description: Sum of all payments received in the period
+                    format: double
+                    example: -279.0
+                  total_fees:
+                    type: number
+                    description: Sum of all fees charged in the period
+                    format: double
+                    example: 0.0
+                  interest_charged:
+                    type: number
+                    description: Interest charged for the billing period
+                    format: double
+                    example: 0.0
+                  status:
+                    type: string
+                    description: Statement payment status
+                    example: "DELIVERED"
+                    enum:
+                      - GENERATED
+                      - DELIVERED
+                      - VIEWED
+                      - PAID_MINIMUM
+                      - PAID_FULL
+                      - OVERDUE
+                  generated_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - statement_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /statements/{statement_id}/download:
+    get:
+      operationId: downloadStatement
+      summary: Download statement as PDF
+      description: >-
+        Returns a pre-signed URL for downloading the statement in PDF format. The URL is valid for 15
+        minutes. The PDF includes the full statement summary, transaction listing, and any required
+        regulatory disclosures. If the statement PDF has not yet been rendered, this triggers rendering and
+        returns the URL once ready.
+      tags:
+        - Statements
+      parameters:
+        - name: statement_id
+          in: path
+          required: true
+          description: Unique statement id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  download_url:
+                    type: string
+                    description: Pre-signed URL for PDF download, valid for 15 minutes
+                    format: uri
+                    example: "https://cdn.acmefin.com/statements/stmt-2025-06.pdf?token=abc123"
+                  expires_at:
+                    type: string
+                    description: Timestamp when the download URL expires
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  file_size_bytes:
+                    type: integer
+                    description: Size of the PDF file in bytes
+                    example: 245760
+                required:
+                  - download_url
+                  - expires_at
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /statements/{statement_id}/transactions/{transaction_id}/dispute:
+    post:
+      operationId: disputeLineItem
+      summary: Dispute a statement line item
+      description: >-
+        Initiates a dispute for a specific transaction on a statement. This creates a dispute case in the
+        disputes system and flags the transaction as under review. The cardholder must provide a reason code
+        and optional supporting description. A provisional credit may be applied based on the dispute reason
+        and amount.
+      tags:
+        - Statement Transactions
+      requestBody:
+        required: true
+        description: Dispute a statement line item request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason_code:
+                      type: string
+                      description: Dispute reason code
+                      example: "UNAUTHORIZED"
+                      enum:
+                        - UNAUTHORIZED
+                        - DUPLICATE
+                        - INCORRECT_AMOUNT
+                        - MERCHANDISE_NOT_RECEIVED
+                        - MERCHANDISE_DEFECTIVE
+                        - CANCELLED_SERVICE
+                        - CREDIT_NOT_RECEIVED
+                    description:
+                      type: string
+                      description: Cardholder description of the dispute
+                      example: "I did not make this purchase. My card was in my possession."
+                    statement_id:
+                      type: string
+                      description: Statement containing the transaction
+                      example: "stmt-2025-06"
+                    transaction_id:
+                      type: string
+                      description: Transaction to dispute
+                      example: "txn-8f3c92"
+              required:
+                - reason_code
+                - statement_id
+                - transaction_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Created dispute case identifier
+                    example: "dsp-7a2f9c"
+                  status:
+                    type: string
+                    description: Initial dispute status
+                    example: "OPENED"
+                  provisional_credit:
+                    type: number
+                    description: Provisional credit amount applied, if any
+                    format: double
+                    example: 250.0
+                  estimated_resolution_date:
+                    type: string
+                    description: Estimated date for dispute resolution
+                    format: date
+                    example: "2025-08-15"
+                required:
+                  - dispute_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /statements/summary:
+    get:
+      operationId: getStatementSummary
+      summary: Get account statement summary
+      description: >-
+        Returns an aggregate summary across all statements for a card account, including total amounts paid,
+        average monthly spend, payment history, and current outstanding balance. Useful for credit analysis
+        and account health dashboards.
+      tags:
+        - Statements
+      parameters:
+        - name: card_id
+          in: query
+          required: true
+          description: Card identifier to summarize
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  total_statements:
+                    type: integer
+                    description: Total number of statements generated
+                    example: 24
+                  average_monthly_spend:
+                    type: number
+                    description: Average monthly purchase amount
+                    format: double
+                    example: 1845.3
+                  on_time_payment_rate:
+                    type: number
+                    description: Percentage of statements paid on time
+                    format: double
+                    example: 95.8
+                  current_balance:
+                    type: number
+                    description: Current outstanding balance
+                    format: double
+                    example: 2890.12
+                required:
+                  - card_id
+                  - total_statements
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

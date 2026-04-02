@@ -1,0 +1,431 @@
+openapi: 3.0.3
+info:
+  title: "Verizon Network APIs - Demo"
+  description: "Verizon ThingSpace Device Location, Quality on Demand, and OAuth APIs for the Metro City Dispatch partner demo."
+  version: "1.0.0"
+servers:
+  - url: "{{verizon_base}}"
+    description: "Verizon Mock Server"
+security:
+  - bearerAuth: []
+  - basicAuth: []
+paths:
+  /api/ts/v1/oauth2/token:
+    post:
+      tags:
+        - "Authentication"
+      summary: "Obtain OAuth2 access token"
+      description: "Exchange client credentials for a bearer token to authenticate API requests."
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+              properties:
+                grant_type:
+                  type: string
+                  example: "client_credentials"
+            encoding:
+              grant_type:
+                contentType: application/x-www-form-urlencoded
+      responses:
+        "200":
+          description: "Successful token response"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: "Bearer token for API authentication"
+                  token_type:
+                    type: string
+                    example: "Bearer"
+                  expires_in:
+                    type: integer
+                    description: "Token validity duration in seconds"
+                    example: 3600
+                  scope:
+                    type: string
+                    description: "Granted token scope"
+              example:
+                access_token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3RoaW5nc3BhY2UudmVyaXpvbi5jb20iLCJhdWQiOiJodHRwczovL3RoaW5nc3BhY2UudmVyaXpvbi5jb20iLCJzdWIiOiIxMjM0NTY3ODkwIiwic2NvcGUiOiJsb2NhdGlvbiBxcyIsImlhdCI6MTcwOTMxNjAzMiwiZXhwIjoxNzA5MzE5NjMyfQ.signature"
+                token_type: "Bearer"
+                expires_in: 3600
+                scope: "location qs"
+        "401":
+          description: "Authentication failed"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  error_description:
+                    type: string
+  /api/loc/v1/locations:
+    post:
+      tags:
+        - "Device Location"
+      summary: "Retrieve device locations"
+      description: "Query current or cached location data for one or more devices on a Verizon account."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: VZ-M2M-Token
+          in: header
+          required: true
+          schema:
+            type: string
+          description: "ThingSpace M2M session token"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - accountName
+                - deviceList
+              properties:
+                accountName:
+                  type: string
+                  example: "0242078698-00001"
+                accuracyMode:
+                  type: string
+                  enum:
+                    - "0"
+                    - "1"
+                  example: "0"
+                cacheMode:
+                  type: string
+                  enum:
+                    - "0"
+                    - "1"
+                    - "2"
+                  example: "1"
+                deviceList:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - id
+                      - kind
+                    properties:
+                      id:
+                        type: string
+                        example: "900000000000009"
+                      kind:
+                        type: string
+                        enum:
+                          - "imei"
+                          - "iccid"
+                          - "esn"
+                          - "mdn"
+                        example: "imei"
+                      mdn:
+                        type: string
+                        example: "7892345678"
+            example:
+              accountName: "0242078698-00001"
+              accuracyMode: "0"
+              cacheMode: "1"
+              deviceList:
+                - id: "900000000000009"
+                  kind: "imei"
+                  mdn: "7892345678"
+      responses:
+        "200":
+          description: "Location data for requested devices"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    msid:
+                      type: string
+                    pd:
+                      type: object
+                      properties:
+                        x:
+                          type: string
+                          description: "Longitude coordinate"
+                          example: "-122.4194"
+                        y:
+                          type: string
+                          description: "Latitude coordinate"
+                          example: "37.7749"
+                        radius:
+                          type: string
+                          description: "Accuracy radius in meters"
+                          example: "5571"
+                        time:
+                          type: string
+                          description: "Timestamp of location fix (ISO 8601)"
+                          example: "20260326T183000Z"
+                        qos:
+                          type: string
+                          description: "Quality of Service indicator"
+                          example: "false"
+                    error:
+                      type: object
+                      nullable: true
+                      properties:
+                        type:
+                          type: string
+                        info:
+                          type: string
+                        time:
+                          type: string
+              example:
+                - msid: "7892345678"
+                  pd:
+                    x: "-122.4194"
+                    y: "37.7749"
+                    radius: "5571"
+                    time: "20260326T183000Z"
+                    qos: "false"
+                  error: null
+                - msid: "7892345679"
+                  pd:
+                    x: "-122.4089"
+                    y: "37.7849"
+                    radius: "3200"
+                    time: "20260326T182945Z"
+                    qos: "false"
+                  error: null
+        "400":
+          description: "Invalid request parameters"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  message:
+                    type: string
+        "401":
+          description: "Invalid or missing token"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /quality-on-demand/v1/sessions:
+    post:
+      tags:
+        - "Quality on Demand"
+      summary: "Create a Quality on Demand session"
+      description: "Request a guaranteed QoS profile for a device to support low-latency first responder applications."
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - device
+                - applicationServer
+                - qosProfile
+                - duration
+              properties:
+                device:
+                  type: object
+                  required:
+                    - phoneNumber
+                  properties:
+                    phoneNumber:
+                      type: string
+                      example: "+14155550199"
+                applicationServer:
+                  type: object
+                  required:
+                    - ipv4Address
+                  properties:
+                    ipv4Address:
+                      type: string
+                      example: "198.51.100.0/24"
+                qosProfile:
+                  type: string
+                  enum:
+                    - "QOS_L"
+                    - "QOS_M"
+                    - "QOS_S"
+                    - "QOS_E"
+                  example: "QOS_L"
+                duration:
+                  type: integer
+                  minimum: 1
+                  description: "Session duration in seconds"
+                  example: 3600
+            example:
+              device:
+                phoneNumber: "+14155550199"
+              applicationServer:
+                ipv4Address: "198.51.100.0/24"
+              qosProfile: "QOS_L"
+              duration: 3600
+      responses:
+        "200":
+          description: "QoD session created successfully"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    format: uuid
+                    example: "a3b4c5d6-e6f7-8901-abcd-ef0123456789"
+                  qosProfile:
+                    type: string
+                  qosStatus:
+                    type: string
+                    enum:
+                      - "REQUESTED"
+                      - "AVAILABLE"
+                      - "UNAVAILABLE"
+                  device:
+                    type: object
+                    properties:
+                      phoneNumber:
+                        type: string
+                  applicationServer:
+                    type: object
+                    properties:
+                      ipv4Address:
+                        type: string
+                  duration:
+                    type: integer
+                  startedAt:
+                    type: string
+                    format: date-time
+                  expiresAt:
+                    type: string
+                    format: date-time
+              example:
+                sessionId: "a3b4c5d6-e6f7-8901-abcd-ef0123456789"
+                qosProfile: "QOS_L"
+                qosStatus: "AVAILABLE"
+                device:
+                  phoneNumber: "+14155550199"
+                applicationServer:
+                  ipv4Address: "198.51.100.0/24"
+                duration: 3600
+                startedAt: "2026-03-26T18:30:00Z"
+                expiresAt: "2026-03-26T19:30:00Z"
+        "400":
+          description: "Invalid QoD request"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  message:
+                    type: string
+        "401":
+          description: "Authentication failed"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /m2m/v1/devices/locations/actions/sync:
+    post:
+      tags:
+        - "Device Location"
+      summary: "Legacy synchronous location lookup"
+      description: "DEPRECATED: Legacy synchronous device location endpoint. Use POST /api/loc/v1/locations instead."
+      deprecated: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - devices
+              properties:
+                devices:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - imei
+                      - mdn
+                    properties:
+                      imei:
+                        type: string
+                        example: "900000000000009"
+                      mdn:
+                        type: string
+                        example: "7892345678"
+            example:
+              devices:
+                - imei: "900000000000009"
+                  mdn: "7892345678"
+      responses:
+        "410":
+          description: "Gone - Legacy endpoint decommissioned"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "LEGACY_ENDPOINT"
+                  message:
+                    type: string
+                    example: "Use POST /api/loc/v1/locations with accountName, deviceList, and VZ-M2M-Token."
+                  replacement_endpoint:
+                    type: string
+                    example: "/api/loc/v1/locations"
+                  required_changes:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      - "Add VZ-M2M-Token header"
+                      - "Replace devices[] with deviceList[]"
+                      - "Add accountName and cacheMode"
+        "401":
+          description: "Authentication failed"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Bearer token obtained from OAuth2 /token endpoint"
+    basicAuth:
+      type: http
+      scheme: basic
+      description: "Client credentials for OAuth2 token exchange"

@@ -1,0 +1,1521 @@
+openapi: 3.0.3
+info:
+  title: VZW QoS Admission Control API
+  version: 1.0.0
+  description: |
+    API for QoS admission checks, capacity gating, and SLA-aware reservation in
+    5G slice-aware environments.
+
+    The service evaluates incoming QoS intents against current slice utilization,
+    policy thresholds, and SLA requirements, then returns deterministic admission
+    outcomes with machine-actionable reasons.
+  contact:
+    name: Verizon Partner Platform API Team
+    email: partner-api-support@verizon.example.com
+  x-catalog-id: vzw-qos-admission-control-api
+  x-domain: qos-admission
+servers:
+  - url: https://vzw-qos-admission-control-api.api.verizon.com
+    description: Production
+  - url: https://vzw-qos-admission-control-api.staging.api.verizon.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Admissions
+    description: Admission decisioning and reservation lifecycle
+  - name: Capacity
+    description: Slice-level utilization and headroom reporting
+  - name: Policies
+    description: Admission policy retrieval and threshold updates
+  - name: Audit
+    description: Admission decision history and traceability
+paths:
+  /v1/admissions/check:
+    post:
+      tags:
+        - Admissions
+      operationId: checkAdmission
+      summary: Evaluate QoS request against current capacity and policy
+      description: |
+        Performs a dry-run style admission evaluation for a proposed QoS request.
+        The operation checks current utilization, policy thresholds, and optional
+        SLA constraints without creating a reservation.
+      requestBody:
+        required: true
+        description: QoS admission evaluation request
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdmissionCheckRequest'
+            examples:
+              embb-check:
+                summary: eMBB interactive media check
+                value:
+                  request_id: req-2cc7b9ec-7c92-42f4-b74d-88f3879a0527
+                  tenant_id: tenant-acme-media
+                  slice_id: slice-embb-west-01
+                  ue_id: imsi-311480123456789
+                  dnn: media-streaming
+                  qos_profile:
+                    five_qi: 7
+                    gbr_kbps: 30000
+                    mbr_kbps: 45000
+                    ambr_mbps: 120
+                    priority_level: 6
+                    arp:
+                      priority_level: 7
+                      preemption_capability: MAY_PREEMPT
+                      preemption_vulnerability: PREEMPTABLE
+                  session_requirements:
+                    expected_duration_sec: 1800
+                    direction: BIDIRECTIONAL
+                    latency_budget_ms: 25
+                    jitter_budget_ms: 5
+                    packet_loss_budget_pct: 0.5
+                  reservation_window_sec: 120
+                  evaluate_strict_sla: true
+      responses:
+        '200':
+          description: Admission decision calculated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdmissionCheckResponse'
+              examples:
+                admitted:
+                  summary: Request admitted with moderate headroom
+                  value:
+                    request_id: req-2cc7b9ec-7c92-42f4-b74d-88f3879a0527
+                    admission_decision: ADMIT
+                    decision_reason_code: POLICY_AND_CAPACITY_OK
+                    confidence_score: 0.98
+                    evaluated_at: '2026-03-27T10:21:03Z'
+                    slice_snapshot:
+                      slice_id: slice-embb-west-01
+                      utilization_pct: 62.4
+                      available_gbr_kbps: 96500
+                      available_sessions: 34
+                    policy_match:
+                      policy_id: pol-embb-p6-west
+                      policy_version: 14
+                      threshold_action: ALLOW
+                    recommendations:
+                      - recommendation_type: RESERVE_NOW
+                        message: Reserve capacity now to avoid forecast contention.
+                    traces:
+                      - trace_id: trace-c5db0c4f
+                        stage: CAPACITY
+                        outcome: PASS
+                        detail: Available GBR exceeds requested GBR by 66.5 Mbps.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/admissions/reserve:
+    post:
+      tags:
+        - Admissions
+      operationId: reserveAdmission
+      summary: Reserve QoS resources for an admitted session
+      description: |
+        Creates a reservation against slice capacity for a specific session intent.
+        Reservations can be confirmed by downstream orchestration or released
+        explicitly if session setup is aborted.
+      requestBody:
+        required: true
+        description: Reservation creation request
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationRequest'
+            examples:
+              reserve-urlcc:
+                summary: URLLC low-latency reservation
+                value:
+                  request_id: req-a6ecf478-5940-4e53-b67f-e63f2ab0be21
+                  admission_reference:
+                    request_id: req-cc6f147a-730f-4df6-a1dd-4d6b5ce3196a
+                    decision_id: dec-77dcefc7d85f
+                  tenant_id: tenant-industrial-grid
+                  session_id: ses-a2f76568e4
+                  slice_id: slice-urllc-dc-02
+                  qos_profile:
+                    five_qi: 80
+                    gbr_kbps: 18000
+                    mbr_kbps: 22000
+                    ambr_mbps: 60
+                    priority_level: 2
+                    arp:
+                      priority_level: 1
+                      preemption_capability: MAY_PREEMPT
+                      preemption_vulnerability: NOT_PREEMPTABLE
+                  reservation_ttl_sec: 300
+                  idempotency_key: 5709f0f7-f31c-489e-932f-b0ca6de83a95
+      responses:
+        '201':
+          description: Reservation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationResponse'
+              examples:
+                created:
+                  value:
+                    reservation_id: rsv-7f0915327e0a
+                    request_id: req-a6ecf478-5940-4e53-b67f-e63f2ab0be21
+                    status: RESERVED
+                    reserved_at: '2026-03-27T10:34:21Z'
+                    expires_at: '2026-03-27T10:39:21Z'
+                    slice_id: slice-urllc-dc-02
+                    qos_profile:
+                      five_qi: 80
+                      gbr_kbps: 18000
+                      mbr_kbps: 22000
+                      ambr_mbps: 60
+                      priority_level: 2
+                    capacity_delta:
+                      reserved_gbr_kbps: 18000
+                      reserved_session_slots: 1
+                    links:
+                      release: /v1/admissions/reservations/rsv-7f0915327e0a
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/admissions/reservations/{reservationId}:
+    delete:
+      tags:
+        - Admissions
+      operationId: releaseReservation
+      summary: Release a previously created reservation
+      description: |
+        Releases a reservation and returns the capacity to the underlying slice.
+        If `force=true` is supplied, stale or partially fulfilled reservations are
+        removed even when linked orchestration state is unavailable.
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+        - name: force
+          in: query
+          description: Force release when orchestration confirmation is missing
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Reservation released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationReleaseResponse'
+              examples:
+                released:
+                  value:
+                    reservation_id: rsv-7f0915327e0a
+                    previous_status: RESERVED
+                    released_at: '2026-03-27T10:37:48Z'
+                    release_reason: SESSION_SETUP_ABORTED
+                    capacity_reclaimed:
+                      gbr_kbps: 18000
+                      session_slots: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/capacity/{sliceId}:
+    get:
+      tags:
+        - Capacity
+      operationId: getSliceCapacity
+      summary: Get current capacity and utilization for a slice
+      description: |
+        Returns point-in-time and short-horizon forecast utilization metrics for
+        a given slice, including session slot pressure and GBR availability.
+      parameters:
+        - $ref: '#/components/parameters/SliceId'
+        - name: includeForecast
+          in: query
+          required: false
+          description: Include 15-minute and 60-minute utilization forecasts
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Capacity metrics returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SliceCapacityResponse'
+              examples:
+                embb-capacity:
+                  value:
+                    slice_id: slice-embb-west-01
+                    region: us-west-2
+                    measured_at: '2026-03-27T10:40:12Z'
+                    utilization:
+                      utilization_pct: 68.1
+                      used_gbr_kbps: 246000
+                      available_gbr_kbps: 115000
+                      session_slots_used: 196
+                      session_slots_total: 280
+                    pressure_state: MODERATE
+                    forecast:
+                      util_15m_pct: 71.3
+                      util_60m_pct: 76.2
+                    threshold_bands:
+                      soft_limit_pct: 75
+                      hard_limit_pct: 88
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/policies:
+    get:
+      tags:
+        - Policies
+      operationId: listAdmissionPolicies
+      summary: List admission policies by slice type and priority
+      description: |
+        Returns policy records used by the admission engine, filterable by slice
+        type, priority ranges, lifecycle state, and effective timestamps.
+      parameters:
+        - name: sliceType
+          in: query
+          required: false
+          description: Slice type filter
+          schema:
+            type: string
+            enum:
+              - eMBB
+              - URLLC
+              - mMTC
+        - name: minPriorityLevel
+          in: query
+          required: false
+          description: Lowest 5G priority level to include (1 is highest)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 15
+        - name: maxPriorityLevel
+          in: query
+          required: false
+          description: Highest 5G priority level to include
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 15
+        - name: activeOnly
+          in: query
+          required: false
+          description: When true, only currently active policies are returned
+          schema:
+            type: boolean
+            default: true
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Policy list returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyListResponse'
+              examples:
+                filtered:
+                  value:
+                    data:
+                      - policy_id: pol-embb-p6-west
+                        name: eMBB Priority 6 West Region
+                        slice_type: eMBB
+                        priority_level_min: 5
+                        priority_level_max: 8
+                        threshold_config:
+                          soft_utilization_pct: 75
+                          hard_utilization_pct: 88
+                          deny_above_forecast_pct: 90
+                          min_headroom_gbr_kbps: 50000
+                        action_matrix:
+                          - condition: BELOW_SOFT_LIMIT
+                            action: ALLOW
+                          - condition: BETWEEN_SOFT_AND_HARD
+                            action: CONDITIONAL_ALLOW
+                          - condition: ABOVE_HARD_LIMIT
+                            action: DENY
+                        version: 14
+                        status: ACTIVE
+                        effective_from: '2026-03-20T00:00:00Z'
+                        updated_at: '2026-03-26T17:20:31Z'
+                    pagination:
+                      next_page_token: eyJvZmZzZXQiOjEwfQ==
+                      page_size: 10
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/policies/{policyId}:
+    patch:
+      tags:
+        - Policies
+      operationId: patchAdmissionPolicy
+      summary: Update admission policy thresholds and actions
+      description: |
+        Applies partial updates to mutable policy fields.
+        Optimistic concurrency is supported using the `if_match_version` request
+        field to prevent overwriting concurrent edits.
+      parameters:
+        - $ref: '#/components/parameters/PolicyId'
+      requestBody:
+        required: true
+        description: Policy patch payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyPatchRequest'
+            examples:
+              threshold-tighten:
+                value:
+                  if_match_version: 14
+                  threshold_config:
+                    soft_utilization_pct: 73
+                    hard_utilization_pct: 86
+                    deny_above_forecast_pct: 89
+                    min_headroom_gbr_kbps: 70000
+                  reason: Tighten thresholds ahead of scheduled event demand.
+      responses:
+        '200':
+          description: Policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyResponse'
+              examples:
+                updated:
+                  value:
+                    policy_id: pol-embb-p6-west
+                    name: eMBB Priority 6 West Region
+                    slice_type: eMBB
+                    priority_level_min: 5
+                    priority_level_max: 8
+                    threshold_config:
+                      soft_utilization_pct: 73
+                      hard_utilization_pct: 86
+                      deny_above_forecast_pct: 89
+                      min_headroom_gbr_kbps: 70000
+                    action_matrix:
+                      - condition: BELOW_SOFT_LIMIT
+                        action: ALLOW
+                      - condition: BETWEEN_SOFT_AND_HARD
+                        action: CONDITIONAL_ALLOW
+                      - condition: ABOVE_HARD_LIMIT
+                        action: DENY
+                    version: 15
+                    status: ACTIVE
+                    effective_from: '2026-03-20T00:00:00Z'
+                    updated_at: '2026-03-27T10:44:54Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/admissions/audit-log:
+    get:
+      tags:
+        - Audit
+      operationId: listAdmissionAuditLog
+      summary: List admission decisions log entries
+      description: |
+        Returns a paginated audit stream of admission check and reservation
+        outcomes, including policy versions and evaluation traces used to derive
+        decisions.
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+        - name: sliceId
+          in: query
+          required: false
+          description: Filter by slice identifier
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          required: false
+          description: Filter by tenant identifier
+          schema:
+            type: string
+        - name: decision
+          in: query
+          required: false
+          description: Filter by admission decision outcome
+          schema:
+            type: string
+            enum:
+              - ADMIT
+              - CONDITIONAL_ADMIT
+              - DENY
+        - name: from
+          in: query
+          required: false
+          description: Inclusive lower bound timestamp (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Inclusive upper bound timestamp (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Audit log page returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+              examples:
+                page-1:
+                  value:
+                    data:
+                      - event_id: evt-8f5ce9294d5f
+                        event_type: ADMISSION_CHECK
+                        request_id: req-2cc7b9ec-7c92-42f4-b74d-88f3879a0527
+                        decision_id: dec-f08f4fcbfd20
+                        tenant_id: tenant-acme-media
+                        slice_id: slice-embb-west-01
+                        decision: ADMIT
+                        decision_reason_code: POLICY_AND_CAPACITY_OK
+                        policy_id: pol-embb-p6-west
+                        policy_version: 14
+                        five_qi: 7
+                        priority_level: 6
+                        created_at: '2026-03-27T10:21:03Z'
+                      - event_id: evt-273243f8c7ab
+                        event_type: RESERVATION_CREATE
+                        request_id: req-a6ecf478-5940-4e53-b67f-e63f2ab0be21
+                        decision_id: dec-77dcefc7d85f
+                        tenant_id: tenant-industrial-grid
+                        slice_id: slice-urllc-dc-02
+                        decision: ADMIT
+                        decision_reason_code: RESERVED
+                        policy_id: pol-urllc-p2-dc
+                        policy_version: 23
+                        five_qi: 80
+                        priority_level: 2
+                        created_at: '2026-03-27T10:34:21Z'
+                    pagination:
+                      next_page_token: eyJjdXJzb3IiOiIyMDI2LTAzLTI3VDEwOjM0OjIxWiJ9
+                      page_size: 20
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ReservationId:
+      name: reservationId
+      in: path
+      required: true
+      description: Reservation identifier
+      schema:
+        type: string
+        pattern: '^rsv-[a-z0-9]{10,32}$'
+      example: rsv-7f0915327e0a
+    SliceId:
+      name: sliceId
+      in: path
+      required: true
+      description: Network slice identifier
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 128
+      example: slice-embb-west-01
+    PolicyId:
+      name: policyId
+      in: path
+      required: true
+      description: Admission policy identifier
+      schema:
+        type: string
+        pattern: '^pol-[a-z0-9-]{6,64}$'
+      example: pol-embb-p6-west
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: Number of records to return per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+    PageToken:
+      name: pageToken
+      in: query
+      required: false
+      description: Opaque pagination cursor from previous response
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Request payload or parameters are invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid-field:
+              value:
+                error:
+                  code: INVALID_ARGUMENT
+                  message: reservation_ttl_sec must be between 30 and 1800.
+                  details:
+                    - field: reservation_ttl_sec
+                      reason: out_of_range
+                request_id: req-a6ecf478-5940-4e53-b67f-e63f2ab0be21
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            auth-required:
+              value:
+                error:
+                  code: UNAUTHENTICATED
+                  message: Bearer token is missing or expired.
+                request_id: req-unknown
+    Forbidden:
+      description: Caller lacks sufficient scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            insufficient-scope:
+              value:
+                error:
+                  code: PERMISSION_DENIED
+                  message: Missing scope qos-admission:write.
+                request_id: req-6b76f242-c5e6-4bf0-bb1d-ae0509100fdf
+    NotFound:
+      description: Requested resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missing-reservation:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Reservation rsv-7f0915327e0a was not found.
+                request_id: req-cc411e92-2e70-4f2f-a193-155af8c90e5f
+    Conflict:
+      description: State conflict or idempotency mismatch
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            version-conflict:
+              value:
+                error:
+                  code: ABORTED
+                  message: if_match_version does not match current policy version.
+                  details:
+                    - field: if_match_version
+                      reason: version_conflict
+                request_id: req-2eb73989-a0e0-45bc-aadb-7f11db1417d6
+    UnprocessableEntity:
+      description: Business rules rejected request semantics
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unsupported-qi:
+              value:
+                error:
+                  code: FAILED_PRECONDITION
+                  message: Requested 5QI is not allowed for slice type mMTC.
+                  details:
+                    - field: qos_profile.five_qi
+                      reason: policy_violation
+                request_id: req-b85cb5b8-9ad9-4c70-86fd-86565bc995af
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Retry delay in seconds
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            throttled:
+              value:
+                error:
+                  code: RESOURCE_EXHAUSTED
+                  message: Rate limit exceeded for tenant tenant-acme-media.
+                request_id: req-a98492dd-f576-4750-a2ce-6c917c4df122
+    InternalServerError:
+      description: Internal processing error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            generic:
+              value:
+                error:
+                  code: INTERNAL
+                  message: An unexpected error occurred while evaluating admission.
+                request_id: req-9edfd515-7552-4e03-a91b-0050480e26fe
+    ServiceUnavailable:
+      description: Upstream dependency temporarily unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            dependency:
+              value:
+                error:
+                  code: UNAVAILABLE
+                  message: Capacity telemetry backend is temporarily unavailable.
+                request_id: req-8cd79ed9-e49d-4d8f-aec3-f3c65da0df62
+
+  schemas:
+    AdmissionCheckRequest:
+      type: object
+      required:
+        - request_id
+        - tenant_id
+        - slice_id
+        - qos_profile
+      properties:
+        request_id:
+          type: string
+          description: Client-generated correlation id
+          minLength: 8
+          maxLength: 128
+          example: req-2cc7b9ec-7c92-42f4-b74d-88f3879a0527
+        tenant_id:
+          type: string
+          description: Tenant or partner account id
+          example: tenant-acme-media
+        slice_id:
+          type: string
+          description: Target network slice id
+          example: slice-embb-west-01
+        ue_id:
+          type: string
+          description: UE identifier (IMSI, SUPI, or equivalent)
+          example: imsi-311480123456789
+        dnn:
+          type: string
+          description: Data network name for session context
+          example: media-streaming
+        qos_profile:
+          $ref: '#/components/schemas/QosProfile'
+        session_requirements:
+          $ref: '#/components/schemas/SessionRequirements'
+        reservation_window_sec:
+          type: integer
+          description: Optional hold window considered during check
+          minimum: 0
+          maximum: 1800
+          example: 120
+        evaluate_strict_sla:
+          type: boolean
+          description: Enforce strict SLA rules if true
+          default: false
+
+    AdmissionCheckResponse:
+      type: object
+      required:
+        - request_id
+        - admission_decision
+        - decision_reason_code
+        - evaluated_at
+      properties:
+        request_id:
+          type: string
+        admission_decision:
+          $ref: '#/components/schemas/AdmissionDecision'
+        decision_reason_code:
+          type: string
+          description: Stable reason code for machine handling
+          example: POLICY_AND_CAPACITY_OK
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.98
+        evaluated_at:
+          type: string
+          format: date-time
+        slice_snapshot:
+          $ref: '#/components/schemas/SliceSnapshot'
+        policy_match:
+          $ref: '#/components/schemas/PolicyMatch'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recommendation'
+        traces:
+          type: array
+          description: Optional decision trace breadcrumbs
+          items:
+            $ref: '#/components/schemas/DecisionTrace'
+
+    ReservationRequest:
+      type: object
+      required:
+        - request_id
+        - tenant_id
+        - session_id
+        - slice_id
+        - qos_profile
+        - reservation_ttl_sec
+      properties:
+        request_id:
+          type: string
+          example: req-a6ecf478-5940-4e53-b67f-e63f2ab0be21
+        admission_reference:
+          $ref: '#/components/schemas/AdmissionReference'
+        tenant_id:
+          type: string
+          example: tenant-industrial-grid
+        session_id:
+          type: string
+          description: External session identifier
+          example: ses-a2f76568e4
+        slice_id:
+          type: string
+          example: slice-urllc-dc-02
+        qos_profile:
+          $ref: '#/components/schemas/QosProfile'
+        reservation_ttl_sec:
+          type: integer
+          minimum: 30
+          maximum: 1800
+          description: Reservation expiry from creation time
+          example: 300
+        idempotency_key:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Optional idempotency key for create retries
+          example: 5709f0f7-f31c-489e-932f-b0ca6de83a95
+
+    ReservationResponse:
+      type: object
+      required:
+        - reservation_id
+        - request_id
+        - status
+        - reserved_at
+        - expires_at
+        - slice_id
+        - qos_profile
+      properties:
+        reservation_id:
+          type: string
+          pattern: '^rsv-[a-z0-9]{10,32}$'
+          example: rsv-7f0915327e0a
+        request_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - RESERVED
+            - CONFIRMED
+            - EXPIRED
+            - RELEASED
+        reserved_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        slice_id:
+          type: string
+        qos_profile:
+          $ref: '#/components/schemas/QosProfile'
+        capacity_delta:
+          $ref: '#/components/schemas/CapacityDelta'
+        links:
+          type: object
+          additionalProperties:
+            type: string
+
+    ReservationReleaseResponse:
+      type: object
+      required:
+        - reservation_id
+        - previous_status
+        - released_at
+      properties:
+        reservation_id:
+          type: string
+        previous_status:
+          type: string
+          enum:
+            - RESERVED
+            - CONFIRMED
+            - EXPIRED
+            - RELEASED
+        released_at:
+          type: string
+          format: date-time
+        release_reason:
+          type: string
+          example: SESSION_SETUP_ABORTED
+        capacity_reclaimed:
+          $ref: '#/components/schemas/CapacityReclaimed'
+
+    SliceCapacityResponse:
+      type: object
+      required:
+        - slice_id
+        - measured_at
+        - utilization
+        - pressure_state
+      properties:
+        slice_id:
+          type: string
+        region:
+          type: string
+          example: us-west-2
+        measured_at:
+          type: string
+          format: date-time
+        utilization:
+          $ref: '#/components/schemas/UtilizationMetrics'
+        pressure_state:
+          type: string
+          enum:
+            - LOW
+            - MODERATE
+            - HIGH
+            - SATURATED
+        forecast:
+          $ref: '#/components/schemas/CapacityForecast'
+        threshold_bands:
+          $ref: '#/components/schemas/ThresholdBands'
+
+    PolicyListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyResponse'
+        pagination:
+          $ref: '#/components/schemas/PaginationCursor'
+
+    PolicyResponse:
+      type: object
+      required:
+        - policy_id
+        - name
+        - slice_type
+        - priority_level_min
+        - priority_level_max
+        - threshold_config
+        - action_matrix
+        - version
+        - status
+        - effective_from
+        - updated_at
+      properties:
+        policy_id:
+          type: string
+          example: pol-embb-p6-west
+        name:
+          type: string
+        slice_type:
+          type: string
+          enum:
+            - eMBB
+            - URLLC
+            - mMTC
+        priority_level_min:
+          type: integer
+          minimum: 1
+          maximum: 15
+        priority_level_max:
+          type: integer
+          minimum: 1
+          maximum: 15
+        threshold_config:
+          $ref: '#/components/schemas/PolicyThresholdConfig'
+        action_matrix:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyActionRule'
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - INACTIVE
+            - DRAFT
+            - DEPRECATED
+        effective_from:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PolicyPatchRequest:
+      type: object
+      description: Partial policy update request
+      properties:
+        if_match_version:
+          type: integer
+          minimum: 1
+          description: Enforce optimistic concurrency on policy version
+        name:
+          type: string
+          maxLength: 140
+        threshold_config:
+          $ref: '#/components/schemas/PolicyThresholdConfig'
+        action_matrix:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyActionRule'
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - INACTIVE
+            - DRAFT
+        reason:
+          type: string
+          maxLength: 500
+
+    AuditLogResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationCursor'
+
+    AuditLogEntry:
+      type: object
+      required:
+        - event_id
+        - event_type
+        - request_id
+        - decision
+        - decision_reason_code
+        - policy_version
+        - created_at
+      properties:
+        event_id:
+          type: string
+          example: evt-8f5ce9294d5f
+        event_type:
+          type: string
+          enum:
+            - ADMISSION_CHECK
+            - RESERVATION_CREATE
+            - RESERVATION_RELEASE
+            - POLICY_OVERRIDE
+        request_id:
+          type: string
+        decision_id:
+          type: string
+        tenant_id:
+          type: string
+        slice_id:
+          type: string
+        decision:
+          $ref: '#/components/schemas/AdmissionDecision'
+        decision_reason_code:
+          type: string
+        policy_id:
+          type: string
+        policy_version:
+          type: integer
+        five_qi:
+          type: integer
+          minimum: 1
+          maximum: 255
+        priority_level:
+          type: integer
+          minimum: 1
+          maximum: 15
+        created_at:
+          type: string
+          format: date-time
+
+    QosProfile:
+      type: object
+      required:
+        - five_qi
+        - gbr_kbps
+        - mbr_kbps
+        - ambr_mbps
+        - priority_level
+      properties:
+        five_qi:
+          type: integer
+          minimum: 1
+          maximum: 255
+          description: 5G QoS Identifier (5QI)
+          example: 7
+        gbr_kbps:
+          type: integer
+          minimum: 1
+          description: Guaranteed bit rate in kbps
+          example: 30000
+        mbr_kbps:
+          type: integer
+          minimum: 1
+          description: Maximum bit rate in kbps
+          example: 45000
+        ambr_mbps:
+          type: number
+          format: float
+          minimum: 0.1
+          description: Aggregate maximum bit rate in Mbps
+          example: 120
+        priority_level:
+          type: integer
+          minimum: 1
+          maximum: 15
+          description: 5G priority level where 1 is highest priority
+          example: 6
+        arp:
+          $ref: '#/components/schemas/AllocationRetentionPriority'
+
+    AllocationRetentionPriority:
+      type: object
+      required:
+        - priority_level
+        - preemption_capability
+        - preemption_vulnerability
+      properties:
+        priority_level:
+          type: integer
+          minimum: 1
+          maximum: 15
+          description: ARP priority where lower values indicate higher priority
+          example: 7
+        preemption_capability:
+          type: string
+          enum:
+            - MAY_PREEMPT
+            - SHALL_NOT_PREEMPT
+          example: MAY_PREEMPT
+        preemption_vulnerability:
+          type: string
+          enum:
+            - PREEMPTABLE
+            - NOT_PREEMPTABLE
+          example: PREEMPTABLE
+
+    SessionRequirements:
+      type: object
+      properties:
+        expected_duration_sec:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          example: 1800
+        direction:
+          type: string
+          enum:
+            - UPLINK
+            - DOWNLINK
+            - BIDIRECTIONAL
+          example: BIDIRECTIONAL
+        latency_budget_ms:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          example: 25
+        jitter_budget_ms:
+          type: integer
+          minimum: 0
+          maximum: 500
+          example: 5
+        packet_loss_budget_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 0.5
+
+    AdmissionReference:
+      type: object
+      description: Optional reference to prior admission check decision
+      properties:
+        request_id:
+          type: string
+          example: req-cc6f147a-730f-4df6-a1dd-4d6b5ce3196a
+        decision_id:
+          type: string
+          example: dec-77dcefc7d85f
+
+    AdmissionDecision:
+      type: string
+      enum:
+        - ADMIT
+        - CONDITIONAL_ADMIT
+        - DENY
+
+    SliceSnapshot:
+      type: object
+      required:
+        - slice_id
+        - utilization_pct
+        - available_gbr_kbps
+        - available_sessions
+      properties:
+        slice_id:
+          type: string
+        utilization_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        available_gbr_kbps:
+          type: integer
+          minimum: 0
+        available_sessions:
+          type: integer
+          minimum: 0
+
+    PolicyMatch:
+      type: object
+      properties:
+        policy_id:
+          type: string
+        policy_version:
+          type: integer
+          minimum: 1
+        threshold_action:
+          type: string
+          enum:
+            - ALLOW
+            - CONDITIONAL_ALLOW
+            - DENY
+
+    Recommendation:
+      type: object
+      required:
+        - recommendation_type
+        - message
+      properties:
+        recommendation_type:
+          type: string
+          enum:
+            - RESERVE_NOW
+            - DOWNGRADE_QOS
+            - RETRY_LATER
+            - MOVE_SLICE
+        message:
+          type: string
+
+    DecisionTrace:
+      type: object
+      required:
+        - trace_id
+        - stage
+        - outcome
+        - detail
+      properties:
+        trace_id:
+          type: string
+          example: trace-c5db0c4f
+        stage:
+          type: string
+          enum:
+            - NORMALIZATION
+            - POLICY
+            - CAPACITY
+            - SLA
+            - FINAL
+        outcome:
+          type: string
+          enum:
+            - PASS
+            - FAIL
+            - WARN
+        detail:
+          type: string
+
+    CapacityDelta:
+      type: object
+      properties:
+        reserved_gbr_kbps:
+          type: integer
+          minimum: 0
+        reserved_session_slots:
+          type: integer
+          minimum: 0
+
+    CapacityReclaimed:
+      type: object
+      properties:
+        gbr_kbps:
+          type: integer
+          minimum: 0
+        session_slots:
+          type: integer
+          minimum: 0
+
+    UtilizationMetrics:
+      type: object
+      required:
+        - utilization_pct
+        - used_gbr_kbps
+        - available_gbr_kbps
+        - session_slots_used
+        - session_slots_total
+      properties:
+        utilization_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        used_gbr_kbps:
+          type: integer
+          minimum: 0
+        available_gbr_kbps:
+          type: integer
+          minimum: 0
+        session_slots_used:
+          type: integer
+          minimum: 0
+        session_slots_total:
+          type: integer
+          minimum: 1
+
+    CapacityForecast:
+      type: object
+      properties:
+        util_15m_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        util_60m_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+
+    ThresholdBands:
+      type: object
+      properties:
+        soft_limit_pct:
+          type: integer
+          minimum: 1
+          maximum: 100
+        hard_limit_pct:
+          type: integer
+          minimum: 1
+          maximum: 100
+
+    PolicyThresholdConfig:
+      type: object
+      required:
+        - soft_utilization_pct
+        - hard_utilization_pct
+        - deny_above_forecast_pct
+        - min_headroom_gbr_kbps
+      properties:
+        soft_utilization_pct:
+          type: integer
+          minimum: 1
+          maximum: 100
+        hard_utilization_pct:
+          type: integer
+          minimum: 1
+          maximum: 100
+        deny_above_forecast_pct:
+          type: integer
+          minimum: 1
+          maximum: 100
+        min_headroom_gbr_kbps:
+          type: integer
+          minimum: 0
+
+    PolicyActionRule:
+      type: object
+      required:
+        - condition
+        - action
+      properties:
+        condition:
+          type: string
+          enum:
+            - BELOW_SOFT_LIMIT
+            - BETWEEN_SOFT_AND_HARD
+            - ABOVE_HARD_LIMIT
+            - ABOVE_FORECAST_LIMIT
+        action:
+          type: string
+          enum:
+            - ALLOW
+            - CONDITIONAL_ALLOW
+            - DENY
+
+    PaginationCursor:
+      type: object
+      required:
+        - page_size
+      properties:
+        next_page_token:
+          type: string
+          nullable: true
+          example: eyJvZmZzZXQiOjEwfQ==
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 200
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - request_id
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+        request_id:
+          type: string
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: INVALID_ARGUMENT
+        message:
+          type: string
+          example: qos_profile.gbr_kbps must be less than or equal to mbr_kbps.
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+          example: qos_profile.gbr_kbps
+        reason:
+          type: string
+          example: invalid_relation

@@ -1,0 +1,1444 @@
+openapi: 3.0.3
+info:
+  title: VZW Edge Monitor API
+  description: >-
+    The VZW Edge Monitor API provides observability controls for Verizon MEC edge
+    node operations. The API exposes inventory, point-in-time health views,
+    synthetic probe execution, metric histogram retrieval, regional capacity
+    snapshots, and incident registration workflows used by NOC and platform
+    engineering teams.
+  version: 1.0.0
+  contact:
+    name: Verizon Edge Platform API Team
+    email: edge-api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/api
+  x-verizon-catalog-id: vzw-edge-monitor-api
+  x-verizon-domain: edge
+servers:
+  - url: https://vzw-edge-monitor-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-edge-monitor-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Edge Nodes
+    description: Discover node inventory, health posture, and failure domains
+  - name: Probes
+    description: Execute and inspect synthetic edge probes
+  - name: Metrics
+    description: Retrieve node-level performance and packet loss histograms
+  - name: Capacity
+    description: Query regional pod and network headroom by availability zone
+  - name: Edge Incidents
+    description: Register and classify service-impacting edge impairments
+paths:
+  /edge/nodes:
+    get:
+      operationId: listEdgeNodes
+      summary: List edge nodes
+      description: >-
+        Returns a paginated inventory of MEC nodes filtered by metro, zone, and
+        lifecycle status. Results include operational class, maintenance state,
+        and enrollment metadata used for fleet filtering in partner consoles.
+      tags:
+        - Edge Nodes
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortBy'
+        - $ref: '#/components/parameters/SortOrder'
+        - name: metro
+          in: query
+          required: false
+          description: Metro code used to scope inventory
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 12
+          example: nyc
+        - name: zone
+          in: query
+          required: false
+          description: Zone identifier inside the selected metro
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 32
+          example: nyc-z02
+        - name: status
+          in: query
+          required: false
+          description: Operational lifecycle status filter
+          schema:
+            type: string
+            enum:
+              - healthy
+              - degraded
+              - impaired
+              - draining
+              - maintenance
+      responses:
+        '200':
+          description: Node inventory page returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdgeNodeListResponse'
+              examples:
+                metroScoped:
+                  summary: Two nodes from NYC metro
+                  value:
+                    data:
+                      - nodeId: edge-nyc-az2-n17
+                        nodeName: nyc-az2-edge-17
+                        metro: nyc
+                        zone: nyc-z02
+                        availabilityZone: use1-az2
+                        status: healthy
+                        softwareTrain: emon-4.12.3
+                        lifecycleState: active
+                        hardwareClass: c7i.4xlarge
+                        maintenanceMode: false
+                        enrolledAt: '2026-03-24T11:08:44Z'
+                        updatedAt: '2026-03-27T04:20:11Z'
+                      - nodeId: edge-nyc-az2-n18
+                        nodeName: nyc-az2-edge-18
+                        metro: nyc
+                        zone: nyc-z02
+                        availabilityZone: use1-az2
+                        status: degraded
+                        softwareTrain: emon-4.12.3
+                        lifecycleState: active
+                        hardwareClass: c7i.4xlarge
+                        maintenanceMode: false
+                        enrolledAt: '2026-03-18T06:40:02Z'
+                        updatedAt: '2026-03-27T04:19:41Z'
+                    meta:
+                      page: 1
+                      per_page: 20
+                      total: 2
+                      total_pages: 1
+                    links:
+                      self: /edge/nodes?page=1&per_page=20&metro=nyc
+                      next: null
+                      prev: null
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /edge/nodes/{nodeId}:
+    get:
+      operationId: getEdgeNodeById
+      summary: Get edge node
+      description: >-
+        Returns expanded node detail for a single edge node including live
+        health state, software train lineage, and failure domain mapping used
+        by orchestration systems when evaluating blast radius.
+      tags:
+        - Edge Nodes
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+      responses:
+        '200':
+          description: Node detail returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdgeNodeDetailResponse'
+              examples:
+                healthyNode:
+                  summary: Healthy node with dependency graph
+                  value:
+                    data:
+                      nodeId: edge-nyc-az2-n17
+                      nodeName: nyc-az2-edge-17
+                      status: healthy
+                      softwareTrain:
+                        releaseId: emon-4.12.3
+                        channel: stable
+                        deployedAt: '2026-03-26T02:15:08Z'
+                        rollbackTarget: emon-4.12.2
+                      failureDomains:
+                        - type: rack
+                          id: rack-nyc-a2-r04
+                          impactScope: single-rack
+                        - type: power-feed
+                          id: pdu-nyc-a2-f1
+                          impactScope: rack-pair
+                        - type: network-fabric
+                          id: spine-nyc-east-1
+                          impactScope: zone
+                      healthSummary:
+                        readiness: ready
+                        uptimeSeconds: 3389217
+                        activeAlerts: 0
+                        lastProbeStatus: pass
+                        lastProbeAt: '2026-03-27T04:18:22Z'
+                        lastFailureAt: null
+                      dependencies:
+                        controlPlane: healthy
+                        storagePlane: healthy
+                        dataPlane: healthy
+                      labels:
+                        environment: production
+                        partnerTier: platinum
+                      createdAt: '2026-01-12T10:22:14Z'
+                      updatedAt: '2026-03-27T04:20:11Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /edge/nodes/{nodeId}/probes:run:
+    post:
+      operationId: runEdgeNodeProbe
+      summary: Run synthetic edge probe
+      description: >-
+        Triggers an on-demand synthetic probe sequence against a node and
+        selected targets. Probe execution can run synchronously for short tests
+        or asynchronously with a queued execution identifier for long runs.
+      tags:
+        - Probes
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+      requestBody:
+        required: true
+        description: Probe execution request
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunProbeRequest'
+            examples:
+              lowLatencyCheck:
+                summary: Latency and packet loss probe
+                value:
+                  requestId: req-2f4fe58de2c44df4
+                  executionMode: async
+                  timeoutSeconds: 25
+                  targets:
+                    - targetId: upf-nyc-17
+                      targetType: upf
+                      endpoint: 10.17.20.18:443
+                    - targetId: edge-gw-east
+                      targetType: gateway
+                      endpoint: 10.17.1.1:443
+                  checks:
+                    tcpConnect: true
+                    dnsResolution: true
+                    httpGet:
+                      enabled: true
+                      path: /healthz
+                      expectedStatus: 200
+      responses:
+        '202':
+          description: Probe accepted for execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunProbeAcceptedResponse'
+              examples:
+                queued:
+                  value:
+                    data:
+                      executionId: prb-28bb3f844ab8457f
+                      status: queued
+                      submittedAt: '2026-03-27T04:23:00Z'
+                      estimatedStartAt: '2026-03-27T04:23:03Z'
+                      nodeId: edge-nyc-az2-n17
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /edge/nodes/{nodeId}/metrics:
+    get:
+      operationId: getEdgeNodeMetrics
+      summary: Get edge node metrics
+      description: >-
+        Returns node metric snapshots and histogram buckets for CPU, memory,
+        storage IO latency, and packet drop ratios over a selected window.
+        Supports interval down-sampling for dashboard and forensic use cases.
+      tags:
+        - Metrics
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+        - name: from
+          in: query
+          required: true
+          description: Inclusive start time for metric query window
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive end time for metric query window
+          schema:
+            type: string
+            format: date-time
+        - name: interval
+          in: query
+          required: false
+          description: >-
+            Aggregation interval for returned samples. If omitted, the API
+            chooses an interval based on query span.
+          schema:
+            type: string
+            enum:
+              - 1m
+              - 5m
+              - 15m
+              - 1h
+          example: 5m
+      responses:
+        '200':
+          description: Node metrics returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeMetricsResponse'
+              examples:
+                metricsWindow:
+                  summary: Five-minute samples with histograms
+                  value:
+                    data:
+                      nodeId: edge-nyc-az2-n17
+                      from: '2026-03-27T03:00:00Z'
+                      to: '2026-03-27T04:00:00Z'
+                      interval: 5m
+                      samples:
+                        - timestamp: '2026-03-27T03:00:00Z'
+                          cpuUsagePercent: 47.1
+                          memoryUsagePercent: 68.4
+                          ioLatencyMsP95: 2.7
+                          packetDropRatePercent: 0.03
+                        - timestamp: '2026-03-27T03:05:00Z'
+                          cpuUsagePercent: 50.2
+                          memoryUsagePercent: 69.1
+                          ioLatencyMsP95: 2.9
+                          packetDropRatePercent: 0.04
+                      histograms:
+                        ioLatencyMs:
+                          unit: ms
+                          buckets:
+                            - upperBound: 1
+                              count: 12841
+                            - upperBound: 2
+                              count: 40111
+                            - upperBound: 5
+                              count: 1976
+                            - upperBound: 10
+                              count: 188
+                        packetDropRatePercent:
+                          unit: percent
+                          buckets:
+                            - upperBound: 0.01
+                              count: 24511
+                            - upperBound: 0.05
+                              count: 13020
+                            - upperBound: 0.10
+                              count: 128
+                            - upperBound: 0.50
+                              count: 3
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /edge/regions/{regionId}/capacity:
+    get:
+      operationId: getRegionCapacity
+      summary: Get regional capacity
+      description: >-
+        Returns current allocatable and reserved capacity for compute pods and
+        network throughput in each availability zone of the specified region.
+        Capacity values are updated from telemetry and admission-controller
+        reservations to support placement decisions.
+      tags:
+        - Capacity
+      parameters:
+        - $ref: '#/components/parameters/RegionId'
+        - name: includeForecast
+          in: query
+          required: false
+          description: Include six-hour projected exhaustion indicators
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Region capacity returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegionCapacityResponse'
+              examples:
+                regionalView:
+                  summary: Region with two AZ capacity slices
+                  value:
+                    data:
+                      regionId: us-east-1-edge
+                      generatedAt: '2026-03-27T04:15:00Z'
+                      availabilityZones:
+                        - zoneId: use1-az1
+                          pods:
+                            allocatable: 8200
+                            reserved: 7024
+                            available: 1176
+                            utilizationPercent: 85.66
+                          networkGbps:
+                            allocatable: 200
+                            reserved: 137
+                            available: 63
+                            utilizationPercent: 68.5
+                          forecast:
+                            projectedExhaustionAt: null
+                            confidence: high
+                        - zoneId: use1-az2
+                          pods:
+                            allocatable: 7800
+                            reserved: 7586
+                            available: 214
+                            utilizationPercent: 97.26
+                          networkGbps:
+                            allocatable: 190
+                            reserved: 186
+                            available: 4
+                            utilizationPercent: 97.89
+                          forecast:
+                            projectedExhaustionAt: '2026-03-27T09:42:00Z'
+                            confidence: medium
+                      totals:
+                        podsAvailable: 1390
+                        networkGbpsAvailable: 67
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /edge/incidents:
+    post:
+      operationId: createEdgeIncident
+      summary: Register edge incident
+      description: >-
+        Registers an edge impairment event with contextual scope, severity, and
+        impacted assets. Incident records can be correlated to external ITSM and
+        observability platforms through the provided correlation identifiers.
+      tags:
+        - Edge Incidents
+      requestBody:
+        required: true
+        description: Incident registration payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEdgeIncidentRequest'
+            examples:
+              packetLossSpike:
+                summary: Packet loss incident scoped to two nodes
+                value:
+                  incidentType: packet-loss
+                  severity: major
+                  title: Elevated packet drop in NYC zone 02
+                  description: >-
+                    Packet drop exceeded 0.25 percent for more than 15 minutes on
+                    two edge nodes serving premium partner workloads.
+                  startedAt: '2026-03-27T03:51:00Z'
+                  impactedRegionId: us-east-1-edge
+                  impactedNodes:
+                    - edge-nyc-az2-n17
+                    - edge-nyc-az2-n18
+                  detection:
+                    source: edge-monitor
+                    signalId: sig-5f6d3a88b1
+                    confidence: high
+                  correlation:
+                    externalIncidentId: INC-934888
+                    changeRequestId: CHG-420991
+                  runbookUrl: https://runbooks.verizon.com/edge/packet-loss
+      responses:
+        '201':
+          description: Incident created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEdgeIncidentResponse'
+              examples:
+                created:
+                  value:
+                    data:
+                      incidentId: edge-inc-4d8fd6ee1f8048f0
+                      status: open
+                      createdAt: '2026-03-27T04:26:44Z'
+                      incidentType: packet-loss
+                      severity: major
+                      impactedRegionId: us-east-1-edge
+                      impactedNodes:
+                        - edge-nyc-az2-n17
+                        - edge-nyc-az2-n18
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      description: One-based page index for paginated results
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Maximum resources returned per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    SortBy:
+      name: sort_by
+      in: query
+      required: false
+      description: Sort field name for list endpoints
+      schema:
+        type: string
+        enum:
+          - nodeId
+          - status
+          - metro
+          - zone
+          - updatedAt
+        default: updatedAt
+    SortOrder:
+      name: sort_order
+      in: query
+      required: false
+      description: Sort direction for list endpoints
+      schema:
+        type: string
+        enum:
+          - asc
+          - desc
+        default: desc
+    NodeId:
+      name: nodeId
+      in: path
+      required: true
+      description: Edge node identifier
+      schema:
+        type: string
+        pattern: '^edge-[a-z0-9-]{6,64}$'
+      example: edge-nyc-az2-n17
+    RegionId:
+      name: regionId
+      in: path
+      required: true
+      description: Edge region identifier
+      schema:
+        type: string
+        pattern: '^[a-z0-9-]{3,48}$'
+      example: us-east-1-edge
+  responses:
+    BadRequestError:
+      description: Request payload or parameters are malformed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalidWindow:
+              value:
+                code: invalid_request
+                message: Query parameter "from" must be earlier than "to"
+                details:
+                  - field: from
+                    issue: value_must_precede_to
+                traceId: trc-70a0a4db906b4f48
+    UnauthorizedError:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            noToken:
+              value:
+                code: unauthorized
+                message: Authentication token is missing or expired
+                details: []
+                traceId: trc-b35acd3f1cf34c96
+    ForbiddenError:
+      description: Caller does not have permission to access the resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            denied:
+              value:
+                code: forbidden
+                message: Insufficient scope for requested edge domain action
+                details:
+                  - scope: edge.monitor.write
+                    issue: missing_scope
+                traceId: trc-2af0a44de5c84c49
+    NotFoundError:
+      description: Referenced resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            nodeMissing:
+              value:
+                code: not_found
+                message: Edge node "edge-nyc-az2-n99" was not found
+                details:
+                  - field: nodeId
+                    issue: unknown_resource
+                traceId: trc-b8afd682580743f1
+    ConflictError:
+      description: Request conflicts with current resource state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            probeBusy:
+              value:
+                code: conflict
+                message: Probe execution already running on target node
+                details:
+                  - field: nodeId
+                    issue: active_execution
+                traceId: trc-edb95a5f1b414258
+    UnprocessableEntityError:
+      description: Request is syntactically valid but fails business validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalidTarget:
+              value:
+                code: validation_error
+                message: Probe target endpoint is unreachable from selected node
+                details:
+                  - field: targets[0].endpoint
+                    issue: target_not_reachable
+                traceId: trc-3fe95b7ebfc44d7f
+    RateLimitError:
+      description: Caller exceeded permitted request rate
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            throttled:
+              value:
+                code: rate_limited
+                message: Too many requests for tenant in current window
+                details:
+                  - limit: 1200
+                    windowSeconds: 60
+                traceId: trc-cd8c7ddf11f747ea
+    InternalServerError:
+      description: Unexpected server-side failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            backendFailure:
+              value:
+                code: internal_error
+                message: An internal error occurred while processing the request
+                details: []
+                traceId: trc-1f322944f2834642
+  schemas:
+    EdgeNodeListResponse:
+      type: object
+      required:
+        - data
+        - meta
+        - links
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EdgeNodeSummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+    EdgeNodeSummary:
+      type: object
+      required:
+        - nodeId
+        - nodeName
+        - metro
+        - zone
+        - availabilityZone
+        - status
+        - softwareTrain
+        - lifecycleState
+        - hardwareClass
+        - maintenanceMode
+        - enrolledAt
+        - updatedAt
+      properties:
+        nodeId:
+          type: string
+          description: Immutable node identifier
+          example: edge-nyc-az2-n17
+        nodeName:
+          type: string
+          description: Human-readable node name
+          example: nyc-az2-edge-17
+        metro:
+          type: string
+          description: Metro where node is deployed
+          example: nyc
+        zone:
+          type: string
+          description: Logical placement zone inside metro
+          example: nyc-z02
+        availabilityZone:
+          type: string
+          description: Cloud provider availability zone affinity
+          example: use1-az2
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - impaired
+            - draining
+            - maintenance
+        softwareTrain:
+          type: string
+          description: Installed software train release
+          example: emon-4.12.3
+        lifecycleState:
+          type: string
+          enum:
+            - provisioning
+            - active
+            - retiring
+            - decommissioned
+        hardwareClass:
+          type: string
+          description: Node hardware profile
+          example: c7i.4xlarge
+        maintenanceMode:
+          type: boolean
+          description: Indicates whether node is intentionally excluded from placement
+        enrolledAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    EdgeNodeDetailResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/EdgeNodeDetail'
+    EdgeNodeDetail:
+      type: object
+      required:
+        - nodeId
+        - nodeName
+        - status
+        - softwareTrain
+        - failureDomains
+        - healthSummary
+        - dependencies
+        - labels
+        - createdAt
+        - updatedAt
+      properties:
+        nodeId:
+          type: string
+        nodeName:
+          type: string
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - impaired
+            - draining
+            - maintenance
+        softwareTrain:
+          $ref: '#/components/schemas/SoftwareTrainInfo'
+        failureDomains:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/FailureDomain'
+        healthSummary:
+          $ref: '#/components/schemas/NodeHealthSummary'
+        dependencies:
+          $ref: '#/components/schemas/NodeDependencies'
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    SoftwareTrainInfo:
+      type: object
+      required:
+        - releaseId
+        - channel
+        - deployedAt
+      properties:
+        releaseId:
+          type: string
+          example: emon-4.12.3
+        channel:
+          type: string
+          enum:
+            - stable
+            - canary
+            - rollback
+        deployedAt:
+          type: string
+          format: date-time
+        rollbackTarget:
+          type: string
+          nullable: true
+    FailureDomain:
+      type: object
+      required:
+        - type
+        - id
+        - impactScope
+      properties:
+        type:
+          type: string
+          enum:
+            - rack
+            - power-feed
+            - network-fabric
+            - top-of-rack
+        id:
+          type: string
+        impactScope:
+          type: string
+          enum:
+            - single-node
+            - single-rack
+            - rack-pair
+            - zone
+    NodeHealthSummary:
+      type: object
+      required:
+        - readiness
+        - uptimeSeconds
+        - activeAlerts
+        - lastProbeStatus
+        - lastProbeAt
+      properties:
+        readiness:
+          type: string
+          enum:
+            - ready
+            - not-ready
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+        activeAlerts:
+          type: integer
+          minimum: 0
+        lastProbeStatus:
+          type: string
+          enum:
+            - pass
+            - warn
+            - fail
+        lastProbeAt:
+          type: string
+          format: date-time
+        lastFailureAt:
+          type: string
+          format: date-time
+          nullable: true
+    NodeDependencies:
+      type: object
+      required:
+        - controlPlane
+        - storagePlane
+        - dataPlane
+      properties:
+        controlPlane:
+          type: string
+          enum: [healthy, degraded, unavailable]
+        storagePlane:
+          type: string
+          enum: [healthy, degraded, unavailable]
+        dataPlane:
+          type: string
+          enum: [healthy, degraded, unavailable]
+    RunProbeRequest:
+      type: object
+      required:
+        - requestId
+        - executionMode
+        - timeoutSeconds
+        - targets
+        - checks
+      properties:
+        requestId:
+          type: string
+          description: Client-supplied idempotency key
+          minLength: 8
+          maxLength: 128
+        executionMode:
+          type: string
+          enum:
+            - sync
+            - async
+        timeoutSeconds:
+          type: integer
+          minimum: 5
+          maximum: 120
+        targets:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/ProbeTarget'
+        checks:
+          $ref: '#/components/schemas/ProbeChecks'
+    ProbeTarget:
+      type: object
+      required:
+        - targetId
+        - targetType
+        - endpoint
+      properties:
+        targetId:
+          type: string
+          example: upf-nyc-17
+        targetType:
+          type: string
+          enum:
+            - upf
+            - gateway
+            - dns
+            - service
+        endpoint:
+          type: string
+          description: Host and port or URL for probe target
+          example: 10.17.20.18:443
+    ProbeChecks:
+      type: object
+      required:
+        - tcpConnect
+        - dnsResolution
+      properties:
+        tcpConnect:
+          type: boolean
+        dnsResolution:
+          type: boolean
+        httpGet:
+          $ref: '#/components/schemas/HttpGetCheck'
+    HttpGetCheck:
+      type: object
+      required:
+        - enabled
+      properties:
+        enabled:
+          type: boolean
+        path:
+          type: string
+          default: /healthz
+        expectedStatus:
+          type: integer
+          minimum: 100
+          maximum: 599
+    RunProbeAcceptedResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/ProbeExecutionReceipt'
+    ProbeExecutionReceipt:
+      type: object
+      required:
+        - executionId
+        - status
+        - submittedAt
+        - nodeId
+      properties:
+        executionId:
+          type: string
+          example: prb-28bb3f844ab8457f
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+        submittedAt:
+          type: string
+          format: date-time
+        estimatedStartAt:
+          type: string
+          format: date-time
+        nodeId:
+          type: string
+    NodeMetricsResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/NodeMetricsEnvelope'
+    NodeMetricsEnvelope:
+      type: object
+      required:
+        - nodeId
+        - from
+        - to
+        - interval
+        - samples
+        - histograms
+      properties:
+        nodeId:
+          type: string
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        interval:
+          type: string
+        samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeMetricSample'
+        histograms:
+          $ref: '#/components/schemas/NodeMetricHistograms'
+    NodeMetricSample:
+      type: object
+      required:
+        - timestamp
+        - cpuUsagePercent
+        - memoryUsagePercent
+        - ioLatencyMsP95
+        - packetDropRatePercent
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        cpuUsagePercent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        memoryUsagePercent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        ioLatencyMsP95:
+          type: number
+          format: float
+          minimum: 0
+        packetDropRatePercent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+    NodeMetricHistograms:
+      type: object
+      required:
+        - ioLatencyMs
+        - packetDropRatePercent
+      properties:
+        ioLatencyMs:
+          $ref: '#/components/schemas/Histogram'
+        packetDropRatePercent:
+          $ref: '#/components/schemas/Histogram'
+    Histogram:
+      type: object
+      required:
+        - unit
+        - buckets
+      properties:
+        unit:
+          type: string
+        buckets:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/HistogramBucket'
+    HistogramBucket:
+      type: object
+      required:
+        - upperBound
+        - count
+      properties:
+        upperBound:
+          type: number
+          format: float
+        count:
+          type: integer
+          minimum: 0
+    RegionCapacityResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/RegionCapacityEnvelope'
+    RegionCapacityEnvelope:
+      type: object
+      required:
+        - regionId
+        - generatedAt
+        - availabilityZones
+        - totals
+      properties:
+        regionId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        availabilityZones:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ZoneCapacitySlice'
+        totals:
+          $ref: '#/components/schemas/RegionCapacityTotals'
+    ZoneCapacitySlice:
+      type: object
+      required:
+        - zoneId
+        - pods
+        - networkGbps
+      properties:
+        zoneId:
+          type: string
+        pods:
+          $ref: '#/components/schemas/CapacityDimension'
+        networkGbps:
+          $ref: '#/components/schemas/CapacityDimension'
+        forecast:
+          $ref: '#/components/schemas/CapacityForecast'
+    CapacityDimension:
+      type: object
+      required:
+        - allocatable
+        - reserved
+        - available
+        - utilizationPercent
+      properties:
+        allocatable:
+          type: integer
+          minimum: 0
+        reserved:
+          type: integer
+          minimum: 0
+        available:
+          type: integer
+          minimum: 0
+        utilizationPercent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+    CapacityForecast:
+      type: object
+      properties:
+        projectedExhaustionAt:
+          type: string
+          format: date-time
+          nullable: true
+        confidence:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+    RegionCapacityTotals:
+      type: object
+      required:
+        - podsAvailable
+        - networkGbpsAvailable
+      properties:
+        podsAvailable:
+          type: integer
+          minimum: 0
+        networkGbpsAvailable:
+          type: integer
+          minimum: 0
+    CreateEdgeIncidentRequest:
+      type: object
+      required:
+        - incidentType
+        - severity
+        - title
+        - description
+        - startedAt
+        - impactedRegionId
+        - impactedNodes
+        - detection
+      properties:
+        incidentType:
+          type: string
+          enum:
+            - packet-loss
+            - latency
+            - node-unreachable
+            - capacity-exhaustion
+            - control-plane
+        severity:
+          type: string
+          enum:
+            - minor
+            - major
+            - critical
+        title:
+          type: string
+          minLength: 8
+          maxLength: 140
+        description:
+          type: string
+          minLength: 16
+          maxLength: 4000
+        startedAt:
+          type: string
+          format: date-time
+        impactedRegionId:
+          type: string
+        impactedNodes:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: string
+        detection:
+          $ref: '#/components/schemas/IncidentDetection'
+        correlation:
+          $ref: '#/components/schemas/IncidentCorrelation'
+        runbookUrl:
+          type: string
+          format: uri
+    IncidentDetection:
+      type: object
+      required:
+        - source
+        - signalId
+        - confidence
+      properties:
+        source:
+          type: string
+          enum:
+            - edge-monitor
+            - noc-observability
+            - synthetic-probe
+            - partner-report
+        signalId:
+          type: string
+        confidence:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+    IncidentCorrelation:
+      type: object
+      properties:
+        externalIncidentId:
+          type: string
+        changeRequestId:
+          type: string
+        ticketUrl:
+          type: string
+          format: uri
+    CreateEdgeIncidentResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/EdgeIncidentRecord'
+    EdgeIncidentRecord:
+      type: object
+      required:
+        - incidentId
+        - status
+        - createdAt
+        - incidentType
+        - severity
+        - impactedRegionId
+        - impactedNodes
+      properties:
+        incidentId:
+          type: string
+          example: edge-inc-4d8fd6ee1f8048f0
+        status:
+          type: string
+          enum:
+            - open
+            - triaged
+            - mitigated
+            - resolved
+            - closed
+        createdAt:
+          type: string
+          format: date-time
+        incidentType:
+          type: string
+        severity:
+          type: string
+        impactedRegionId:
+          type: string
+        impactedNodes:
+          type: array
+          items:
+            type: string
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        per_page:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+    PaginationLinks:
+      type: object
+      required:
+        - self
+        - next
+        - prev
+      properties:
+        self:
+          type: string
+        next:
+          type: string
+          nullable: true
+        prev:
+          type: string
+          nullable: true
+    Error:
+      type: object
+      required:
+        - code
+        - message
+        - details
+        - traceId
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code
+        message:
+          type: string
+          description: Human-readable summary of the failure
+        details:
+          type: array
+          description: Field-level or policy-level validation details
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+        traceId:
+          type: string
+          description: Trace identifier for support and observability systems
+    ErrorDetail:
+      type: object
+      additionalProperties: true

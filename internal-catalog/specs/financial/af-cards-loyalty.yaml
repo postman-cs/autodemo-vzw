@@ -1,0 +1,987 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Card Loyalty Programs API
+  description: >-
+    Manages loyalty point programs linked to card spending. Handles point earning, redemption, balance inquiries,
+    and inter-account transfers. Supports tiered programs with bonus earn categories for dining, travel, and
+    groceries. Points accrue on transaction settlement and expire after 24 months of account inactivity.
+  version: 2.4.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-cards-loyalty
+  x-acme-domain: cards
+servers:
+  - url: https://af-cards-loyalty.api.acmefin.com/v1
+    description: Production
+  - url: https://af-cards-loyalty.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Loyalty Programs
+    description: View and manage loyalty program configurations and enrollment
+  - name: Points & Balances
+    description: Points earning, redemption, balance, and transaction history
+paths:
+  /programs:
+    get:
+      operationId: listLoyaltyPrograms
+      summary: List loyalty programs
+      description: >-
+        Returns all available loyalty programs with their earn rates, bonus categories, and tier structures.
+        Use this to display program options to cardholders or to determine which program a card is eligible
+        for based on its product type.
+      tags:
+        - Loyalty Programs
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        program_id:
+                          type: string
+                          description: Unique loyalty program identifier
+                          example: "prog-gold-rewards"
+                        name:
+                          type: string
+                          description: Program display name
+                          example: "Gold Rewards"
+                        earn_rate:
+                          type: number
+                          description: Points earned per dollar spent
+                          format: double
+                          example: 1.5
+                        bonus_categories:
+                          type: array
+                          description: Merchant categories with bonus earn rates
+                          items:
+                            type: string
+                            example: "DINING"
+                        point_value_cents:
+                          type: number
+                          description: Cash value of one point in cents
+                          format: double
+                          example: 1.0
+                        status:
+                          type: string
+                          description: Program operational status
+                          example: "ACTIVE"
+                          enum:
+                            - ACTIVE
+                            - SUSPENDED
+                            - ARCHIVED
+                      required:
+                        - program_id
+                        - name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /programs/{program_id}:
+    get:
+      operationId: getLoyaltyProgram
+      summary: Get loyalty program details
+      description: >-
+        Retrieves the full configuration of a loyalty program including earn rates, bonus category
+        multipliers, point expiration rules, and tier qualification thresholds. Useful for displaying
+        program details to cardholders in the rewards portal.
+      tags:
+        - Loyalty Programs
+      parameters:
+        - name: program_id
+          in: path
+          required: true
+          description: Unique program id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  program_id:
+                    type: string
+                    description: Unique loyalty program identifier
+                    example: "prog-gold-rewards"
+                  name:
+                    type: string
+                    description: Program display name
+                    example: "Gold Rewards"
+                  earn_rate:
+                    type: number
+                    description: Points earned per dollar spent
+                    format: double
+                    example: 1.5
+                  bonus_categories:
+                    type: array
+                    description: Merchant categories with bonus earn rates
+                    items:
+                      type: string
+                      example: "DINING"
+                  point_value_cents:
+                    type: number
+                    description: Cash value of one point in cents
+                    format: double
+                    example: 1.0
+                  status:
+                    type: string
+                    description: Program operational status
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - SUSPENDED
+                      - ARCHIVED
+                required:
+                  - program_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /accounts/{card_id}:
+    get:
+      operationId: getLoyaltyAccount
+      summary: Get loyalty account for a card
+      description: >-
+        Returns the loyalty account associated with a card, including available and pending points balance,
+        lifetime totals, and current tier. Pending points convert to available upon transaction settlement,
+        typically within 2-3 business days.
+      tags:
+        - Points & Balances
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          description: Unique card id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  program_id:
+                    type: string
+                    description: Unique loyalty program identifier
+                    example: "prog-gold-rewards"
+                  available_points:
+                    type: integer
+                    description: Points available for redemption
+                    example: 48250
+                  pending_points:
+                    type: integer
+                    description: Points earned but not yet settled (pending transaction clearing)
+                    example: 1200
+                  lifetime_earned:
+                    type: integer
+                    description: Total points earned since enrollment
+                    example: 125000
+                  lifetime_redeemed:
+                    type: integer
+                    description: Total points redeemed since enrollment
+                    example: 76750
+                  tier:
+                    type: string
+                    description: Current loyalty tier based on annual spend
+                    example: "GOLD"
+                    enum:
+                      - STANDARD
+                      - SILVER
+                      - GOLD
+                      - PLATINUM
+                  enrolled_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - card_id
+                  - program_id
+                  - available_points
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /accounts/{card_id}/earn:
+    post:
+      operationId: recordPointsEarned
+      summary: Record points earned from a transaction
+      description: >-
+        Records loyalty points earned from a card transaction. Points are initially credited as pending and
+        become available upon settlement. Bonus multipliers are automatically applied based on the merchant
+        category code. This endpoint is typically called by the transaction processing pipeline.
+      tags:
+        - Points & Balances
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          description: Unique card id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Record points earned from a transaction request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reference_id:
+                      type: string
+                      description: External reference identifier
+                      example: "ref-20250615-001"
+                    amount:
+                      type: number
+                      description: Monetary amount
+                      format: double
+                      example: 250.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    merchant_category_code:
+                      type: string
+                      description: ISO 18245 merchant category code
+                      example: "5411"
+                      pattern: '^[0-9]{4}$'
+                    merchant_name:
+                      type: string
+                      description: Merchant name as registered with the acquirer
+                      example: "ACME Electronics Store"
+              required:
+                - reference_id
+                - amount
+                - currency
+                - merchant_category_code
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  points_earned:
+                    type: integer
+                    description: Points earned from this transaction
+                    example: 450
+                  multiplier:
+                    type: number
+                    description: Earn rate multiplier applied
+                    format: double
+                    example: 3.0
+                  new_pending_balance:
+                    type: integer
+                    description: Updated pending points balance
+                    example: 1650
+                required:
+                  - points_earned
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{card_id}/redeem:
+    post:
+      operationId: redeemPoints
+      summary: Redeem loyalty points
+      description: >-
+        Redeems points from the cardholder's available balance. Supports statement credit, gift card, and
+        travel redemption types. Points are deducted immediately. Minimum redemption is 500 points. The
+        redemption rate depends on the program's point value and the chosen redemption type.
+      tags:
+        - Points & Balances
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          description: Unique card id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Redeem loyalty points request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    points:
+                      type: integer
+                      description: Number of points to redeem
+                      example: 5000
+                      minimum: 500
+                    redemption_type:
+                      type: string
+                      description: Type of redemption
+                      example: "STATEMENT_CREDIT"
+                      enum:
+                        - STATEMENT_CREDIT
+                        - GIFT_CARD
+                        - TRAVEL
+                        - MERCHANDISE
+                        - CHARITY
+              required:
+                - points
+                - redemption_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redemption_id:
+                    type: string
+                    description: Unique redemption transaction identifier
+                    example: "rdm-4c8e21"
+                  points_redeemed:
+                    type: integer
+                    description: Points actually deducted
+                    example: 5000
+                  cash_value:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  new_available_balance:
+                    type: integer
+                    description: Updated available points balance
+                    example: 43250
+                required:
+                  - redemption_id
+                  - points_redeemed
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /accounts/{card_id}/transactions:
+    get:
+      operationId: listPointsTransactions
+      summary: List points transaction history
+      description: >-
+        Returns a paginated history of all points transactions for a card's loyalty account, including
+        earnings, redemptions, expirations, adjustments, and transfers. Each entry includes the type, point
+        amount, description, and reference to the originating event.
+      tags:
+        - Points & Balances
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: type
+          in: query
+          required: false
+          description: Filter by transaction type
+          schema:
+            type: "string"
+            enum:
+              - EARN
+              - REDEEM
+              - EXPIRE
+              - ADJUST
+              - TRANSFER_IN
+              - TRANSFER_OUT
+              - BONUS
+        - name: from_date
+          in: query
+          required: false
+          description: Include transactions on or after this date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transaction_id:
+                          type: string
+                          description: Points transaction identifier
+                          example: "ptx-8a3f21"
+                        type:
+                          type: string
+                          description: Type of points transaction
+                          example: "EARN"
+                          enum:
+                            - EARN
+                            - REDEEM
+                            - EXPIRE
+                            - ADJUST
+                            - TRANSFER_IN
+                            - TRANSFER_OUT
+                            - BONUS
+                        points:
+                          type: integer
+                          description: Number of points (positive for earn, negative for redeem)
+                          example: 150
+                        description:
+                          type: string
+                          description: Human-readable description of the transaction
+                          example: "Purchase at ACME Electronics - 3x bonus"
+                        reference_id:
+                          type: string
+                          description: External reference identifier
+                          example: "ref-20250615-001"
+                        created_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - transaction_id
+                        - type
+                        - points
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /accounts/{card_id}/balance:
+    get:
+      operationId: getPointsBalance
+      summary: Get points balance summary
+      description: >-
+        Returns a concise balance summary for a card's loyalty account. Includes available points, pending
+        points, points expiring within the next 90 days, and the equivalent cash value. Optimized for
+        display in mobile apps and account dashboards.
+      tags:
+        - Points & Balances
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          description: Unique card id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available_points:
+                    type: integer
+                    description: Points available for redemption
+                    example: 48250
+                  pending_points:
+                    type: integer
+                    description: Points earned but not yet settled (pending transaction clearing)
+                    example: 1200
+                  expiring_within_90_days:
+                    type: integer
+                    description: Points that will expire in the next 90 days
+                    example: 3200
+                  cash_value:
+                    type: number
+                    description: Cash equivalent of available points
+                    format: double
+                    example: 482.5
+                required:
+                  - available_points
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /accounts/{card_id}/transfer:
+    post:
+      operationId: transferPoints
+      summary: Transfer points between accounts
+      description: >-
+        Transfers points from one cardholder's loyalty account to another within the same program. Both
+        accounts must be in good standing. A transfer fee of 10% of the transferred points is deducted from
+        the source account. Maximum transfer is 50,000 points per calendar year.
+      tags:
+        - Points & Balances
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          description: Unique card id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Transfer points between accounts request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    target_card_id:
+                      type: string
+                      description: Card identifier of the points recipient
+                      example: "card-2b7e94a3"
+                    points:
+                      type: integer
+                      description: Number of points to transfer
+                      example: 10000
+                      minimum: 100
+              required:
+                - target_card_id
+                - points
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transfer_id:
+                    type: string
+                    description: Unique transfer transaction identifier
+                    example: "xfr-9d2a1c"
+                  points_transferred:
+                    type: integer
+                    description: Points credited to the recipient
+                    example: 10000
+                  transfer_fee:
+                    type: integer
+                    description: Points deducted as transfer fee
+                    example: 1000
+                  source_balance:
+                    type: integer
+                    description: Updated source account available balance
+                    example: 37250
+                required:
+                  - transfer_id
+                  - points_transferred
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,1547 @@
+openapi: 3.0.3
+info:
+  title: VZW Substation Edge Gateway API
+  description: |
+    API for secure telemetry relay and control-plane interactions between field
+    RTUs/IEDs and Verizon cloud applications through hardened substation edge gateways.
+
+    The service supports SCADA protocol normalization, telemetry batch ingest,
+    latest reading retrieval, command relay, and runtime gateway configuration updates.
+  version: 1.0.0
+  contact:
+    name: Verizon Substation Gateway API Team
+    email: api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms
+  x-verizon-catalog-id: vzw-substation-edge-gateway-api
+  x-verizon-domain: substation-gateway
+servers:
+  - url: https://vzw-substation-edge-gateway-api.api.verizon.com
+    description: Production
+  - url: https://vzw-substation-edge-gateway-api.staging.api.verizon.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Gateways
+    description: Gateway inventory, status, and device topology
+  - name: Telemetry
+    description: Telemetry ingest and reading retrieval operations
+  - name: Commands
+    description: Secure command relay operations for field devices
+  - name: Protocols
+    description: Supported SCADA protocol capabilities and profiles
+
+paths:
+  /v1/gateways:
+    get:
+      operationId: listGateways
+      summary: List edge gateways
+      description: |
+        Returns edge gateway inventory with health, protocol support, and site metadata.
+        Intended for operational dashboards and fleet health checks.
+      tags:
+        - Gateways
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortByGateway'
+        - $ref: '#/components/parameters/SortOrder'
+        - name: region
+          in: query
+          required: false
+          description: Filter gateways by utility region code
+          schema:
+            type: string
+            example: us-east-grid
+        - name: health_status
+          in: query
+          required: false
+          description: Filter gateways by current health state
+          schema:
+            $ref: '#/components/schemas/HealthStatus'
+      responses:
+        '200':
+          description: Gateway fleet returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayListResponse'
+              examples:
+                fleet:
+                  summary: Gateway list response
+                  value:
+                    data:
+                      - gateway_id: gw-substation-east-001
+                        gateway_name: East Substation Relay Node 1
+                        site_code: sub-east-01
+                        region: us-east-grid
+                        health_status: healthy
+                        last_heartbeat_at: '2026-03-27T17:41:06Z'
+                        connected_device_count: 18
+                        protocols:
+                          - DNP3
+                          - IEC_61850
+                        firmware_version: 4.12.3
+                        secure_channel_state: active
+                      - gateway_id: gw-substation-east-002
+                        gateway_name: East Substation Relay Node 2
+                        site_code: sub-east-02
+                        region: us-east-grid
+                        health_status: degraded
+                        last_heartbeat_at: '2026-03-27T17:40:51Z'
+                        connected_device_count: 11
+                        protocols:
+                          - DNP3
+                          - MODBUS
+                        firmware_version: 4.11.9
+                        secure_channel_state: active
+                    meta:
+                      page: 1
+                      per_page: 20
+                      total: 2
+                      total_pages: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/gateways/{gatewayId}:
+    get:
+      operationId: getGatewayById
+      summary: Get gateway detail
+      description: |
+        Returns detailed gateway state, connection profile, and connected RTU/IED inventory.
+        Includes SCADA-specific device metadata used by operations and automation systems.
+      tags:
+        - Gateways
+      parameters:
+        - $ref: '#/components/parameters/GatewayId'
+      responses:
+        '200':
+          description: Gateway detail returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayDetailResponse'
+              examples:
+                detail:
+                  summary: Gateway detail with device inventory
+                  value:
+                    data:
+                      gateway_id: gw-substation-east-001
+                      gateway_name: East Substation Relay Node 1
+                      site_code: sub-east-01
+                      region: us-east-grid
+                      substation_name: East Ridge Distribution Substation
+                      health_status: healthy
+                      secure_channel_state: active
+                      ip_address: 10.42.14.21
+                      firmware_version: 4.12.3
+                      last_heartbeat_at: '2026-03-27T17:41:06Z'
+                      protocols:
+                        - DNP3
+                        - IEC_61850
+                      connected_devices:
+                        - device_id: dev-rtu-1001
+                          device_type: RTU
+                          rtu_address: '1001'
+                          ied_name: null
+                          protocol: DNP3
+                          dnp3_class: class_1
+                          feeder_name: feeder-east-12
+                          breaker_state: closed
+                          online: true
+                          last_seen_at: '2026-03-27T17:40:58Z'
+                        - device_id: dev-ied-88A
+                          device_type: IED
+                          rtu_address: null
+                          ied_name: BAY_CTRL_88A
+                          protocol: IEC_61850
+                          dnp3_class: null
+                          feeder_name: feeder-east-07
+                          breaker_state: open
+                          online: true
+                          last_seen_at: '2026-03-27T17:40:49Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/gateways/{gatewayId}/telemetry/ingest:
+    post:
+      operationId: ingestGatewayTelemetryBatch
+      summary: Ingest telemetry batch through gateway
+      description: |
+        Accepts a telemetry batch relayed by a field gateway. The API validates
+        source identity, normalizes protocol payloads, and forwards accepted records
+        to cloud telemetry pipelines.
+      tags:
+        - Telemetry
+      parameters:
+        - $ref: '#/components/parameters/GatewayId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: Batch telemetry payload from connected field devices
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryIngestRequest'
+            examples:
+              dnp3Batch:
+                summary: Mixed telemetry batch
+                value:
+                  batch_id: batch-20260327-174108-001
+                  captured_at: '2026-03-27T17:41:08Z'
+                  protocol: DNP3
+                  records:
+                    - device_id: dev-rtu-1001
+                      rtu_address: '1001'
+                      ied_name: null
+                      dnp3_class: class_1
+                      point_type: analog_input
+                      point_index: 12
+                      metric: line_voltage_kv
+                      value: 34.62
+                      quality_flags:
+                        - online
+                        - substituted
+                      breaker_state: closed
+                      event_time: '2026-03-27T17:41:06Z'
+                    - device_id: dev-ied-88A
+                      rtu_address: null
+                      ied_name: BAY_CTRL_88A
+                      dnp3_class: null
+                      point_type: binary_input
+                      point_index: 3
+                      metric: breaker_status
+                      value: 1
+                      quality_flags:
+                        - online
+                      breaker_state: open
+                      event_time: '2026-03-27T17:41:06Z'
+      responses:
+        '202':
+          description: Telemetry batch accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryIngestAcceptedResponse'
+              examples:
+                accepted:
+                  summary: Accepted ingest batch
+                  value:
+                    data:
+                      ingest_id: ing-3fd0c3f8-9d72-4c8f-9ca4-9adfcf8f8f01
+                      gateway_id: gw-substation-east-001
+                      batch_id: batch-20260327-174108-001
+                      accepted_record_count: 2
+                      rejected_record_count: 0
+                      status: accepted
+                      accepted_at: '2026-03-27T17:41:09Z'
+                      pipeline_trace_id: trace-6d18a553df4f4d43
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/gateways/{gatewayId}/telemetry/latest:
+    get:
+      operationId: getGatewayLatestTelemetry
+      summary: Get latest telemetry per connected device
+      description: |
+        Returns the most recent reading set for each connected device behind a gateway.
+        Supports operational views requiring near-real-time values and breaker state.
+      tags:
+        - Telemetry
+      parameters:
+        - $ref: '#/components/parameters/GatewayId'
+        - name: device_type
+          in: query
+          required: false
+          description: Optional filter by connected device type
+          schema:
+            $ref: '#/components/schemas/DeviceType'
+        - name: include_stale
+          in: query
+          required: false
+          description: Include records older than stale threshold
+          schema:
+            type: boolean
+            default: false
+        - name: metric
+          in: query
+          required: false
+          description: Filter returned readings to a specific metric key
+          schema:
+            type: string
+            example: breaker_status
+      responses:
+        '200':
+          description: Latest telemetry returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestTelemetryResponse'
+              examples:
+                latest:
+                  summary: Latest telemetry set
+                  value:
+                    data:
+                      gateway_id: gw-substation-east-001
+                      generated_at: '2026-03-27T17:42:00Z'
+                      readings:
+                        - device_id: dev-rtu-1001
+                          device_type: RTU
+                          rtu_address: '1001'
+                          ied_name: null
+                          protocol: DNP3
+                          dnp3_class: class_1
+                          metric: line_voltage_kv
+                          value: 34.59
+                          unit: kV
+                          breaker_state: closed
+                          stale: false
+                          event_time: '2026-03-27T17:41:59Z'
+                        - device_id: dev-ied-88A
+                          device_type: IED
+                          rtu_address: null
+                          ied_name: BAY_CTRL_88A
+                          protocol: IEC_61850
+                          dnp3_class: null
+                          metric: breaker_status
+                          value: 0
+                          unit: state
+                          breaker_state: open
+                          stale: false
+                          event_time: '2026-03-27T17:41:54Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/gateways/{gatewayId}/commands:
+    post:
+      operationId: createGatewayCommand
+      summary: Send control command via gateway
+      description: |
+        Dispatches a validated control command for execution on a target field device.
+        Commands are authenticated, authorized, and audited end-to-end.
+      tags:
+        - Commands
+      parameters:
+        - $ref: '#/components/parameters/GatewayId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: Command payload for target RTU/IED through the gateway
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommandRequest'
+            examples:
+              openBreaker:
+                summary: Open breaker command
+                value:
+                  command_type: breaker_control
+                  target_device:
+                    device_id: dev-ied-88A
+                    device_type: IED
+                    rtu_address: null
+                    ied_name: BAY_CTRL_88A
+                    protocol: IEC_61850
+                  command_payload:
+                    action: open
+                    breaker_id: BRK-88A
+                    reason: Remote isolation for maintenance
+                  requested_by: operator.jnguyen
+                  request_reference: wrk-ord-77521
+      responses:
+        '202':
+          description: Command accepted for delivery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandAcceptedResponse'
+              examples:
+                accepted:
+                  value:
+                    data:
+                      command_id: cmd-4f4ecb7c-598d-426b-9d76-83af0c8cbf3f
+                      gateway_id: gw-substation-east-001
+                      status: queued
+                      submitted_at: '2026-03-27T17:42:13Z'
+                      audit_id: aud-f34d8aa6ebf54cd6
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/protocols:
+    get:
+      operationId: listSupportedProtocols
+      summary: List supported SCADA protocols
+      description: |
+        Returns protocol support matrix for gateway relay operations.
+        Includes protocol versions and capability flags for DNP3, IEC 61850, and Modbus.
+      tags:
+        - Protocols
+      responses:
+        '200':
+          description: Protocol profile list returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtocolListResponse'
+              examples:
+                protocols:
+                  value:
+                    data:
+                      - protocol: DNP3
+                        profile: IEEE 1815-2012
+                        supports_unsolicited: true
+                        supports_time_sync: true
+                        supports_secure_authentication: true
+                        max_points_per_scan: 10000
+                      - protocol: IEC_61850
+                        profile: Edition 2.1
+                        supports_unsolicited: true
+                        supports_time_sync: true
+                        supports_secure_authentication: true
+                        max_points_per_scan: 7500
+                      - protocol: MODBUS
+                        profile: TCP
+                        supports_unsolicited: false
+                        supports_time_sync: false
+                        supports_secure_authentication: false
+                        max_points_per_scan: 4000
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/gateways/{gatewayId}/config:
+    patch:
+      operationId: patchGatewayConfig
+      summary: Update gateway relay and filter configuration
+      description: |
+        Applies partial updates to runtime gateway config, including telemetry filters,
+        protocol tuning, retry behavior, and command safety guardrails.
+      tags:
+        - Gateways
+      parameters:
+        - $ref: '#/components/parameters/GatewayId'
+      requestBody:
+        required: true
+        description: Partial gateway configuration update payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchGatewayConfigRequest'
+            examples:
+              updateFilters:
+                summary: Enable filter and update telemetry forwarding intervals
+                value:
+                  telemetry_filters:
+                    enabled: true
+                    min_publish_interval_ms: 1000
+                    metric_allowlist:
+                      - line_voltage_kv
+                      - breaker_status
+                    breaker_state_forwarding:
+                      include_transitions_only: true
+                  relay:
+                    max_batch_size: 500
+                    max_retry_attempts: 5
+                    retry_backoff_ms: 200
+                  command_safety:
+                    require_dual_authorization: true
+                    blocked_actions:
+                      - close
+      responses:
+        '200':
+          description: Gateway configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayConfigResponse'
+              examples:
+                updated:
+                  value:
+                    data:
+                      gateway_id: gw-substation-east-001
+                      updated_at: '2026-03-27T17:43:02Z'
+                      updated_by: operator.jnguyen
+                      config_version: 22
+                      telemetry_filters:
+                        enabled: true
+                        min_publish_interval_ms: 1000
+                        metric_allowlist:
+                          - line_voltage_kv
+                          - breaker_status
+                        breaker_state_forwarding:
+                          include_transitions_only: true
+                      relay:
+                        max_batch_size: 500
+                        max_retry_attempts: 5
+                        retry_backoff_ms: 200
+                      command_safety:
+                        require_dual_authorization: true
+                        blocked_actions:
+                          - close
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    GatewayId:
+      name: gatewayId
+      in: path
+      required: true
+      description: Unique gateway identifier
+      schema:
+        type: string
+        pattern: '^gw-[a-z0-9-]+$'
+        example: gw-substation-east-001
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number for paginated responses
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Number of records per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    SortByGateway:
+      name: sort_by
+      in: query
+      required: false
+      description: Gateway field used for sorting
+      schema:
+        type: string
+        enum:
+          - gateway_name
+          - health_status
+          - last_heartbeat_at
+          - connected_device_count
+        default: last_heartbeat_at
+    SortOrder:
+      name: sort_order
+      in: query
+      required: false
+      description: Sort direction
+      schema:
+        type: string
+        enum:
+          - asc
+          - desc
+        default: desc
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-provided idempotency token to prevent duplicate submission
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        example: idem-20260327-174108-gw001
+
+  responses:
+    BadRequest:
+      description: Request payload or query parameters are invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidRequest:
+              value:
+                error:
+                  code: bad_request
+                  message: Validation failed for request payload.
+                  details:
+                    - field: records[0].event_time
+                      issue: must be RFC3339 timestamp
+                  trace_id: req-31f29a9f4c4e4fd8
+    Unauthorized:
+      description: Caller is not authenticated
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                error:
+                  code: unauthorized
+                  message: Bearer token is missing or expired.
+                  details: []
+                  trace_id: req-2cc59b0e62e54c64
+    Forbidden:
+      description: Caller lacks required scope for this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: forbidden
+                  message: Insufficient permissions for gateway command relay.
+                  details:
+                    - required_scope: substation-gateway:write
+                  trace_id: req-54f1f64f50d64d66
+    NotFound:
+      description: Requested resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missingGateway:
+              value:
+                error:
+                  code: not_found
+                  message: Gateway gw-substation-east-999 was not found.
+                  details: []
+                  trace_id: req-1f2bb54a22fd4967
+    Conflict:
+      description: Request conflicts with current resource state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            duplicateBatch:
+              value:
+                error:
+                  code: conflict
+                  message: Batch has already been ingested.
+                  details:
+                    - batch_id: batch-20260327-174108-001
+                  trace_id: req-77c2d65883b141c0
+    UnprocessableEntity:
+      description: Request format is valid but cannot be processed semantically
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidDeviceAddress:
+              value:
+                error:
+                  code: unprocessable_entity
+                  message: Command target cannot be resolved on gateway.
+                  details:
+                    - rtu_address: '9999'
+                      issue: unknown device mapping
+                  trace_id: req-148f54837de14ad6
+    RateLimited:
+      description: Caller exceeded API rate limits
+      headers:
+        Retry-After:
+          description: Seconds before next retry
+          schema:
+            type: integer
+            example: 30
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            tooManyRequests:
+              value:
+                error:
+                  code: rate_limited
+                  message: Request limit exceeded. Retry later.
+                  details:
+                    - limit_per_minute: 120
+                  trace_id: req-c0844d52fe3f4328
+    InternalServerError:
+      description: Unexpected server-side error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            serverError:
+              value:
+                error:
+                  code: internal_error
+                  message: An unexpected error occurred while processing the request.
+                  details: []
+                  trace_id: req-98d4463d726f43d9
+
+  schemas:
+    HealthStatus:
+      type: string
+      description: Gateway health state derived from heartbeat and queue telemetry
+      enum:
+        - healthy
+        - degraded
+        - offline
+
+    SecureChannelState:
+      type: string
+      description: Status of secure tunnel between gateway and cloud relay
+      enum:
+        - active
+        - degraded
+        - inactive
+
+    DeviceType:
+      type: string
+      description: Field device category connected to the gateway
+      enum:
+        - RTU
+        - IED
+
+    ProtocolType:
+      type: string
+      description: Supported SCADA protocol identifier
+      enum:
+        - DNP3
+        - IEC_61850
+        - MODBUS
+
+    BreakerState:
+      type: string
+      description: Power breaker state as reported by RTU/IED
+      enum:
+        - open
+        - closed
+        - transitioning
+        - unknown
+
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        per_page:
+          type: integer
+          minimum: 1
+          example: 20
+        total:
+          type: integer
+          minimum: 0
+          example: 137
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 7
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+
+    GatewaySummary:
+      type: object
+      description: Compact gateway representation for list operations
+      properties:
+        gateway_id:
+          type: string
+          example: gw-substation-east-001
+        gateway_name:
+          type: string
+          example: East Substation Relay Node 1
+        site_code:
+          type: string
+          example: sub-east-01
+        region:
+          type: string
+          example: us-east-grid
+        health_status:
+          $ref: '#/components/schemas/HealthStatus'
+        last_heartbeat_at:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:41:06Z'
+        connected_device_count:
+          type: integer
+          minimum: 0
+          example: 18
+        protocols:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProtocolType'
+        firmware_version:
+          type: string
+          example: 4.12.3
+        secure_channel_state:
+          $ref: '#/components/schemas/SecureChannelState'
+      required:
+        - gateway_id
+        - gateway_name
+        - site_code
+        - region
+        - health_status
+        - last_heartbeat_at
+        - connected_device_count
+        - protocols
+        - firmware_version
+        - secure_channel_state
+
+    ConnectedDevice:
+      type: object
+      description: Gateway-connected device entry
+      properties:
+        device_id:
+          type: string
+          example: dev-rtu-1001
+        device_type:
+          $ref: '#/components/schemas/DeviceType'
+        rtu_address:
+          type: string
+          nullable: true
+          description: RTU station address where applicable
+          example: '1001'
+        ied_name:
+          type: string
+          nullable: true
+          description: IED logical name for IEC 61850 assets
+          example: BAY_CTRL_88A
+        protocol:
+          $ref: '#/components/schemas/ProtocolType'
+        dnp3_class:
+          type: string
+          nullable: true
+          description: DNP3 event class for the point when protocol is DNP3
+        feeder_name:
+          type: string
+          example: feeder-east-12
+        breaker_state:
+          $ref: '#/components/schemas/BreakerState'
+        online:
+          type: boolean
+          example: true
+        last_seen_at:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:40:58Z'
+      required:
+        - device_id
+        - device_type
+        - protocol
+        - feeder_name
+        - breaker_state
+        - online
+        - last_seen_at
+
+    GatewayDetail:
+      type: object
+      description: Full gateway detail payload
+      properties:
+        gateway_id:
+          type: string
+          example: gw-substation-east-001
+        gateway_name:
+          type: string
+          example: East Substation Relay Node 1
+        site_code:
+          type: string
+          example: sub-east-01
+        region:
+          type: string
+          example: us-east-grid
+        substation_name:
+          type: string
+          example: East Ridge Distribution Substation
+        health_status:
+          $ref: '#/components/schemas/HealthStatus'
+        secure_channel_state:
+          $ref: '#/components/schemas/SecureChannelState'
+        ip_address:
+          type: string
+          format: ipv4
+          example: 10.42.14.21
+        firmware_version:
+          type: string
+          example: 4.12.3
+        last_heartbeat_at:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:41:06Z'
+        protocols:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProtocolType'
+        connected_devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConnectedDevice'
+      required:
+        - gateway_id
+        - gateway_name
+        - site_code
+        - region
+        - substation_name
+        - health_status
+        - secure_channel_state
+        - ip_address
+        - firmware_version
+        - last_heartbeat_at
+        - protocols
+        - connected_devices
+
+    TelemetryRecord:
+      type: object
+      description: Telemetry event relayed from a field endpoint
+      properties:
+        device_id:
+          type: string
+          example: dev-rtu-1001
+        rtu_address:
+          type: string
+          nullable: true
+          description: Address for RTU-provided telemetry points
+          example: '1001'
+        ied_name:
+          type: string
+          nullable: true
+          description: IEC 61850 logical node source name
+          example: BAY_CTRL_88A
+        dnp3_class:
+          type: string
+          nullable: true
+          description: DNP3 event class for the point when protocol is DNP3
+        point_type:
+          type: string
+          enum:
+            - analog_input
+            - analog_output
+            - binary_input
+            - binary_output
+            - counter
+          example: analog_input
+        point_index:
+          type: integer
+          minimum: 0
+          example: 12
+        metric:
+          type: string
+          description: Canonical metric key after protocol normalization
+          example: line_voltage_kv
+        value:
+          anyOf:
+            - type: number
+            - type: integer
+            - type: string
+            - type: boolean
+          description: Measurement or state value
+          example: 34.62
+        quality_flags:
+          type: array
+          description: Protocol quality flags normalized to string tokens
+          items:
+            type: string
+          example:
+            - online
+            - substituted
+        breaker_state:
+          $ref: '#/components/schemas/BreakerState'
+        event_time:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:41:06Z'
+      required:
+        - device_id
+        - point_type
+        - point_index
+        - metric
+        - value
+        - quality_flags
+        - breaker_state
+        - event_time
+
+    LatestTelemetryReading:
+      type: object
+      description: Latest point value for a connected field device
+      properties:
+        device_id:
+          type: string
+          example: dev-rtu-1001
+        device_type:
+          $ref: '#/components/schemas/DeviceType'
+        rtu_address:
+          type: string
+          nullable: true
+          example: '1001'
+        ied_name:
+          type: string
+          nullable: true
+          example: BAY_CTRL_88A
+        protocol:
+          $ref: '#/components/schemas/ProtocolType'
+        dnp3_class:
+          type: string
+          nullable: true
+          description: DNP3 event class for the point when protocol is DNP3
+        metric:
+          type: string
+          example: breaker_status
+        value:
+          anyOf:
+            - type: number
+            - type: integer
+            - type: string
+            - type: boolean
+          example: 0
+        unit:
+          type: string
+          example: state
+        breaker_state:
+          $ref: '#/components/schemas/BreakerState'
+        stale:
+          type: boolean
+          example: false
+        event_time:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:41:54Z'
+      required:
+        - device_id
+        - device_type
+        - protocol
+        - metric
+        - value
+        - unit
+        - breaker_state
+        - stale
+        - event_time
+
+    CommandTarget:
+      type: object
+      description: Target endpoint for command relay
+      properties:
+        device_id:
+          type: string
+          example: dev-ied-88A
+        device_type:
+          $ref: '#/components/schemas/DeviceType'
+        rtu_address:
+          type: string
+          nullable: true
+          example: null
+        ied_name:
+          type: string
+          nullable: true
+          example: BAY_CTRL_88A
+        protocol:
+          $ref: '#/components/schemas/ProtocolType'
+      required:
+        - device_id
+        - device_type
+        - protocol
+
+    CommandPayload:
+      type: object
+      description: Generic command content for downstream device handlers
+      properties:
+        action:
+          type: string
+          description: Requested command action
+          enum:
+            - open
+            - close
+            - reset
+            - setpoint
+          example: open
+        breaker_id:
+          type: string
+          description: Breaker identifier when action applies to switchgear
+          example: BRK-88A
+        setpoint_name:
+          type: string
+          nullable: true
+          example: voltage_target
+        setpoint_value:
+          type: number
+          nullable: true
+          example: 33.6
+        reason:
+          type: string
+          description: Human-readable command reason for audit records
+          example: Remote isolation for maintenance
+      required:
+        - action
+        - reason
+
+    CommandSafetyConfig:
+      type: object
+      description: Safety controls for gateway command relay operations
+      properties:
+        require_dual_authorization:
+          type: boolean
+          example: true
+        blocked_actions:
+          type: array
+          items:
+            type: string
+            enum:
+              - open
+              - close
+              - reset
+              - setpoint
+          example:
+            - close
+      required:
+        - require_dual_authorization
+        - blocked_actions
+
+    RelayConfig:
+      type: object
+      description: Gateway relay runtime behavior
+      properties:
+        max_batch_size:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          example: 500
+        max_retry_attempts:
+          type: integer
+          minimum: 0
+          maximum: 20
+          example: 5
+        retry_backoff_ms:
+          type: integer
+          minimum: 10
+          maximum: 60000
+          example: 200
+      required:
+        - max_batch_size
+        - max_retry_attempts
+        - retry_backoff_ms
+
+    BreakerStateForwardingConfig:
+      type: object
+      properties:
+        include_transitions_only:
+          type: boolean
+          description: Forward only breaker state transitions when enabled
+          example: true
+      required:
+        - include_transitions_only
+
+    TelemetryFilterConfig:
+      type: object
+      description: Filter and throttling behavior for telemetry publishing
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        min_publish_interval_ms:
+          type: integer
+          minimum: 0
+          maximum: 600000
+          example: 1000
+        metric_allowlist:
+          type: array
+          items:
+            type: string
+          example:
+            - line_voltage_kv
+            - breaker_status
+        breaker_state_forwarding:
+          $ref: '#/components/schemas/BreakerStateForwardingConfig'
+      required:
+        - enabled
+        - min_publish_interval_ms
+        - metric_allowlist
+
+    ProtocolProfile:
+      type: object
+      description: Protocol support profile advertised by service
+      properties:
+        protocol:
+          $ref: '#/components/schemas/ProtocolType'
+        profile:
+          type: string
+          example: IEEE 1815-2012
+        supports_unsolicited:
+          type: boolean
+          example: true
+        supports_time_sync:
+          type: boolean
+          example: true
+        supports_secure_authentication:
+          type: boolean
+          example: true
+        max_points_per_scan:
+          type: integer
+          minimum: 1
+          example: 10000
+      required:
+        - protocol
+        - profile
+        - supports_unsolicited
+        - supports_time_sync
+        - supports_secure_authentication
+        - max_points_per_scan
+
+    GatewayListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GatewaySummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+        - data
+        - meta
+
+    GatewayDetailResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/GatewayDetail'
+      required:
+        - data
+
+    TelemetryIngestRequest:
+      type: object
+      properties:
+        batch_id:
+          type: string
+          description: Batch identifier unique within gateway scope
+          example: batch-20260327-174108-001
+        captured_at:
+          type: string
+          format: date-time
+          description: Gateway capture timestamp for the batch envelope
+          example: '2026-03-27T17:41:08Z'
+        protocol:
+          $ref: '#/components/schemas/ProtocolType'
+        records:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            $ref: '#/components/schemas/TelemetryRecord'
+      required:
+        - batch_id
+        - captured_at
+        - protocol
+        - records
+
+    TelemetryIngestAccepted:
+      type: object
+      properties:
+        ingest_id:
+          type: string
+          example: ing-3fd0c3f8-9d72-4c8f-9ca4-9adfcf8f8f01
+        gateway_id:
+          type: string
+          example: gw-substation-east-001
+        batch_id:
+          type: string
+          example: batch-20260327-174108-001
+        accepted_record_count:
+          type: integer
+          minimum: 0
+          example: 2
+        rejected_record_count:
+          type: integer
+          minimum: 0
+          example: 0
+        status:
+          type: string
+          enum:
+            - accepted
+            - partial
+          example: accepted
+        accepted_at:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:41:09Z'
+        pipeline_trace_id:
+          type: string
+          example: trace-6d18a553df4f4d43
+      required:
+        - ingest_id
+        - gateway_id
+        - batch_id
+        - accepted_record_count
+        - rejected_record_count
+        - status
+        - accepted_at
+        - pipeline_trace_id
+
+    TelemetryIngestAcceptedResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/TelemetryIngestAccepted'
+      required:
+        - data
+
+    LatestTelemetryData:
+      type: object
+      properties:
+        gateway_id:
+          type: string
+          example: gw-substation-east-001
+        generated_at:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:42:00Z'
+        readings:
+          type: array
+          items:
+            $ref: '#/components/schemas/LatestTelemetryReading'
+      required:
+        - gateway_id
+        - generated_at
+        - readings
+
+    LatestTelemetryResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/LatestTelemetryData'
+      required:
+        - data
+
+    CreateCommandRequest:
+      type: object
+      properties:
+        command_type:
+          type: string
+          enum:
+            - breaker_control
+            - setpoint_update
+            - device_reset
+          example: breaker_control
+        target_device:
+          $ref: '#/components/schemas/CommandTarget'
+        command_payload:
+          $ref: '#/components/schemas/CommandPayload'
+        requested_by:
+          type: string
+          description: Operator identity or service principal
+          example: operator.jnguyen
+        request_reference:
+          type: string
+          description: External workflow or ticket identifier
+          example: wrk-ord-77521
+      required:
+        - command_type
+        - target_device
+        - command_payload
+        - requested_by
+
+    CommandAccepted:
+      type: object
+      properties:
+        command_id:
+          type: string
+          example: cmd-4f4ecb7c-598d-426b-9d76-83af0c8cbf3f
+        gateway_id:
+          type: string
+          example: gw-substation-east-001
+        status:
+          type: string
+          enum:
+            - queued
+            - in_progress
+            - rejected
+          example: queued
+        submitted_at:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:42:13Z'
+        audit_id:
+          type: string
+          example: aud-f34d8aa6ebf54cd6
+      required:
+        - command_id
+        - gateway_id
+        - status
+        - submitted_at
+        - audit_id
+
+    CommandAcceptedResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CommandAccepted'
+      required:
+        - data
+
+    ProtocolListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProtocolProfile'
+      required:
+        - data
+
+    PatchGatewayConfigRequest:
+      type: object
+      description: Partial gateway configuration update document
+      properties:
+        telemetry_filters:
+          $ref: '#/components/schemas/TelemetryFilterConfig'
+        relay:
+          $ref: '#/components/schemas/RelayConfig'
+        command_safety:
+          $ref: '#/components/schemas/CommandSafetyConfig'
+      minProperties: 1
+
+    GatewayConfig:
+      type: object
+      properties:
+        gateway_id:
+          type: string
+          example: gw-substation-east-001
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-03-27T17:43:02Z'
+        updated_by:
+          type: string
+          example: operator.jnguyen
+        config_version:
+          type: integer
+          minimum: 1
+          example: 22
+        telemetry_filters:
+          $ref: '#/components/schemas/TelemetryFilterConfig'
+        relay:
+          $ref: '#/components/schemas/RelayConfig'
+        command_safety:
+          $ref: '#/components/schemas/CommandSafetyConfig'
+      required:
+        - gateway_id
+        - updated_at
+        - updated_by
+        - config_version
+
+    GatewayConfigResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/GatewayConfig'
+      required:
+        - data
+
+    ErrorDetail:
+      type: object
+      description: Context-specific validation or processing error detail
+      additionalProperties: true
+      example:
+        field: records[0].event_time
+        issue: must be RFC3339 timestamp
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        code:
+          type: string
+          example: bad_request
+        message:
+          type: string
+          example: Validation failed for request payload.
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+        trace_id:
+          type: string
+          example: req-31f29a9f4c4e4fd8
+      required:
+        - code
+        - message
+        - details
+        - trace_id
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorEnvelope'
+      required:
+        - error

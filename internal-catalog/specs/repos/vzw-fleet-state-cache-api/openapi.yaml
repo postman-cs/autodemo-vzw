@@ -1,0 +1,1717 @@
+openapi: 3.0.3
+info:
+  title: VZW Fleet State Cache API
+  version: 1.0.0
+  description: >-
+    Provides a low-latency unit state cache used by dispatch applications to retrieve
+    responder availability, current assignment lifecycle status, and latest known
+    position snapshots. The API is optimized for read-heavy readiness workflows and
+    near-real-time location lookups.
+  contact:
+    name: VZW Fleet Cache Platform
+    email: fleet-cache-support@verizon.example.com
+    url: https://developer.verizon.example.com/apis/fleet-cache
+  license:
+    name: Proprietary
+    url: https://verizon.example.com/terms/api
+  x-catalog-id: vzw-fleet-state-cache-api
+  x-domain: fleet-cache
+servers:
+  - url: https://vzw-fleet-state-cache-api.verizon.com
+    description: Production
+  - url: https://vzw-fleet-state-cache-api.staging.verizon.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Units
+    description: Unit state retrieval and mutation endpoints for dispatch workflows
+  - name: Spatial Query
+    description: Proximity-based unit lookup endpoints
+  - name: Cache Health
+    description: Cache quality and freshness telemetry endpoints
+paths:
+  /v1/units:
+    get:
+      tags:
+        - Units
+      operationId: listUnits
+      summary: List unit cache entries
+      description: >-
+        Returns a paginated list of fleet units with current status and latest known
+        position metadata. This endpoint is designed for dispatch readiness screens
+        and supports filtering by status, district, and recent update recency.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/DistrictFilter'
+        - $ref: '#/components/parameters/UpdatedWithinSeconds'
+      responses:
+        '200':
+          description: Paginated unit state list
+          headers:
+            X-Request-Id:
+              description: Unique request identifier for tracing
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitListResponse'
+              examples:
+                sf_readiness_board:
+                  summary: San Francisco readiness board page 1
+                  value:
+                    data:
+                      - unitId: U-SF-ENG-104
+                        callsign: ENG-104
+                        agency: SFFD
+                        district: SOMA
+                        status: available
+                        statusUpdatedAt: '2026-03-27T16:11:33Z'
+                        assignmentId: null
+                        currentIncidentId: null
+                        latestPosition:
+                          latitude: 37.7749
+                          longitude: -122.4194
+                          headingDegrees: 92
+                          speedKph: 0
+                          recordedAt: '2026-03-27T16:11:25Z'
+                          source: avl
+                        freshness:
+                          stateAgeSeconds: 8
+                          positionAgeSeconds: 8
+                          stale: false
+                      - unitId: U-SF-MED-220
+                        callsign: MED-220
+                        agency: SFFD
+                        district: MISSION
+                        status: en_route
+                        statusUpdatedAt: '2026-03-27T16:10:51Z'
+                        assignmentId: ASG-893420
+                        currentIncidentId: INC-20260327-0091
+                        latestPosition:
+                          latitude: 37.7599
+                          longitude: -122.4148
+                          headingDegrees: 187
+                          speedKph: 43.2
+                          recordedAt: '2026-03-27T16:11:28Z'
+                          source: mobile_app
+                        freshness:
+                          stateAgeSeconds: 50
+                          positionAgeSeconds: 5
+                          stale: false
+                    page:
+                      page: 1
+                      pageSize: 25
+                      totalItems: 1248
+                      totalPages: 50
+                      hasNext: true
+                    summary:
+                      available: 587
+                      dispatched: 214
+                      en_route: 291
+                      on_scene: 156
+                      staleEntries: 13
+                      generatedAt: '2026-03-27T16:11:33Z'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+  /v1/units/{unitId}:
+    get:
+      tags:
+        - Units
+      operationId: getUnitState
+      summary: Get full unit state snapshot
+      description: >-
+        Returns the full cache snapshot for a single unit, including assignment
+        context, status timeline pointers, latest known coordinates, and freshness
+        indicators used by dispatch operator interfaces.
+      parameters:
+        - $ref: '#/components/parameters/UnitIdPath'
+      responses:
+        '200':
+          description: Unit state snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitStateResponse'
+              examples:
+                unit_on_scene:
+                  summary: Unit currently on scene in downtown SF
+                  value:
+                    data:
+                      unitId: U-SF-ENG-104
+                      callsign: ENG-104
+                      agency: SFFD
+                      district: FINANCIAL_DISTRICT
+                      status: on_scene
+                      statusReason: arrived_at_incident
+                      statusUpdatedAt: '2026-03-27T16:06:10Z'
+                      assignmentId: ASG-893400
+                      currentIncidentId: INC-20260327-0088
+                      crew:
+                        - memberId: M-220001
+                          role: officer
+                        - memberId: M-220002
+                          role: driver
+                        - memberId: M-220003
+                          role: paramedic
+                      latestPosition:
+                        latitude: 37.7897
+                        longitude: -122.4011
+                        headingDegrees: 8
+                        speedKph: 0
+                        accuracyMeters: 5.4
+                        recordedAt: '2026-03-27T16:06:05Z'
+                        source: avl
+                      assignmentContext:
+                        priority: high
+                        incidentType: structure_fire
+                        acknowledgedAt: '2026-03-27T15:59:31Z'
+                        dispatchedAt: '2026-03-27T16:00:02Z'
+                        enRouteAt: '2026-03-27T16:01:15Z'
+                        arrivedAt: '2026-03-27T16:06:10Z'
+                      freshness:
+                        stateAgeSeconds: 0
+                        positionAgeSeconds: 5
+                        stale: false
+                      etag: 'W/"unit-U-SF-ENG-104-1711555570"'
+                      updatedAt: '2026-03-27T16:06:10Z'
+                      createdAt: '2025-11-01T05:00:00Z'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+  /v1/units/{unitId}/position:
+    put:
+      tags:
+        - Units
+      operationId: updateUnitPosition
+      summary: Upsert latest unit position
+      description: >-
+        Updates or inserts the latest GPS position snapshot for a unit. Incoming
+        coordinates are validated against supported service boundaries and recency
+        guardrails to prevent stale telemetry from overwriting fresher state.
+      parameters:
+        - $ref: '#/components/parameters/UnitIdPath'
+      requestBody:
+        required: true
+        description: GPS position update payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePositionRequest'
+            examples:
+              sf_market_street:
+                summary: Position update near Market Street
+                value:
+                  latitude: 37.7879
+                  longitude: -122.4074
+                  headingDegrees: 271
+                  speedKph: 37.6
+                  accuracyMeters: 4.7
+                  recordedAt: '2026-03-27T16:12:02Z'
+                  source: avl
+                  altitudeMeters: 18.4
+      responses:
+        '200':
+          description: Position accepted and cache updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdatePositionResponse'
+              examples:
+                accepted:
+                  value:
+                    data:
+                      unitId: U-SF-MED-220
+                      previousRecordedAt: '2026-03-27T16:11:28Z'
+                      recordedAt: '2026-03-27T16:12:02Z'
+                      cacheVersion: 112389
+                      staleWriteIgnored: false
+                      updatedAt: '2026-03-27T16:12:02Z'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+  /v1/units/{unitId}/status:
+    patch:
+      tags:
+        - Units
+      operationId: patchUnitStatus
+      summary: Transition unit dispatch status
+      description: >-
+        Applies a lifecycle status transition for a unit. Supported statuses are
+        `available`, `dispatched`, `en_route`, and `on_scene`. Transition validation
+        enforces expected dispatch progression and returns conflict errors for
+        out-of-order updates.
+      parameters:
+        - $ref: '#/components/parameters/UnitIdPath'
+      requestBody:
+        required: true
+        description: Unit status transition payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchStatusRequest'
+            examples:
+              dispatch_transition:
+                summary: Move unit from available to dispatched
+                value:
+                  status: dispatched
+                  assignmentId: ASG-893421
+                  incidentId: INC-20260327-0092
+                  reason: dispatched_by_cad
+                  statusUpdatedAt: '2026-03-27T16:12:44Z'
+                  actor:
+                    type: system
+                    id: CAD-CORE
+              en_route_transition:
+                summary: Move unit from dispatched to en_route
+                value:
+                  status: en_route
+                  assignmentId: ASG-893421
+                  incidentId: INC-20260327-0092
+                  reason: unit_acknowledged
+                  statusUpdatedAt: '2026-03-27T16:13:10Z'
+                  actor:
+                    type: unit_device
+                    id: MDT-U-SF-MED-220
+      responses:
+        '200':
+          description: Status transition accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchStatusResponse'
+              examples:
+                transitioned:
+                  value:
+                    data:
+                      unitId: U-SF-MED-220
+                      previousStatus: dispatched
+                      status: en_route
+                      statusUpdatedAt: '2026-03-27T16:13:10Z'
+                      assignmentId: ASG-893421
+                      incidentId: INC-20260327-0092
+                      transitionAccepted: true
+                      cacheVersion: 112402
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+  /v1/units/nearby:
+    get:
+      tags:
+        - Spatial Query
+      operationId: getNearbyUnits
+      summary: Query units near a coordinate
+      description: >-
+        Returns units near a given latitude/longitude within a radius in meters.
+        Results are sorted by ascending straight-line distance and can be limited to
+        status values relevant to dispatch availability.
+      parameters:
+        - $ref: '#/components/parameters/LatitudeQuery'
+        - $ref: '#/components/parameters/LongitudeQuery'
+        - $ref: '#/components/parameters/RadiusMetersQuery'
+        - $ref: '#/components/parameters/NearbyLimitQuery'
+        - $ref: '#/components/parameters/StatusFilter'
+      responses:
+        '200':
+          description: Nearby units sorted by distance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NearbyUnitsResponse'
+              examples:
+                sf_downtown_radius_2km:
+                  summary: Nearby unit search around Union Square
+                  value:
+                    query:
+                      latitude: 37.7879
+                      longitude: -122.4074
+                      radiusMeters: 2000
+                      statuses:
+                        - available
+                        - en_route
+                      limit: 3
+                    data:
+                      - unitId: U-SF-ENG-207
+                        callsign: ENG-207
+                        status: available
+                        district: DOWNTOWN
+                        distanceMeters: 342
+                        latestPosition:
+                          latitude: 37.7898
+                          longitude: -122.4048
+                          recordedAt: '2026-03-27T16:13:45Z'
+                      - unitId: U-SF-MED-220
+                        callsign: MED-220
+                        status: en_route
+                        district: MISSION
+                        distanceMeters: 691
+                        latestPosition:
+                          latitude: 37.7838
+                          longitude: -122.4101
+                          recordedAt: '2026-03-27T16:13:40Z'
+                      - unitId: U-SF-TRK-009
+                        callsign: TRK-009
+                        status: available
+                        district: SOMA
+                        distanceMeters: 1244
+                        latestPosition:
+                          latitude: 37.7801
+                          longitude: -122.4188
+                          recordedAt: '2026-03-27T16:13:32Z'
+                    generatedAt: '2026-03-27T16:13:46Z'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+  /v1/units/bulk-status:
+    post:
+      tags:
+        - Units
+      operationId: postBulkStatusQuery
+      summary: Query status for multiple units
+      description: >-
+        Accepts a batch of unit IDs and returns a compact status and freshness view
+        for each requested unit. Intended for orchestrators that need to evaluate
+        assignment candidates in a single low-latency call.
+      requestBody:
+        required: true
+        description: Batch query payload containing unit IDs
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkStatusRequest'
+            examples:
+              district_batch:
+                value:
+                  unitIds:
+                    - U-SF-ENG-104
+                    - U-SF-MED-220
+                    - U-SF-TRK-009
+                  includePosition: true
+      responses:
+        '200':
+          description: Batch status result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkStatusResponse'
+              examples:
+                mixed_availability:
+                  value:
+                    data:
+                      - unitId: U-SF-ENG-104
+                        found: true
+                        status: on_scene
+                        assignmentId: ASG-893400
+                        freshness:
+                          stateAgeSeconds: 7
+                          positionAgeSeconds: 12
+                          stale: false
+                        latestPosition:
+                          latitude: 37.7897
+                          longitude: -122.4011
+                          recordedAt: '2026-03-27T16:13:34Z'
+                      - unitId: U-SF-MED-220
+                        found: true
+                        status: en_route
+                        assignmentId: ASG-893421
+                        freshness:
+                          stateAgeSeconds: 6
+                          positionAgeSeconds: 6
+                          stale: false
+                        latestPosition:
+                          latitude: 37.7838
+                          longitude: -122.4101
+                          recordedAt: '2026-03-27T16:13:40Z'
+                      - unitId: U-SF-BOGUS-001
+                        found: false
+                        status: null
+                        assignmentId: null
+                        freshness: null
+                        latestPosition: null
+                    notFoundUnitIds:
+                      - U-SF-BOGUS-001
+                    generatedAt: '2026-03-27T16:13:46Z'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '413':
+          $ref: '#/components/responses/413'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+  /v1/cache/health:
+    get:
+      tags:
+        - Cache Health
+      operationId: getCacheHealth
+      summary: Get cache operational health metrics
+      description: >-
+        Returns cache hit-rate, latency, and staleness telemetry for fleet state
+        cache partitions. Intended for operational monitoring and readiness checks.
+      responses:
+        '200':
+          description: Cache health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CacheHealthResponse'
+              examples:
+                nominal:
+                  value:
+                    data:
+                      window:
+                        startedAt: '2026-03-27T16:08:00Z'
+                        endedAt: '2026-03-27T16:13:00Z'
+                        intervalSeconds: 300
+                      hitRate:
+                        reads: 401228
+                        hits: 391665
+                        misses: 9563
+                        ratio: 0.9762
+                      latencyMs:
+                        p50: 3.8
+                        p95: 12.1
+                        p99: 24.6
+                      staleness:
+                        entriesTracked: 12892
+                        staleEntries: 119
+                        staleRatio: 0.0092
+                        maxStateAgeSeconds: 154
+                        maxPositionAgeSeconds: 198
+                      partitions:
+                        - partition: sf-downtown
+                          node: cache-a-01
+                          entryCount: 3821
+                          hitRateRatio: 0.9821
+                          staleRatio: 0.0042
+                        - partition: sf-west
+                          node: cache-b-02
+                          entryCount: 3310
+                          hitRateRatio: 0.9713
+                          staleRatio: 0.0119
+                        - partition: sf-south
+                          node: cache-c-01
+                          entryCount: 5761
+                          hitRateRatio: 0.9748
+                          staleRatio: 0.0103
+                      generatedAt: '2026-03-27T16:13:01Z'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '503':
+          $ref: '#/components/responses/503'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    UnitIdPath:
+      name: unitId
+      in: path
+      required: true
+      description: Unique fleet unit identifier
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 64
+      example: U-SF-ENG-104
+    Page:
+      name: page
+      in: query
+      description: 1-based result page number
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      description: Number of records per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    StatusFilter:
+      name: status
+      in: query
+      description: Optional status filter. Repeat query parameter to include multiple statuses.
+      required: false
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          $ref: '#/components/schemas/UnitStatus'
+    DistrictFilter:
+      name: district
+      in: query
+      description: Optional district identifier to scope results
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 64
+      example: SOMA
+    UpdatedWithinSeconds:
+      name: updatedWithinSeconds
+      in: query
+      description: Include units with state updated within the provided number of seconds
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 86400
+      example: 120
+    LatitudeQuery:
+      name: lat
+      in: query
+      required: true
+      description: Latitude in decimal degrees
+      schema:
+        type: number
+        format: double
+        minimum: -90
+        maximum: 90
+      example: 37.7879
+    LongitudeQuery:
+      name: lng
+      in: query
+      required: true
+      description: Longitude in decimal degrees
+      schema:
+        type: number
+        format: double
+        minimum: -180
+        maximum: 180
+      example: -122.4074
+    RadiusMetersQuery:
+      name: radiusMeters
+      in: query
+      required: true
+      description: Search radius in meters
+      schema:
+        type: integer
+        minimum: 100
+        maximum: 50000
+      example: 2000
+    NearbyLimitQuery:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of nearby units to return
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+  responses:
+    '400':
+      description: Bad request due to malformed query, body, or parameter values
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_parameter:
+              value:
+                error:
+                  code: bad_request
+                  message: Query parameter pageSize must be <= 200
+                  details:
+                    field: pageSize
+                    value: 500
+                  requestId: 5ec4f9b1-05c7-4a92-a9de-9f4f44d8a0ea
+    '401':
+      description: Authentication failed or bearer token missing
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missing_token:
+              value:
+                error:
+                  code: unauthorized
+                  message: Missing bearer token
+                  details: {}
+                  requestId: 75936b10-79f6-42b0-b66a-5c9d7617a99d
+    '403':
+      description: Principal authenticated but not authorized for this scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            insufficient_scope:
+              value:
+                error:
+                  code: forbidden
+                  message: Missing required scope fleet-cache:write
+                  details:
+                    requiredScope: fleet-cache:write
+                  requestId: 176cfc35-13ae-4ae0-8f4f-56fbf18df165
+    '404':
+      description: Requested unit or resource not found in cache
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unit_not_found:
+              value:
+                error:
+                  code: not_found
+                  message: Unit U-SF-BOGUS-001 not found
+                  details:
+                    unitId: U-SF-BOGUS-001
+                  requestId: e5f1f4b5-0e27-4ff4-ae41-c8ce2756d8d9
+    '409':
+      description: Resource conflict such as out-of-order update or invalid transition
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            status_conflict:
+              value:
+                error:
+                  code: conflict
+                  message: Cannot transition from on_scene to dispatched
+                  details:
+                    unitId: U-SF-ENG-104
+                    currentStatus: on_scene
+                    attemptedStatus: dispatched
+                  requestId: 9b34ebfd-4c20-4d58-b9a8-e9861df1bf36
+    '413':
+      description: Request payload exceeded service limits
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            too_many_units:
+              value:
+                error:
+                  code: payload_too_large
+                  message: unitIds supports at most 1000 items
+                  details:
+                    limit: 1000
+                  requestId: 4a4f7bd7-8748-4d9e-ba53-5d14510fa0da
+    '422':
+      description: Semantic validation failed for a well-formed request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            coordinates_out_of_bounds:
+              value:
+                error:
+                  code: unprocessable_entity
+                  message: Coordinates are outside supported service area
+                  details:
+                    latitude: 36.1521
+                    longitude: -121.9234
+                    area: san_francisco_metro
+                  requestId: 90aa1e95-9d90-4fb0-ae13-12989130b145
+    '429':
+      description: Request was rate limited
+      headers:
+        Retry-After:
+          description: Number of seconds before retry is allowed
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            too_many_requests:
+              value:
+                error:
+                  code: too_many_requests
+                  message: Rate limit exceeded
+                  details:
+                    limitPerMinute: 1200
+                  requestId: 4a642bfb-5459-4426-9113-794566171f3e
+    '500':
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internal_error:
+              value:
+                error:
+                  code: internal_error
+                  message: Unexpected error while processing request
+                  details: {}
+                  requestId: f75940c4-b4c0-4ea5-a540-37a1be2d9027
+    '503':
+      description: Service unavailable due to degraded cache backend
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            backend_unavailable:
+              value:
+                error:
+                  code: service_unavailable
+                  message: Cache backend is unavailable
+                  details:
+                    backend: redis-cluster
+                    partition: sf-south
+                  requestId: b5f1157f-1a73-478f-a3e6-e25c929951df
+  schemas:
+    UnitStatus:
+      type: string
+      description: Dispatch lifecycle status of a unit
+      enum:
+        - available
+        - dispatched
+        - en_route
+        - on_scene
+    PositionSource:
+      type: string
+      description: Source system that produced position telemetry
+      enum:
+        - avl
+        - mobile_app
+        - radio_gateway
+        - manual
+    Freshness:
+      type: object
+      description: Freshness indicators for state and position fields
+      properties:
+        stateAgeSeconds:
+          type: integer
+          minimum: 0
+          description: Age of status snapshot in seconds
+          example: 12
+        positionAgeSeconds:
+          type: integer
+          minimum: 0
+          description: Age of latest position in seconds
+          example: 9
+        stale:
+          type: boolean
+          description: True when age exceeds staleness threshold
+          example: false
+      required:
+        - stateAgeSeconds
+        - positionAgeSeconds
+        - stale
+    Position:
+      type: object
+      description: Unit position snapshot
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 37.7749
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: -122.4194
+        headingDegrees:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 359.99
+          nullable: true
+          example: 95.5
+        speedKph:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+          example: 41.3
+        accuracyMeters:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+          example: 4.9
+        altitudeMeters:
+          type: number
+          format: float
+          nullable: true
+          example: 18.4
+        recordedAt:
+          type: string
+          format: date-time
+          description: Timestamp when position was captured
+          example: '2026-03-27T16:11:25Z'
+        source:
+          $ref: '#/components/schemas/PositionSource'
+      required:
+        - latitude
+        - longitude
+        - recordedAt
+        - source
+    UnitListItem:
+      type: object
+      description: Compact unit state payload used in list responses
+      properties:
+        unitId:
+          type: string
+          example: U-SF-ENG-104
+        callsign:
+          type: string
+          example: ENG-104
+        agency:
+          type: string
+          example: SFFD
+        district:
+          type: string
+          example: SOMA
+        status:
+          $ref: '#/components/schemas/UnitStatus'
+        statusUpdatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:11:33Z'
+        assignmentId:
+          type: string
+          nullable: true
+          example: ASG-893420
+        currentIncidentId:
+          type: string
+          nullable: true
+          example: INC-20260327-0091
+        latestPosition:
+          $ref: '#/components/schemas/Position'
+        freshness:
+          $ref: '#/components/schemas/Freshness'
+      required:
+        - unitId
+        - callsign
+        - agency
+        - district
+        - status
+        - statusUpdatedAt
+        - latestPosition
+        - freshness
+    CrewMember:
+      type: object
+      properties:
+        memberId:
+          type: string
+          example: M-220001
+        role:
+          type: string
+          enum:
+            - officer
+            - driver
+            - paramedic
+            - firefighter
+            - observer
+          example: officer
+      required:
+        - memberId
+        - role
+    AssignmentContext:
+      type: object
+      properties:
+        priority:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+            - critical
+          example: high
+        incidentType:
+          type: string
+          example: structure_fire
+        acknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-27T15:59:31Z'
+        dispatchedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-27T16:00:02Z'
+        enRouteAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-27T16:01:15Z'
+        arrivedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-27T16:06:10Z'
+      required:
+        - priority
+        - incidentType
+    UnitState:
+      type: object
+      description: Full unit state snapshot
+      properties:
+        unitId:
+          type: string
+          example: U-SF-ENG-104
+        callsign:
+          type: string
+          example: ENG-104
+        agency:
+          type: string
+          example: SFFD
+        district:
+          type: string
+          example: FINANCIAL_DISTRICT
+        status:
+          $ref: '#/components/schemas/UnitStatus'
+        statusReason:
+          type: string
+          nullable: true
+          example: arrived_at_incident
+        statusUpdatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:06:10Z'
+        assignmentId:
+          type: string
+          nullable: true
+          example: ASG-893400
+        currentIncidentId:
+          type: string
+          nullable: true
+          example: INC-20260327-0088
+        crew:
+          type: array
+          items:
+            $ref: '#/components/schemas/CrewMember'
+        latestPosition:
+          $ref: '#/components/schemas/Position'
+        assignmentContext:
+          $ref: '#/components/schemas/AssignmentContext'
+        freshness:
+          $ref: '#/components/schemas/Freshness'
+        etag:
+          type: string
+          description: Weak ETag describing cache version for this unit snapshot
+          example: 'W/"unit-U-SF-ENG-104-1711555570"'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:06:10Z'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2025-11-01T05:00:00Z'
+      required:
+        - unitId
+        - callsign
+        - agency
+        - district
+        - status
+        - statusUpdatedAt
+        - crew
+        - latestPosition
+        - freshness
+        - updatedAt
+        - createdAt
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          example: 25
+        totalItems:
+          type: integer
+          minimum: 0
+          example: 1248
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 50
+        hasNext:
+          type: boolean
+          example: true
+      required:
+        - page
+        - pageSize
+        - totalItems
+        - totalPages
+        - hasNext
+    UnitListSummary:
+      type: object
+      properties:
+        available:
+          type: integer
+          minimum: 0
+          example: 587
+        dispatched:
+          type: integer
+          minimum: 0
+          example: 214
+        en_route:
+          type: integer
+          minimum: 0
+          example: 291
+        on_scene:
+          type: integer
+          minimum: 0
+          example: 156
+        staleEntries:
+          type: integer
+          minimum: 0
+          example: 13
+        generatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:11:33Z'
+      required:
+        - available
+        - dispatched
+        - en_route
+        - on_scene
+        - staleEntries
+        - generatedAt
+    UnitListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnitListItem'
+        page:
+          $ref: '#/components/schemas/Pagination'
+        summary:
+          $ref: '#/components/schemas/UnitListSummary'
+      required:
+        - data
+        - page
+        - summary
+    UnitStateResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/UnitState'
+      required:
+        - data
+    UpdatePositionRequest:
+      type: object
+      description: Payload used to update latest unit location
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 37.7879
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: -122.4074
+        headingDegrees:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 359.99
+          nullable: true
+          example: 271
+        speedKph:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+          example: 37.6
+        accuracyMeters:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+          example: 4.7
+        altitudeMeters:
+          type: number
+          format: float
+          nullable: true
+          example: 18.4
+        recordedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:12:02Z'
+        source:
+          $ref: '#/components/schemas/PositionSource'
+      required:
+        - latitude
+        - longitude
+        - recordedAt
+        - source
+    UpdatePositionResult:
+      type: object
+      properties:
+        unitId:
+          type: string
+          example: U-SF-MED-220
+        previousRecordedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-27T16:11:28Z'
+        recordedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:12:02Z'
+        cacheVersion:
+          type: integer
+          minimum: 0
+          example: 112389
+        staleWriteIgnored:
+          type: boolean
+          example: false
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:12:02Z'
+      required:
+        - unitId
+        - recordedAt
+        - cacheVersion
+        - staleWriteIgnored
+        - updatedAt
+    UpdatePositionResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/UpdatePositionResult'
+      required:
+        - data
+    StatusActor:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - dispatcher
+            - system
+            - unit_device
+            - integration
+          example: system
+        id:
+          type: string
+          example: CAD-CORE
+      required:
+        - type
+        - id
+    PatchStatusRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/UnitStatus'
+        assignmentId:
+          type: string
+          nullable: true
+          example: ASG-893421
+        incidentId:
+          type: string
+          nullable: true
+          example: INC-20260327-0092
+        reason:
+          type: string
+          maxLength: 128
+          example: dispatched_by_cad
+        statusUpdatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:12:44Z'
+        actor:
+          $ref: '#/components/schemas/StatusActor'
+      required:
+        - status
+        - statusUpdatedAt
+        - actor
+    PatchStatusResult:
+      type: object
+      properties:
+        unitId:
+          type: string
+          example: U-SF-MED-220
+        previousStatus:
+          $ref: '#/components/schemas/UnitStatus'
+        status:
+          $ref: '#/components/schemas/UnitStatus'
+        statusUpdatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:13:10Z'
+        assignmentId:
+          type: string
+          nullable: true
+          example: ASG-893421
+        incidentId:
+          type: string
+          nullable: true
+          example: INC-20260327-0092
+        transitionAccepted:
+          type: boolean
+          example: true
+        cacheVersion:
+          type: integer
+          minimum: 0
+          example: 112402
+      required:
+        - unitId
+        - previousStatus
+        - status
+        - statusUpdatedAt
+        - transitionAccepted
+        - cacheVersion
+    PatchStatusResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PatchStatusResult'
+      required:
+        - data
+    NearbyUnit:
+      type: object
+      properties:
+        unitId:
+          type: string
+          example: U-SF-ENG-207
+        callsign:
+          type: string
+          example: ENG-207
+        status:
+          $ref: '#/components/schemas/UnitStatus'
+        district:
+          type: string
+          example: DOWNTOWN
+        distanceMeters:
+          type: number
+          format: float
+          minimum: 0
+          example: 342
+        latestPosition:
+          type: object
+          properties:
+            latitude:
+              type: number
+              format: double
+              example: 37.7898
+            longitude:
+              type: number
+              format: double
+              example: -122.4048
+            recordedAt:
+              type: string
+              format: date-time
+              example: '2026-03-27T16:13:45Z'
+          required:
+            - latitude
+            - longitude
+            - recordedAt
+      required:
+        - unitId
+        - callsign
+        - status
+        - district
+        - distanceMeters
+        - latestPosition
+    NearbyQuerySummary:
+      type: object
+      properties:
+        latitude:
+          type: number
+          format: double
+          example: 37.7879
+        longitude:
+          type: number
+          format: double
+          example: -122.4074
+        radiusMeters:
+          type: integer
+          example: 2000
+        statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnitStatus'
+        limit:
+          type: integer
+          example: 50
+      required:
+        - latitude
+        - longitude
+        - radiusMeters
+        - limit
+    NearbyUnitsResponse:
+      type: object
+      properties:
+        query:
+          $ref: '#/components/schemas/NearbyQuerySummary'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/NearbyUnit'
+        generatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:13:46Z'
+      required:
+        - query
+        - data
+        - generatedAt
+    BulkStatusRequest:
+      type: object
+      properties:
+        unitIds:
+          type: array
+          description: Unique unit IDs to query
+          minItems: 1
+          maxItems: 1000
+          items:
+            type: string
+            minLength: 3
+            maxLength: 64
+          example:
+            - U-SF-ENG-104
+            - U-SF-MED-220
+            - U-SF-TRK-009
+        includePosition:
+          type: boolean
+          default: true
+          description: Include latest position for each found unit
+      required:
+        - unitIds
+    BulkStatusItem:
+      type: object
+      properties:
+        unitId:
+          type: string
+          example: U-SF-ENG-104
+        found:
+          type: boolean
+          example: true
+        status:
+          allOf:
+            - $ref: '#/components/schemas/UnitStatus'
+          nullable: true
+        assignmentId:
+          type: string
+          nullable: true
+          example: ASG-893400
+        freshness:
+          allOf:
+            - $ref: '#/components/schemas/Freshness'
+          nullable: true
+        latestPosition:
+          allOf:
+            - $ref: '#/components/schemas/Position'
+          nullable: true
+      required:
+        - unitId
+        - found
+    BulkStatusResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkStatusItem'
+        notFoundUnitIds:
+          type: array
+          items:
+            type: string
+          example:
+            - U-SF-BOGUS-001
+        generatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:13:46Z'
+      required:
+        - data
+        - notFoundUnitIds
+        - generatedAt
+    CacheWindow:
+      type: object
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:08:00Z'
+        endedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:13:00Z'
+        intervalSeconds:
+          type: integer
+          minimum: 1
+          example: 300
+      required:
+        - startedAt
+        - endedAt
+        - intervalSeconds
+    CacheHitRate:
+      type: object
+      properties:
+        reads:
+          type: integer
+          minimum: 0
+          example: 401228
+        hits:
+          type: integer
+          minimum: 0
+          example: 391665
+        misses:
+          type: integer
+          minimum: 0
+          example: 9563
+        ratio:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.9762
+      required:
+        - reads
+        - hits
+        - misses
+        - ratio
+    CacheLatency:
+      type: object
+      properties:
+        p50:
+          type: number
+          format: float
+          minimum: 0
+          example: 3.8
+        p95:
+          type: number
+          format: float
+          minimum: 0
+          example: 12.1
+        p99:
+          type: number
+          format: float
+          minimum: 0
+          example: 24.6
+      required:
+        - p50
+        - p95
+        - p99
+    CacheStaleness:
+      type: object
+      properties:
+        entriesTracked:
+          type: integer
+          minimum: 0
+          example: 12892
+        staleEntries:
+          type: integer
+          minimum: 0
+          example: 119
+        staleRatio:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.0092
+        maxStateAgeSeconds:
+          type: integer
+          minimum: 0
+          example: 154
+        maxPositionAgeSeconds:
+          type: integer
+          minimum: 0
+          example: 198
+      required:
+        - entriesTracked
+        - staleEntries
+        - staleRatio
+        - maxStateAgeSeconds
+        - maxPositionAgeSeconds
+    CachePartitionHealth:
+      type: object
+      properties:
+        partition:
+          type: string
+          example: sf-downtown
+        node:
+          type: string
+          example: cache-a-01
+        entryCount:
+          type: integer
+          minimum: 0
+          example: 3821
+        hitRateRatio:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.9821
+        staleRatio:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.0042
+      required:
+        - partition
+        - node
+        - entryCount
+        - hitRateRatio
+        - staleRatio
+    CacheHealth:
+      type: object
+      properties:
+        window:
+          $ref: '#/components/schemas/CacheWindow'
+        hitRate:
+          $ref: '#/components/schemas/CacheHitRate'
+        latencyMs:
+          $ref: '#/components/schemas/CacheLatency'
+        staleness:
+          $ref: '#/components/schemas/CacheStaleness'
+        partitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CachePartitionHealth'
+        generatedAt:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:13:01Z'
+      required:
+        - window
+        - hitRate
+        - latencyMs
+        - staleness
+        - partitions
+        - generatedAt
+    CacheHealthResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CacheHealth'
+      required:
+        - data
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          example: bad_request
+        message:
+          type: string
+          example: Query parameter pageSize must be <= 200
+        details:
+          type: object
+          additionalProperties: true
+          example:
+            field: pageSize
+            value: 500
+        requestId:
+          type: string
+          format: uuid
+          example: 5ec4f9b1-05c7-4a92-a9de-9f4f44d8a0ea
+      required:
+        - code
+        - message
+        - details
+        - requestId
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+      required:
+        - error

@@ -1,0 +1,1458 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Credit Scoring API
+  description: >-
+    Calculate, retrieve, and analyze consumer credit scores using industry-standard models including FICO 8/9/10T
+    and VantageScore 3.0/4.0. Supports multi-bureau scoring with factor-level analysis, historical score tracking,
+    what-if simulations for pre-qualification scenarios, and batch scoring for portfolio-level assessments. All
+    scores are computed within the standard 300-850 range and classified into risk tiers used by underwriting
+    systems.
+  version: 2.4.1
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-credit-scoring
+  x-acme-domain: credit
+servers:
+  - url: https://af-credit-scoring.api.acmefin.com/v1
+    description: Production
+  - url: https://af-credit-scoring.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Score Calculations
+    description: Calculate, retrieve, and manage credit score records across multiple scoring models and bureaus
+  - name: Score Analysis
+    description: Factor analysis, what-if simulations, model comparisons, and distribution analytics
+  - name: Scoring Models
+    description: Manage and inspect available credit scoring models and their configurations
+paths:
+  /scores:
+    get:
+      operationId: listScores
+      summary: List credit scores
+      description: >-
+        Retrieve a paginated list of previously calculated credit scores. Supports filtering by consumer,
+        bureau, model, risk tier, and date range.
+      tags:
+        - Score Calculations
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: consumer_id
+          in: query
+          required: false
+          description: Filter by consumer identifier
+          schema:
+            type: "string"
+        - name: bureau
+          in: query
+          required: false
+          description: Filter by source bureau
+          schema:
+            type: "string"
+            enum:
+              - experian
+              - equifax
+              - transunion
+        - name: model
+          in: query
+          required: false
+          description: Filter by scoring model
+          schema:
+            type: "string"
+        - name: risk_tier
+          in: query
+          required: false
+          description: Filter by risk tier classification
+          schema:
+            type: "string"
+        - name: calculated_after
+          in: query
+          required: false
+          description: Only include scores calculated after this timestamp (ISO 8601)
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        score_id:
+                          type: string
+                          description: Unique score identifier
+                          format: uuid
+                          example: "scr-7a2b3c4d-e5f6-4321-abcd-1234567890ab"
+                        consumer_id:
+                          type: string
+                          description: Consumer profile identifier
+                          format: uuid
+                          example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                        score_value:
+                          type: integer
+                          description: Calculated credit score on the standard 300-850 range
+                          example: 742
+                          minimum: 300
+                          maximum: 850
+                        model:
+                          type: string
+                          description: Scoring model used for calculation
+                          example: "FICO_8"
+                          enum:
+                            - FICO_8
+                            - FICO_9
+                            - FICO_10T
+                            - VANTAGESCORE_3_0
+                            - VANTAGESCORE_4_0
+                        bureau:
+                          type: string
+                          description: Source credit bureau providing underlying data
+                          example: "experian"
+                          enum:
+                            - experian
+                            - equifax
+                            - transunion
+                        risk_tier:
+                          type: string
+                          description: Risk classification tier based on score range
+                          example: "super_prime"
+                          enum:
+                            - super_prime
+                            - prime
+                            - near_prime
+                            - subprime
+                            - deep_subprime
+                        confidence:
+                          type: number
+                          description: Model confidence level as a percentage
+                          example: 94.7
+                          minimum: 0
+                          maximum: 100
+                        calculated_at:
+                          type: string
+                          description: Timestamp when the score was calculated
+                          format: date-time
+                          example: "2025-03-15T14:22:00Z"
+                      required:
+                        - score_id
+                        - consumer_id
+                        - score_value
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: calculateScore
+      summary: Calculate credit score
+      description: >-
+        Initiate a new credit score calculation for a consumer using the specified scoring model and bureau
+        data. The calculation pulls the latest credit report data and returns a fully scored result with
+        factor analysis.
+      tags:
+        - Score Calculations
+      requestBody:
+        required: true
+        description: Calculate credit score request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    consumer_id:
+                      type: string
+                      description: Consumer to score
+                      format: uuid
+                      example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                    model:
+                      type: string
+                      description: Scoring model
+                      example: "FICO_8"
+                      enum:
+                        - FICO_8
+                        - FICO_9
+                        - FICO_10T
+                        - VANTAGESCORE_3_0
+                        - VANTAGESCORE_4_0
+                    bureau:
+                      type: string
+                      description: Bureau to pull data from
+                      example: "experian"
+                      enum:
+                        - experian
+                        - equifax
+                        - transunion
+                    purpose:
+                      type: string
+                      description: Purpose of the score inquiry
+                      example: "prequalification"
+                      enum:
+                        - prequalification
+                        - application
+                        - account_review
+                        - portfolio_monitoring
+              required:
+                - consumer_id
+                - model
+                - bureau
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score_id:
+                    type: string
+                    description: Unique score identifier
+                    format: uuid
+                    example: "scr-7a2b3c4d-e5f6-4321-abcd-1234567890ab"
+                  consumer_id:
+                    type: string
+                    description: Consumer profile identifier
+                    format: uuid
+                    example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                  score_value:
+                    type: integer
+                    description: Calculated credit score on the standard 300-850 range
+                    example: 742
+                    minimum: 300
+                    maximum: 850
+                  model:
+                    type: string
+                    description: Scoring model used for calculation
+                    example: "FICO_8"
+                    enum:
+                      - FICO_8
+                      - FICO_9
+                      - FICO_10T
+                      - VANTAGESCORE_3_0
+                      - VANTAGESCORE_4_0
+                  bureau:
+                    type: string
+                    description: Source credit bureau providing underlying data
+                    example: "experian"
+                    enum:
+                      - experian
+                      - equifax
+                      - transunion
+                  risk_tier:
+                    type: string
+                    description: Risk classification tier based on score range
+                    example: "super_prime"
+                    enum:
+                      - super_prime
+                      - prime
+                      - near_prime
+                      - subprime
+                      - deep_subprime
+                  confidence:
+                    type: number
+                    description: Model confidence level as a percentage
+                    example: 94.7
+                    minimum: 0
+                    maximum: 100
+                  calculated_at:
+                    type: string
+                    description: Timestamp when the score was calculated
+                    format: date-time
+                    example: "2025-03-15T14:22:00Z"
+                required:
+                  - score_id
+                  - score_value
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /scores/what-if:
+    post:
+      operationId: simulateWhatIf
+      summary: Run what-if simulation
+      description: >-
+        Simulate the impact of hypothetical credit actions on a consumer's score. Useful for pre-
+        qualification scenarios such as paying down a balance, opening a new account, or removing a
+        derogatory mark. Returns the projected score and delta from the current score.
+      tags:
+        - Score Analysis
+      requestBody:
+        required: true
+        description: Run what-if simulation request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    consumer_id:
+                      type: string
+                      description: Consumer to simulate
+                      format: uuid
+                      example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                    model:
+                      type: string
+                      description: Model to use for simulation
+                      example: "FICO_8"
+                      enum:
+                        - FICO_8
+                        - FICO_9
+                        - VANTAGESCORE_4_0
+                    scenarios:
+                      type: array
+                      description: List of hypothetical changes to simulate
+                      items:
+                        type: object
+              required:
+                - consumer_id
+                - model
+                - scenarios
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_score:
+                    type: integer
+                    description: Current credit score
+                    example: 680
+                  projected_score:
+                    type: integer
+                    description: Projected score after changes
+                    example: 715
+                  delta:
+                    type: integer
+                    description: Score change
+                    example: 35
+                  scenario_results:
+                    type: array
+                    description: Per-scenario breakdown
+                    items:
+                      type: object
+                required:
+                  - current_score
+                  - projected_score
+                  - delta
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /scores/compare:
+    post:
+      operationId: compareModels
+      summary: Compare scoring models
+      description: >-
+        Calculate a consumer's credit score across multiple scoring models simultaneously and return a side-
+        by-side comparison. Useful for lenders evaluating which model best fits their risk appetite or for
+        regulatory model validation exercises.
+      tags:
+        - Score Analysis
+      requestBody:
+        required: true
+        description: Compare scoring models request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    consumer_id:
+                      type: string
+                      description: Consumer to compare
+                      format: uuid
+                      example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                    models:
+                      type: array
+                      description: Models to compare
+                      items:
+                        type: string
+                        example: "FICO_8"
+                    bureau:
+                      type: string
+                      description: Bureau to pull from
+                      example: "experian"
+                      enum:
+                        - experian
+                        - equifax
+                        - transunion
+              required:
+                - consumer_id
+                - models
+                - bureau
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  consumer_id:
+                    type: string
+                    description: Consumer compared
+                    format: uuid
+                    example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                  comparisons:
+                    type: array
+                    description: Score results per model
+                    items:
+                      type: object
+                  recommendation:
+                    type: string
+                    description: Recommended model based on coverage
+                    example: "FICO_8"
+                required:
+                  - consumer_id
+                  - comparisons
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /scores/batch:
+    post:
+      operationId: batchCalculateScores
+      summary: Batch score calculation
+      description: >-
+        Submit a batch of consumers for credit score calculation. Processing is asynchronous; use the
+        returned batch_id to poll for results. Supports up to 10,000 consumers per batch for portfolio-level
+        assessments and regulatory stress testing.
+      tags:
+        - Score Calculations
+      requestBody:
+        required: true
+        description: Batch score calculation request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    consumer_ids:
+                      type: array
+                      description: List of consumer IDs to score
+                      items:
+                        type: string
+                        example: "con-8b3c4d5e"
+                    model:
+                      type: string
+                      description: Scoring model
+                      example: "FICO_8"
+                      enum:
+                        - FICO_8
+                        - FICO_9
+                        - VANTAGESCORE_4_0
+                    bureau:
+                      type: string
+                      description: Bureau
+                      example: "experian"
+                      enum:
+                        - experian
+                        - equifax
+                        - transunion
+              required:
+                - consumer_ids
+                - model
+                - bureau
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: Batch job identifier
+                    format: uuid
+                    example: "bat-9c4d5e6f-a7b8-6543-cdef-3456789012cd"
+                  status:
+                    type: string
+                    description: Batch processing status
+                    example: "queued"
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - failed
+                  total_consumers:
+                    type: integer
+                    description: Number of consumers in batch
+                    example: 2500
+                  estimated_completion:
+                    type: string
+                    description: Estimated completion time
+                    format: date-time
+                    example: "2025-03-15T15:00:00Z"
+                required:
+                  - batch_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /scores/distribution:
+    get:
+      operationId: getScoreDistribution
+      summary: Get score distribution
+      description: >-
+        Retrieve aggregate score distribution statistics across the portfolio or a filtered subset. Returns
+        histogram buckets, mean, median, standard deviation, and risk tier breakdowns. Useful for portfolio
+        monitoring dashboards and regulatory reporting.
+      tags:
+        - Score Analysis
+      parameters:
+        - name: model
+          in: query
+          required: false
+          description: Filter by scoring model
+          schema:
+            type: "string"
+        - name: bureau
+          in: query
+          required: false
+          description: Filter by bureau
+          schema:
+            type: "string"
+        - name: as_of_date
+          in: query
+          required: false
+          description: Point-in-time snapshot date (ISO 8601)
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_scores:
+                    type: integer
+                    description: Total number of scores in the dataset
+                    example: 145230
+                  mean_score:
+                    type: number
+                    description: Mean credit score
+                    example: 711.3
+                  median_score:
+                    type: integer
+                    description: Median credit score
+                    example: 718
+                  std_deviation:
+                    type: number
+                    description: Standard deviation
+                    example: 62.4
+                  risk_tier_distribution:
+                    type: array
+                    description: Score counts by risk tier
+                    items:
+                      type: object
+                required:
+                  - total_scores
+                  - mean_score
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /scores/{score_id}:
+    get:
+      operationId: getScore
+      summary: Get credit score details
+      description: >-
+        Retrieve detailed information for a specific credit score calculation, including the score value,
+        contributing factors, model metadata, and audit trail.
+      tags:
+        - Score Calculations
+      parameters:
+        - name: score_id
+          in: path
+          required: true
+          description: Unique score id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score_id:
+                    type: string
+                    description: Unique score identifier
+                    format: uuid
+                    example: "scr-7a2b3c4d-e5f6-4321-abcd-1234567890ab"
+                  consumer_id:
+                    type: string
+                    description: Consumer profile identifier
+                    format: uuid
+                    example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                  score_value:
+                    type: integer
+                    description: Calculated credit score on the standard 300-850 range
+                    example: 742
+                    minimum: 300
+                    maximum: 850
+                  model:
+                    type: string
+                    description: Scoring model used for calculation
+                    example: "FICO_8"
+                    enum:
+                      - FICO_8
+                      - FICO_9
+                      - FICO_10T
+                      - VANTAGESCORE_3_0
+                      - VANTAGESCORE_4_0
+                  bureau:
+                    type: string
+                    description: Source credit bureau providing underlying data
+                    example: "experian"
+                    enum:
+                      - experian
+                      - equifax
+                      - transunion
+                  risk_tier:
+                    type: string
+                    description: Risk classification tier based on score range
+                    example: "super_prime"
+                    enum:
+                      - super_prime
+                      - prime
+                      - near_prime
+                      - subprime
+                      - deep_subprime
+                  confidence:
+                    type: number
+                    description: Model confidence level as a percentage
+                    example: 94.7
+                    minimum: 0
+                    maximum: 100
+                  calculated_at:
+                    type: string
+                    description: Timestamp when the score was calculated
+                    format: date-time
+                    example: "2025-03-15T14:22:00Z"
+                required:
+                  - score_id
+                  - score_value
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteScore
+      summary: Delete score record
+      description: >-
+        Permanently remove a credit score record. This action is irreversible and subject to data retention
+        policies. Scores referenced by active lending decisions cannot be deleted.
+      tags:
+        - Score Calculations
+      parameters:
+        - name: score_id
+          in: path
+          required: true
+          description: Unique score id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /scores/{score_id}/factors:
+    get:
+      operationId: getScoreFactors
+      summary: Get score factor analysis
+      description: >-
+        Retrieve the factor-level breakdown for a specific credit score calculation. Each factor includes
+        its impact level, numeric weight in the model, and a detailed explanation of how it contributed to
+        the final score.
+      tags:
+        - Score Analysis
+      parameters:
+        - name: score_id
+          in: path
+          required: true
+          description: Credit score identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        factor_code:
+                          type: string
+                          description: Industry-standard factor code
+                          example: "F01"
+                        factor_name:
+                          type: string
+                          description: Human-readable factor description
+                          example: "Payment history"
+                        impact:
+                          type: string
+                          description: Relative impact on the credit score
+                          example: "high_positive"
+                          enum:
+                            - high_positive
+                            - positive
+                            - neutral
+                            - negative
+                            - high_negative
+                        weight:
+                          type: number
+                          description: Numeric weight of this factor in the model (0.0-1.0)
+                          example: 0.35
+                          minimum: 0
+                          maximum: 1
+                        detail:
+                          type: string
+                          description: Detailed explanation of the factor's contribution
+                          example: "97% on-time payment rate across 12 tradelines over 7 years"
+                      required:
+                        - factor_code
+                        - factor_name
+                        - impact
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /scores/{score_id}/history:
+    get:
+      operationId: getScoreHistory
+      summary: Get score history
+      description: >-
+        Retrieve the historical score trajectory for the consumer associated with this score record. Returns
+        chronologically ordered score values, enabling trend analysis and score velocity calculations used
+        in underwriting.
+      tags:
+        - Score Analysis
+      parameters:
+        - name: score_id
+          in: path
+          required: true
+          description: Credit score identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        recorded_at:
+                          type: string
+                          description: Date the score was recorded
+                          format: date-time
+                          example: "2025-01-15T09:30:00Z"
+                        score_value:
+                          type: integer
+                          description: Score at that point in time
+                          example: 735
+                        model:
+                          type: string
+                          description: Model used
+                          example: "FICO_8"
+                        delta:
+                          type: integer
+                          description: Change from previous period
+                          example: 7
+                      required:
+                        - recorded_at
+                        - score_value
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /scores/{score_id}/recalculate:
+    post:
+      operationId: recalculateScore
+      summary: Recalculate credit score
+      description: >-
+        Trigger a fresh recalculation of an existing score using the latest available credit data from the
+        same bureau and model. The original score is preserved for audit purposes and the new score is
+        linked as a successor.
+      tags:
+        - Score Calculations
+      parameters:
+        - name: score_id
+          in: path
+          required: true
+          description: Unique score id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score_id:
+                    type: string
+                    description: New score identifier
+                    format: uuid
+                    example: "scr-new-1234"
+                  previous_score:
+                    type: integer
+                    description: Previous score value
+                    example: 735
+                  new_score:
+                    type: integer
+                    description: Recalculated score value
+                    example: 742
+                  delta:
+                    type: integer
+                    description: Change in score
+                    example: 7
+                  recalculated_at:
+                    type: string
+                    description: Recalculation timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                required:
+                  - score_id
+                  - new_score
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /models:
+    get:
+      operationId: listScoringModels
+      summary: List scoring models
+      description: >-
+        Retrieve all available credit scoring models, including FICO and VantageScore variants. Each model
+        entry includes version information, supported bureaus, primary use cases, and deprecation status.
+      tags:
+        - Scoring Models
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        model_id:
+                          type: string
+                          description: Model identifier
+                          example: "FICO_8"
+                        model_name:
+                          type: string
+                          description: Full model display name
+                          example: "FICO Score 8"
+                        provider:
+                          type: string
+                          description: Model provider organization
+                          example: "Fair Isaac Corporation"
+                          enum:
+                            - Fair Isaac Corporation
+                            - VantageScore Solutions
+                        version:
+                          type: string
+                          description: Model version string
+                          example: "8.0.2"
+                        score_range_min:
+                          type: integer
+                          description: Minimum possible score
+                          example: 300
+                        score_range_max:
+                          type: integer
+                          description: Maximum possible score
+                          example: 850
+                        primary_use_case:
+                          type: string
+                          description: Primary use case for this model
+                          example: "General-purpose lending decisions"
+                        supported_bureaus:
+                          type: array
+                          description: Bureaus compatible with this model
+                          items:
+                            type: string
+                            example: "experian"
+                        deprecated:
+                          type: boolean
+                          description: Whether this model version is deprecated
+                          example: false
+                      required:
+                        - model_id
+                        - model_name
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /models/{model_id}:
+    get:
+      operationId: getScoringModel
+      summary: Get scoring model details
+      description: >-
+        Retrieve detailed configuration and metadata for a specific credit scoring model, including factor
+        weights, score range boundaries, supported bureaus, and regulatory classification.
+      tags:
+        - Scoring Models
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          description: Unique model id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model_id:
+                    type: string
+                    description: Model identifier
+                    example: "FICO_8"
+                  model_name:
+                    type: string
+                    description: Full model display name
+                    example: "FICO Score 8"
+                  provider:
+                    type: string
+                    description: Model provider organization
+                    example: "Fair Isaac Corporation"
+                    enum:
+                      - Fair Isaac Corporation
+                      - VantageScore Solutions
+                  version:
+                    type: string
+                    description: Model version string
+                    example: "8.0.2"
+                  score_range_min:
+                    type: integer
+                    description: Minimum possible score
+                    example: 300
+                  score_range_max:
+                    type: integer
+                    description: Maximum possible score
+                    example: 850
+                  primary_use_case:
+                    type: string
+                    description: Primary use case for this model
+                    example: "General-purpose lending decisions"
+                  supported_bureaus:
+                    type: array
+                    description: Bureaus compatible with this model
+                    items:
+                      type: string
+                      example: "experian"
+                  deprecated:
+                    type: boolean
+                    description: Whether this model version is deprecated
+                    example: false
+                required:
+                  - model_id
+                  - model_name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

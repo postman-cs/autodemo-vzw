@@ -1,0 +1,1312 @@
+openapi: 3.0.3
+info:
+  title: VZW Crew Mobilization API
+  description: >-
+    Dispatches and tracks field crews for outage restoration workflows across wireline, wireless,
+    and edge infrastructure incidents. Supports work-order intake, crew assignment, in-progress
+    status transitions, safety checklist completion, and real-time crew availability lookups.
+    Designed for network operations centers, regional dispatch coordinators, and automated
+    orchestration systems managing restoration at scale.
+  version: 1.0.0
+  contact:
+    name: Verizon Workforce APIs
+    email: workforce-api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms
+  x-catalog-id: vzw-crew-mobilization-api
+  x-domain: workforce
+servers:
+  - url: https://vzw-crew-mobilization-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-crew-mobilization-api.staging.api.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Work Orders
+    description: Create and retrieve outage restoration work orders
+  - name: Assignments
+    description: Assign and update field crew mobilization tasks
+  - name: Crews
+    description: Query crew availability and operational readiness
+  - name: Safety Checklists
+    description: Complete mandatory safety and compliance checklists
+paths:
+  /v1/work-orders:
+    post:
+      operationId: createWorkOrder
+      summary: Create a crew mobilization work order
+      description: >-
+        Creates a new outage restoration work order and places it into dispatch triage.
+        Work orders represent a restoration objective at a specific location and carry required
+        capabilities, safety expectations, and restoration phase context for routing to qualified crews.
+      tags:
+        - Work Orders
+      requestBody:
+        required: true
+        description: Work order creation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkOrderCreateRequest"
+            example:
+              external_reference_id: "noc-ticket-2026-003812"
+              outage_id: "outage-ne-00891"
+              title: "Fiber backhaul interruption - Sector A17"
+              description: "Primary backhaul fiber cut detected near utility trench marker 44."
+              priority: "P1"
+              restoration_phase: "ISOLATE_AND_ASSESS"
+              crew_type: "FIBER_REPAIR"
+              skill_certifications:
+                - "FIBER_SPLICE_L2"
+                - "CONFINED_SPACE_CERT"
+              safety_classification: "RESTRICTED_ACCESS"
+              equipment_package: "FIBER_SPLICE_HEAVY"
+              requested_start_at: "2026-03-27T13:30:00Z"
+              sla_due_at: "2026-03-27T16:30:00Z"
+              location:
+                site_id: "site-ne-4411"
+                address_line_1: "1187 Commerce Parkway"
+                city: "Boston"
+                state: "MA"
+                postal_code: "02110"
+                country: "US"
+                latitude: 42.35711
+                longitude: -71.05344
+              on_site_contact:
+                name: "Morgan Lee"
+                phone: "+16175550191"
+                email: "morgan.lee@verizon.com"
+      responses:
+        "201":
+          description: Work order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrderResponse"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listWorkOrders
+      summary: List work orders
+      description: >-
+        Returns work orders with pagination and optional filtering by outage, status,
+        restoration phase, and geographic region. Results are sorted by creation time descending
+        unless an explicit sort is provided.
+      tags:
+        - Work Orders
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: status
+          in: query
+          required: false
+          description: Filter by work order status
+          schema:
+            $ref: "#/components/schemas/WorkOrderStatus"
+        - name: outage_id
+          in: query
+          required: false
+          description: Filter by outage identifier
+          schema:
+            type: string
+            example: "outage-ne-00891"
+        - name: restoration_phase
+          in: query
+          required: false
+          description: Filter by restoration phase
+          schema:
+            $ref: "#/components/schemas/RestorationPhase"
+        - name: region_code
+          in: query
+          required: false
+          description: Region routing code for dispatch partitioning
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 10
+            example: "NE-BOS"
+      responses:
+        "200":
+          description: Paginated work order list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrderListResponse"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/work-orders/{workOrderId}:
+    get:
+      operationId: getWorkOrder
+      summary: Get work order details
+      description: >-
+        Retrieves a single work order including assignment state, required capabilities,
+        site location metadata, checklist completion status, and full audit fields.
+      tags:
+        - Work Orders
+      parameters:
+        - $ref: "#/components/parameters/WorkOrderId"
+      responses:
+        "200":
+          description: Work order details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkOrderResponse"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/work-orders/{workOrderId}/assignments:
+    post:
+      operationId: createAssignment
+      summary: Assign a crew to a work order
+      description: >-
+        Creates an assignment linking a qualified crew to the specified work order.
+        Dispatch logic validates crew capability coverage, safety compliance, and equipment alignment
+        against work order requirements before the assignment enters mobilization.
+      tags:
+        - Assignments
+      parameters:
+        - $ref: "#/components/parameters/WorkOrderId"
+      requestBody:
+        required: true
+        description: Assignment creation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentCreateRequest"
+            example:
+              crew_id: "crew-ne-102"
+              lead_technician_id: "tech-8831"
+              eta_minutes: 38
+              mobilization_notes: "Approaching from I-93 due to municipal closure on Atlantic Ave."
+      responses:
+        "201":
+          description: Assignment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentResponse"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/assignments/{assignmentId}:
+    patch:
+      operationId: updateAssignment
+      summary: Update assignment progress
+      description: >-
+        Updates assignment lifecycle state and crew progress telemetry.
+        Supports status transitions such as mobilized, on-site, restoration in progress,
+        blocked, and completed. Business rules enforce valid state progression.
+      tags:
+        - Assignments
+      parameters:
+        - $ref: "#/components/parameters/AssignmentId"
+      requestBody:
+        required: true
+        description: Assignment patch payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentUpdateRequest"
+            example:
+              status: "ON_SITE"
+              arrival_at: "2026-03-27T14:21:00Z"
+              blocked_reason: null
+              progress_percent: 42
+              restoration_phase: "REPAIR_AND_RESTORE"
+              notes: "Crew arrived. Utility locate confirmed. Splice prep started."
+      responses:
+        "200":
+          description: Assignment updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentResponse"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/work-orders/{workOrderId}/checklists:complete:
+    post:
+      operationId: completeSafetyChecklist
+      summary: Complete safety checklist for a work order
+      description: >-
+        Marks required safety checklist items as completed for a work order.
+        Checklist completion is mandatory before final assignment closure in restricted,
+        energized, and confined-space restoration scenarios.
+      tags:
+        - Safety Checklists
+      parameters:
+        - $ref: "#/components/parameters/WorkOrderId"
+      requestBody:
+        required: true
+        description: Checklist completion payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChecklistCompletionRequest"
+            example:
+              completed_by: "tech-8831"
+              completed_at: "2026-03-27T15:52:00Z"
+              checklist_items:
+                - item_code: "PPE_VERIFIED"
+                  completed: true
+                  note: "Arc-rated PPE and eye protection verified for all members."
+                - item_code: "LOCKOUT_TAGOUT"
+                  completed: true
+                  note: "Tagout logged under permit LOTO-NE-22018."
+                - item_code: "GAS_MONITOR_CHECK"
+                  completed: true
+                  note: "Readings within acceptable thresholds."
+      responses:
+        "200":
+          description: Checklist marked complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChecklistCompletionResponse"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/crews/availability:
+    get:
+      operationId: getCrewAvailability
+      summary: Get crew availability
+      description: >-
+        Returns crews currently eligible for dispatch based on status, location radius,
+        declared capability profile, and safety class eligibility. Use this endpoint to support
+        dispatch recommendation engines and manual triage workflows.
+      tags:
+        - Crews
+      parameters:
+        - name: crew_type
+          in: query
+          required: false
+          description: Filter by crew specialization
+          schema:
+            $ref: "#/components/schemas/CrewType"
+        - name: restoration_phase
+          in: query
+          required: false
+          description: Filter by restoration phase readiness
+          schema:
+            $ref: "#/components/schemas/RestorationPhase"
+        - name: safety_classification
+          in: query
+          required: false
+          description: Filter by eligible safety classification
+          schema:
+            $ref: "#/components/schemas/SafetyClassification"
+        - name: equipment_package
+          in: query
+          required: false
+          description: Filter by onboard equipment package
+          schema:
+            $ref: "#/components/schemas/EquipmentPackage"
+        - name: skill_certification
+          in: query
+          required: false
+          description: Filter by required crew certification
+          schema:
+            type: string
+            example: "FIBER_SPLICE_L2"
+        - name: latitude
+          in: query
+          required: false
+          description: Reference latitude for distance calculation
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+            example: 42.35711
+        - name: longitude
+          in: query
+          required: false
+          description: Reference longitude for distance calculation
+          schema:
+            type: number
+            format: double
+            minimum: -180
+            maximum: 180
+            example: -71.05344
+        - name: radius_miles
+          in: query
+          required: false
+          description: Search radius in miles when coordinates are provided
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 250
+            example: 35
+      responses:
+        "200":
+          description: Crew availability result set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrewAvailabilityResponse"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    WorkOrderId:
+      name: workOrderId
+      in: path
+      required: true
+      description: Unique work order identifier
+      schema:
+        type: string
+        example: "wo-ne-009283"
+    AssignmentId:
+      name: assignmentId
+      in: path
+      required: true
+      description: Unique assignment identifier
+      schema:
+        type: string
+        example: "asg-ne-22191"
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number (1-based)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+        example: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Number of records per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+        example: 20
+  schemas:
+    WorkOrderCreateRequest:
+      type: object
+      description: Payload for creating a mobilization work order
+      properties:
+        external_reference_id:
+          type: string
+          description: Upstream system ticket or incident reference
+          example: "noc-ticket-2026-003812"
+        outage_id:
+          type: string
+          description: Correlated outage identifier
+          example: "outage-ne-00891"
+        title:
+          type: string
+          description: Short work order title for dispatcher display
+          minLength: 5
+          maxLength: 140
+          example: "Fiber backhaul interruption - Sector A17"
+        description:
+          type: string
+          description: Detailed restoration objective and incident context
+          minLength: 10
+          maxLength: 4000
+          example: "Primary backhaul fiber cut detected near utility trench marker 44."
+        priority:
+          $ref: "#/components/schemas/WorkOrderPriority"
+        restoration_phase:
+          $ref: "#/components/schemas/RestorationPhase"
+        crew_type:
+          $ref: "#/components/schemas/CrewType"
+        skill_certifications:
+          type: array
+          description: Certifications required for assigned crew
+          minItems: 1
+          items:
+            type: string
+            example: "FIBER_SPLICE_L2"
+        safety_classification:
+          $ref: "#/components/schemas/SafetyClassification"
+        equipment_package:
+          $ref: "#/components/schemas/EquipmentPackage"
+        requested_start_at:
+          type: string
+          format: date-time
+          description: Requested restoration start time
+          example: "2026-03-27T13:30:00Z"
+        sla_due_at:
+          type: string
+          format: date-time
+          description: SLA breach deadline for work order completion
+          example: "2026-03-27T16:30:00Z"
+        location:
+          $ref: "#/components/schemas/GeoLocation"
+        on_site_contact:
+          $ref: "#/components/schemas/Contact"
+      required:
+        - outage_id
+        - title
+        - description
+        - priority
+        - restoration_phase
+        - crew_type
+        - skill_certifications
+        - safety_classification
+        - equipment_package
+        - requested_start_at
+        - sla_due_at
+        - location
+    WorkOrderResponse:
+      type: object
+      description: Work order resource representation
+      properties:
+        work_order_id:
+          type: string
+          description: Unique work order identifier
+          example: "wo-ne-009283"
+        external_reference_id:
+          type: string
+          description: Upstream ticket reference
+          example: "noc-ticket-2026-003812"
+        outage_id:
+          type: string
+          description: Correlated outage identifier
+          example: "outage-ne-00891"
+        title:
+          type: string
+          description: Short work order title
+          example: "Fiber backhaul interruption - Sector A17"
+        description:
+          type: string
+          description: Detailed restoration objective
+          example: "Primary backhaul fiber cut detected near utility trench marker 44."
+        status:
+          $ref: "#/components/schemas/WorkOrderStatus"
+        priority:
+          $ref: "#/components/schemas/WorkOrderPriority"
+        restoration_phase:
+          $ref: "#/components/schemas/RestorationPhase"
+        crew_type:
+          $ref: "#/components/schemas/CrewType"
+        skill_certifications:
+          type: array
+          description: Certifications required for assigned crew
+          items:
+            type: string
+            example: "FIBER_SPLICE_L2"
+        safety_classification:
+          $ref: "#/components/schemas/SafetyClassification"
+        equipment_package:
+          $ref: "#/components/schemas/EquipmentPackage"
+        requested_start_at:
+          type: string
+          format: date-time
+          description: Requested restoration start time
+          example: "2026-03-27T13:30:00Z"
+        sla_due_at:
+          type: string
+          format: date-time
+          description: SLA breach deadline
+          example: "2026-03-27T16:30:00Z"
+        location:
+          $ref: "#/components/schemas/GeoLocation"
+        on_site_contact:
+          $ref: "#/components/schemas/Contact"
+        active_assignment:
+          $ref: "#/components/schemas/AssignmentSummary"
+        checklist_status:
+          $ref: "#/components/schemas/ChecklistStatus"
+        audit:
+          $ref: "#/components/schemas/AuditInfo"
+      required:
+        - work_order_id
+        - outage_id
+        - title
+        - status
+        - priority
+        - restoration_phase
+        - crew_type
+        - skill_certifications
+        - safety_classification
+        - equipment_package
+        - requested_start_at
+        - sla_due_at
+        - location
+        - checklist_status
+        - audit
+    WorkOrderListResponse:
+      type: object
+      description: Paginated list of work orders
+      properties:
+        data:
+          type: array
+          description: Work order records
+          items:
+            $ref: "#/components/schemas/WorkOrderResponse"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - pagination
+    AssignmentCreateRequest:
+      type: object
+      description: Payload for creating a crew assignment
+      properties:
+        crew_id:
+          type: string
+          description: Crew identifier selected for dispatch
+          example: "crew-ne-102"
+        lead_technician_id:
+          type: string
+          description: Technician responsible for field updates
+          example: "tech-8831"
+        eta_minutes:
+          type: integer
+          description: Estimated travel time to site in minutes
+          minimum: 1
+          maximum: 1440
+          example: 38
+        mobilization_notes:
+          type: string
+          description: Optional dispatch routing notes
+          maxLength: 2000
+          example: "Approaching from I-93 due to municipal closure on Atlantic Ave."
+      required:
+        - crew_id
+        - lead_technician_id
+    AssignmentUpdateRequest:
+      type: object
+      description: Mutable assignment fields for lifecycle updates
+      properties:
+        status:
+          $ref: "#/components/schemas/AssignmentStatus"
+        departure_at:
+          type: string
+          format: date-time
+          description: Timestamp when crew departed staging location
+          example: "2026-03-27T13:42:00Z"
+        arrival_at:
+          type: string
+          format: date-time
+          description: Timestamp when crew arrived on site
+          example: "2026-03-27T14:21:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          description: Timestamp when assignment was completed
+          example: "2026-03-27T16:09:00Z"
+        blocked_reason:
+          type: string
+          nullable: true
+          description: Operational blocker reason when status is BLOCKED
+          maxLength: 1500
+          example: "Municipal permit access delayed."
+        progress_percent:
+          type: integer
+          description: Completion progress percentage
+          minimum: 0
+          maximum: 100
+          example: 42
+        restoration_phase:
+          $ref: "#/components/schemas/RestorationPhase"
+        notes:
+          type: string
+          description: Assignment progress notes
+          maxLength: 3000
+          example: "Crew arrived. Utility locate confirmed. Splice prep started."
+      minProperties: 1
+    AssignmentResponse:
+      type: object
+      description: Crew assignment resource representation
+      properties:
+        assignment_id:
+          type: string
+          description: Unique assignment identifier
+          example: "asg-ne-22191"
+        work_order_id:
+          type: string
+          description: Linked work order identifier
+          example: "wo-ne-009283"
+        crew_id:
+          type: string
+          description: Assigned crew identifier
+          example: "crew-ne-102"
+        lead_technician_id:
+          type: string
+          description: Assigned lead technician identifier
+          example: "tech-8831"
+        status:
+          $ref: "#/components/schemas/AssignmentStatus"
+        eta_minutes:
+          type: integer
+          description: Estimated time to arrive in minutes
+          example: 38
+        departure_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Crew departure timestamp
+          example: "2026-03-27T13:42:00Z"
+        arrival_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Crew arrival timestamp
+          example: "2026-03-27T14:21:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Assignment completion timestamp
+          example: "2026-03-27T16:09:00Z"
+        progress_percent:
+          type: integer
+          description: Completion progress percentage
+          minimum: 0
+          maximum: 100
+          example: 42
+        blocked_reason:
+          type: string
+          nullable: true
+          description: Blocking reason
+          example: null
+        restoration_phase:
+          $ref: "#/components/schemas/RestorationPhase"
+        mobilization_notes:
+          type: string
+          description: Dispatch notes attached on assignment creation
+          example: "Approaching from I-93 due to municipal closure on Atlantic Ave."
+        notes:
+          type: string
+          description: Rolling assignment updates
+          example: "Crew arrived. Utility locate confirmed. Splice prep started."
+        audit:
+          $ref: "#/components/schemas/AuditInfo"
+      required:
+        - assignment_id
+        - work_order_id
+        - crew_id
+        - lead_technician_id
+        - status
+        - progress_percent
+        - restoration_phase
+        - audit
+    AssignmentSummary:
+      type: object
+      description: Condensed assignment details embedded in work order views
+      properties:
+        assignment_id:
+          type: string
+          description: Assignment identifier
+          example: "asg-ne-22191"
+        crew_id:
+          type: string
+          description: Assigned crew identifier
+          example: "crew-ne-102"
+        status:
+          $ref: "#/components/schemas/AssignmentStatus"
+        eta_minutes:
+          type: integer
+          description: ETA in minutes
+          example: 38
+      required:
+        - assignment_id
+        - crew_id
+        - status
+    ChecklistCompletionRequest:
+      type: object
+      description: Payload for completing required safety checklist items
+      properties:
+        completed_by:
+          type: string
+          description: Technician or supervisor identifier
+          example: "tech-8831"
+        completed_at:
+          type: string
+          format: date-time
+          description: Timestamp when checklist was completed
+          example: "2026-03-27T15:52:00Z"
+        checklist_items:
+          type: array
+          description: Checklist item completion payload
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ChecklistItemCompletion"
+      required:
+        - completed_by
+        - completed_at
+        - checklist_items
+    ChecklistCompletionResponse:
+      type: object
+      description: Result of safety checklist completion operation
+      properties:
+        work_order_id:
+          type: string
+          description: Work order identifier
+          example: "wo-ne-009283"
+        checklist_status:
+          $ref: "#/components/schemas/ChecklistStatus"
+        completed_by:
+          type: string
+          description: Technician or supervisor that completed checklist
+          example: "tech-8831"
+        completed_at:
+          type: string
+          format: date-time
+          description: Completion timestamp
+          example: "2026-03-27T15:52:00Z"
+        checklist_items:
+          type: array
+          description: Final checklist item status snapshot
+          items:
+            $ref: "#/components/schemas/ChecklistItemCompletion"
+      required:
+        - work_order_id
+        - checklist_status
+        - completed_by
+        - completed_at
+        - checklist_items
+    CrewAvailabilityResponse:
+      type: object
+      description: List of crews available for dispatch
+      properties:
+        data:
+          type: array
+          description: Available crew entries
+          items:
+            $ref: "#/components/schemas/CrewAvailabilityItem"
+        generated_at:
+          type: string
+          format: date-time
+          description: Timestamp when availability snapshot was generated
+          example: "2026-03-27T13:19:04Z"
+      required:
+        - data
+        - generated_at
+    CrewAvailabilityItem:
+      type: object
+      description: Crew availability and capability record
+      properties:
+        crew_id:
+          type: string
+          description: Crew identifier
+          example: "crew-ne-102"
+        crew_name:
+          type: string
+          description: Human-readable crew label
+          example: "Northeast Fiber Team 102"
+        availability_status:
+          type: string
+          description: Current dispatch availability state
+          enum:
+            - AVAILABLE
+            - EN_ROUTE
+            - ON_JOB
+            - OFF_SHIFT
+            - UNAVAILABLE
+          example: "AVAILABLE"
+        crew_type:
+          $ref: "#/components/schemas/CrewType"
+        skill_certifications:
+          type: array
+          description: Current certification inventory
+          items:
+            type: string
+            example: "FIBER_SPLICE_L2"
+        safety_classification:
+          $ref: "#/components/schemas/SafetyClassification"
+        equipment_package:
+          $ref: "#/components/schemas/EquipmentPackage"
+        restoration_phase:
+          $ref: "#/components/schemas/RestorationPhase"
+        current_location:
+          $ref: "#/components/schemas/GeoPoint"
+        distance_miles:
+          type: number
+          format: double
+          nullable: true
+          description: Distance from query coordinates when provided
+          example: 12.6
+        estimated_ready_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Earliest timestamp when crew can accept dispatch
+          example: "2026-03-27T13:34:00Z"
+      required:
+        - crew_id
+        - crew_name
+        - availability_status
+        - crew_type
+        - skill_certifications
+        - safety_classification
+        - equipment_package
+        - restoration_phase
+        - current_location
+    ChecklistItemCompletion:
+      type: object
+      description: Single safety checklist item status
+      properties:
+        item_code:
+          type: string
+          description: Checklist control identifier
+          example: "PPE_VERIFIED"
+        completed:
+          type: boolean
+          description: Completion flag
+          example: true
+        note:
+          type: string
+          description: Optional completion evidence note
+          maxLength: 1000
+          example: "Arc-rated PPE and eye protection verified for all members."
+      required:
+        - item_code
+        - completed
+    GeoLocation:
+      type: object
+      description: Full geospatial and civic location for field dispatch
+      properties:
+        site_id:
+          type: string
+          description: Internal site inventory identifier
+          example: "site-ne-4411"
+        address_line_1:
+          type: string
+          description: Street address line 1
+          example: "1187 Commerce Parkway"
+        address_line_2:
+          type: string
+          description: Street address line 2
+          nullable: true
+          example: "Dock 3"
+        city:
+          type: string
+          description: City name
+          example: "Boston"
+        state:
+          type: string
+          description: State or province code
+          example: "MA"
+        postal_code:
+          type: string
+          description: Postal code
+          example: "02110"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          minLength: 2
+          maxLength: 2
+          example: "US"
+        latitude:
+          type: number
+          format: double
+          description: Latitude in decimal degrees
+          minimum: -90
+          maximum: 90
+          example: 42.35711
+        longitude:
+          type: number
+          format: double
+          description: Longitude in decimal degrees
+          minimum: -180
+          maximum: 180
+          example: -71.05344
+      required:
+        - address_line_1
+        - city
+        - state
+        - postal_code
+        - country
+        - latitude
+        - longitude
+    GeoPoint:
+      type: object
+      description: Latitude and longitude point
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          description: Latitude in decimal degrees
+          example: 42.34927
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          description: Longitude in decimal degrees
+          example: -71.04766
+      required:
+        - latitude
+        - longitude
+    Contact:
+      type: object
+      description: On-site contact details
+      properties:
+        name:
+          type: string
+          description: Contact full name
+          example: "Morgan Lee"
+        phone:
+          type: string
+          description: Contact phone number in E.164 format
+          example: "+16175550191"
+        email:
+          type: string
+          format: email
+          description: Contact email address
+          example: "morgan.lee@verizon.com"
+      required:
+        - name
+        - phone
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of records returned per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of records matching filter criteria
+          example: 94
+        total_pages:
+          type: integer
+          description: Total number of pages available
+          example: 5
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    AuditInfo:
+      type: object
+      description: Audit metadata for entity lifecycle
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Resource creation timestamp
+          example: "2026-03-27T13:18:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-03-27T14:21:00Z"
+        created_by:
+          type: string
+          description: Principal that created the resource
+          example: "dispatcher-224"
+        updated_by:
+          type: string
+          description: Principal that last updated the resource
+          example: "tech-8831"
+      required:
+        - created_at
+        - updated_at
+    Error:
+      type: object
+      description: Standardized error response envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              description: Human-readable error message
+              example: "The request body contains invalid fields."
+            details:
+              type: array
+              description: Structured field-level or business-rule failures
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: Field associated with the error
+                    example: "skill_certifications[0]"
+                  reason:
+                    type: string
+                    description: Error explanation
+                    example: "Certification is not recognized for the selected crew_type."
+            request_id:
+              type: string
+              format: uuid
+              description: Request correlation identifier for support
+              example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    WorkOrderStatus:
+      type: string
+      description: Work order lifecycle state
+      enum:
+        - OPEN
+        - TRIAGED
+        - ASSIGNED
+        - IN_PROGRESS
+        - BLOCKED
+        - COMPLETED
+        - CANCELED
+      example: "ASSIGNED"
+    WorkOrderPriority:
+      type: string
+      description: Operational urgency class
+      enum:
+        - P1
+        - P2
+        - P3
+        - P4
+      example: "P1"
+    AssignmentStatus:
+      type: string
+      description: Assignment lifecycle state
+      enum:
+        - PENDING_DISPATCH
+        - MOBILIZED
+        - EN_ROUTE
+        - ON_SITE
+        - RESTORING
+        - BLOCKED
+        - COMPLETE
+      example: "ON_SITE"
+    CrewType:
+      type: string
+      description: Crew specialization category
+      enum:
+        - FIBER_REPAIR
+        - POWER_RESTORATION
+        - RF_OPTIMIZATION
+        - TRANSPORT_ROUTING
+        - FACILITIES_SUPPORT
+      example: "FIBER_REPAIR"
+    SafetyClassification:
+      type: string
+      description: Safety context controlling dispatch eligibility and checklist requirements
+      enum:
+        - STANDARD
+        - ENERGIZED_ZONE
+        - CONFINED_SPACE
+        - RESTRICTED_ACCESS
+        - HAZMAT_ADJACENT
+      example: "RESTRICTED_ACCESS"
+    EquipmentPackage:
+      type: string
+      description: Predefined equipment set required to execute restoration work
+      enum:
+        - FIBER_SPLICE_LIGHT
+        - FIBER_SPLICE_HEAVY
+        - MOBILE_POWER_UNIT
+        - RF_TEST_KIT
+        - TRANSPORT_DIAGNOSTIC_SUITE
+      example: "FIBER_SPLICE_HEAVY"
+    RestorationPhase:
+      type: string
+      description: Current restoration workflow phase
+      enum:
+        - DETECT_AND_VALIDATE
+        - ISOLATE_AND_ASSESS
+        - REPAIR_AND_RESTORE
+        - VERIFY_SERVICE
+        - CLOSEOUT
+      example: "REPAIR_AND_RESTORE"
+    ChecklistStatus:
+      type: string
+      description: Safety checklist completion state
+      enum:
+        - NOT_STARTED
+        - IN_PROGRESS
+        - COMPLETED
+      example: "IN_PROGRESS"
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by Verizon identity services
+  responses:
+    "400":
+      description: Bad Request — The request is malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "VALIDATION_ERROR"
+              message: "The request body contains invalid fields."
+              details:
+                - field: "location.latitude"
+                  reason: "Latitude must be between -90 and 90."
+              request_id: "9d78e29f-5f59-4fd6-9bf0-0f5432db9a6b"
+    "401":
+      description: Unauthorized — Authentication credentials are missing, expired, or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "UNAUTHORIZED"
+              message: "Invalid or expired authentication token."
+              request_id: "1abec56a-9a4d-4c51-9c1a-f6f14f11d3f0"
+    "403":
+      description: Forbidden — The caller does not have permission for this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "FORBIDDEN"
+              message: "You do not have required scope workforce.assignments.write."
+              request_id: "54e5c8a2-0a0f-4a68-b0ec-1376f31f01e5"
+    "404":
+      description: Not Found — The specified resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "NOT_FOUND"
+              message: "Work order wo-ne-009283 was not found."
+              request_id: "3cbc6460-bf5f-4378-a4e9-90a4cda19c76"
+    "409":
+      description: Conflict — The request conflicts with the current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "STATE_CONFLICT"
+              message: "Assignment cannot transition from COMPLETE to ON_SITE."
+              request_id: "56f27c8a-d9cd-4965-a366-6c6e0bc5a6e3"
+    "422":
+      description: Unprocessable Entity — Semantic or business-rule validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "BUSINESS_RULE_VIOLATION"
+              message: "Selected crew lacks required certification FIBER_SPLICE_L2."
+              request_id: "2139f0ca-f4b4-43f6-a3cb-48deca379543"
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "RATE_LIMIT_EXCEEDED"
+              message: "Too many requests. Retry after 30 seconds."
+              request_id: "35fda1fe-838f-4f0f-9411-bf5e7c251f7e"
+    "500":
+      description: Internal Server Error — An unexpected server-side failure occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred. Please try again later."
+              request_id: "991f4c7a-a4c2-4f3f-95d4-6d013c3e9fef"

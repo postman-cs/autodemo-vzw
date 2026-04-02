@@ -1,0 +1,994 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Biometric Authentication API
+  description: >-
+    FIDO2/WebAuthn-compliant biometric authentication service supporting fingerprint, facial recognition, voice
+    print, and iris scan modalities. Implements liveness detection to prevent presentation attacks (ISO 30107-3),
+    device-bound credential management, and anti-spoofing verification. Templates are stored as irreversible
+    cryptographic representations per NIST SP 800-76-2 biometric data standards.
+  version: 2.0.1
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-identity-biometric
+  x-acme-domain: identity
+servers:
+  - url: https://af-identity-biometric.api.acmefin.com/v1
+    description: Production
+  - url: https://af-identity-biometric.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Enrollment
+    description: Biometric template enrollment and credential management
+  - name: Verification
+    description: Biometric verification, liveness detection, and anti-spoofing
+paths:
+  /biometric/enrollments:
+    get:
+      operationId: listEnrollments
+      summary: List biometric enrollments
+      description: >-
+        Retrieve all biometric enrollments for a user, including modality type, quality scores, and device
+        bindings.
+      tags:
+        - Enrollment
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: user_id
+          in: query
+          required: false
+          description: Filter by user ID
+          schema:
+            type: "string"
+        - name: modality
+          in: query
+          required: false
+          description: Filter by biometric modality
+          schema:
+            type: "string"
+            enum:
+              - fingerprint
+              - face
+              - voice
+              - iris
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        enrollment_id:
+                          type: string
+                          description: Unique enrollment identifier
+                          example: "bio_e1f2a3b4"
+                          readOnly: true
+                        user_id:
+                          type: string
+                          description: User identifier
+                          example: "usr_4e5f6a7b"
+                        modality:
+                          type: string
+                          description: Biometric modality
+                          example: "fingerprint"
+                          enum:
+                            - fingerprint
+                            - face
+                            - voice
+                            - iris
+                        status:
+                          type: string
+                          description: Enrollment status
+                          example: "active"
+                          enum:
+                            - pending
+                            - active
+                            - suspended
+                            - revoked
+                        device_id:
+                          type: string
+                          description: Bound authenticator device
+                          example: "dev_x1y2z3"
+                        fido2_credential_id:
+                          type: string
+                          description: FIDO2/WebAuthn credential identifier
+                          example: "cred_aGVsbG8gd29ybGQ"
+                        quality_score:
+                          type: number
+                          description: Template quality score (0.0-1.0)
+                          format: double
+                          example: 0.92
+                          minimum: 0
+                          maximum: 1
+                        created_at:
+                          type: string
+                          description: Enrollment creation timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        last_verified_at:
+                          type: string
+                          description: Last successful verification
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - enrollment_id
+                        - user_id
+                        - modality
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: enrollBiometric
+      summary: Enroll biometric credential
+      description: >-
+        Initiate biometric enrollment by registering a FIDO2/WebAuthn credential with template data from the
+        authenticator device. The template undergoes quality validation and is stored as an irreversible
+        cryptographic hash.
+      tags:
+        - Enrollment
+      requestBody:
+        required: true
+        description: Enroll biometric credential request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: User to enroll
+                      example: "usr_4e5f6a7b"
+                    modality:
+                      type: string
+                      description: Biometric modality
+                      example: "fingerprint"
+                      enum:
+                        - fingerprint
+                        - face
+                        - voice
+                        - iris
+                    device_id:
+                      type: string
+                      description: Authenticator device ID
+                      example: "dev_x1y2z3"
+                    attestation_object:
+                      type: string
+                      description: FIDO2 attestation object (base64url)
+                      example: "o2NmbXRmcGFja2VkZ2F0dFN0bXQ..."
+                    client_data_json:
+                      type: string
+                      description: WebAuthn client data (base64url)
+                      example: "eyJ0eXBlIjoid2ViYXV0aG4uY3Jl..."
+              required:
+                - user_id
+                - modality
+                - device_id
+                - attestation_object
+                - client_data_json
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enrollment_id:
+                    type: string
+                    description: Unique enrollment identifier
+                    example: "bio_e1f2a3b4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: User identifier
+                    example: "usr_4e5f6a7b"
+                  modality:
+                    type: string
+                    description: Biometric modality
+                    example: "fingerprint"
+                    enum:
+                      - fingerprint
+                      - face
+                      - voice
+                      - iris
+                  status:
+                    type: string
+                    description: Enrollment status
+                    example: "active"
+                    enum:
+                      - pending
+                      - active
+                      - suspended
+                      - revoked
+                  device_id:
+                    type: string
+                    description: Bound authenticator device
+                    example: "dev_x1y2z3"
+                  fido2_credential_id:
+                    type: string
+                    description: FIDO2/WebAuthn credential identifier
+                    example: "cred_aGVsbG8gd29ybGQ"
+                  quality_score:
+                    type: number
+                    description: Template quality score (0.0-1.0)
+                    format: double
+                    example: 0.92
+                    minimum: 0
+                    maximum: 1
+                  created_at:
+                    type: string
+                    description: Enrollment creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  last_verified_at:
+                    type: string
+                    description: Last successful verification
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - enrollment_id
+                  - user_id
+                  - modality
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /biometric/enrollments/{enrollment_id}:
+    get:
+      operationId: getEnrollment
+      summary: Get enrollment details
+      description: >-
+        Retrieve details for a specific biometric enrollment including quality metrics, device binding, and
+        verification history.
+      tags:
+        - Enrollment
+      parameters:
+        - name: enrollment_id
+          in: path
+          required: true
+          description: Unique enrollment id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enrollment_id:
+                    type: string
+                    description: Unique enrollment identifier
+                    example: "bio_e1f2a3b4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: User identifier
+                    example: "usr_4e5f6a7b"
+                  modality:
+                    type: string
+                    description: Biometric modality
+                    example: "fingerprint"
+                    enum:
+                      - fingerprint
+                      - face
+                      - voice
+                      - iris
+                  status:
+                    type: string
+                    description: Enrollment status
+                    example: "active"
+                    enum:
+                      - pending
+                      - active
+                      - suspended
+                      - revoked
+                  device_id:
+                    type: string
+                    description: Bound authenticator device
+                    example: "dev_x1y2z3"
+                  fido2_credential_id:
+                    type: string
+                    description: FIDO2/WebAuthn credential identifier
+                    example: "cred_aGVsbG8gd29ybGQ"
+                  quality_score:
+                    type: number
+                    description: Template quality score (0.0-1.0)
+                    format: double
+                    example: 0.92
+                    minimum: 0
+                    maximum: 1
+                  created_at:
+                    type: string
+                    description: Enrollment creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  last_verified_at:
+                    type: string
+                    description: Last successful verification
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - enrollment_id
+                  - user_id
+                  - modality
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: revokeEnrollment
+      summary: Revoke biometric enrollment
+      description: >-
+        Permanently revoke a biometric enrollment and purge the stored template. The associated FIDO2
+        credential is deregistered from the authenticator.
+      tags:
+        - Enrollment
+      parameters:
+        - name: enrollment_id
+          in: path
+          required: true
+          description: Unique enrollment id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /biometric/verify:
+    post:
+      operationId: verifyBiometric
+      summary: Verify biometric
+      description: >-
+        Verify a biometric sample against enrolled templates. Returns match confidence score and liveness
+        assessment. Implements adaptive threshold based on risk context.
+      tags:
+        - Verification
+      requestBody:
+        required: true
+        description: Verify biometric request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: User to verify
+                      example: "usr_4e5f6a7b"
+                    modality:
+                      type: string
+                      description: Verification modality
+                      example: "fingerprint"
+                      enum:
+                        - fingerprint
+                        - face
+                        - voice
+                        - iris
+                    authenticator_data:
+                      type: string
+                      description: FIDO2 authenticator data (base64url)
+                      example: "SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2M..."
+                    client_data_json:
+                      type: string
+                      description: WebAuthn client data (base64url)
+                      example: "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0..."
+                    signature:
+                      type: string
+                      description: Assertion signature (base64url)
+                      example: "MEUCIQDsC..."
+              required:
+                - user_id
+                - modality
+                - authenticator_data
+                - signature
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                    description: Whether verification succeeded
+                    example: true
+                  confidence:
+                    type: number
+                    description: Match confidence score (0.0-1.0)
+                    format: double
+                    example: 0.97
+                  liveness_passed:
+                    type: boolean
+                    description: Liveness detection result
+                    example: true
+                  risk_score:
+                    type: number
+                    description: Contextual risk score
+                    format: double
+                    example: 0.12
+                required:
+                  - verified
+                  - confidence
+                  - liveness_passed
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /biometric/liveness:
+    post:
+      operationId: checkLiveness
+      summary: Perform liveness detection
+      description: >-
+        Standalone liveness detection to confirm a live biometric presentation. Detects presentation attacks
+        including printed photos, screen replays, silicone masks, and deepfake video per ISO 30107-3 Level
+        2.
+      tags:
+        - Verification
+      requestBody:
+        required: true
+        description: Perform liveness detection request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    modality:
+                      type: string
+                      description: Modality to check
+                      example: "face"
+                      enum:
+                        - face
+                        - voice
+                    challenge_response:
+                      type: string
+                      description: Liveness challenge response data (base64url)
+                      example: "bGl2ZW5lc3MtZGF0YQ=="
+                    session_id:
+                      type: string
+                      description: Liveness session identifier
+                      example: "ls_a1b2c3"
+              required:
+                - modality
+                - challenge_response
+                - session_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_live:
+                    type: boolean
+                    description: Whether the presentation is from a live person
+                    example: true
+                  attack_type_detected:
+                    type: string
+                    description: Detected attack type if not live
+                    example: "none"
+                    enum:
+                      - none
+                      - print
+                      - screen_replay
+                      - mask
+                      - deepfake
+                  confidence:
+                    type: number
+                    description: Detection confidence
+                    format: double
+                    example: 0.99
+                required:
+                  - is_live
+                  - confidence
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /biometric/enrollments/{enrollment_id}/device-binding:
+    post:
+      operationId: rebindDevice
+      summary: Rebind authenticator device
+      description: >-
+        Transfer a biometric enrollment to a new authenticator device. Requires re-verification on the new
+        device before the binding is activated.
+      tags:
+        - Enrollment
+      parameters:
+        - name: enrollment_id
+          in: path
+          required: true
+          description: Unique enrollment id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Rebind authenticator device request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    new_device_id:
+                      type: string
+                      description: New authenticator device ID
+                      example: "dev_n3w1d2"
+                    attestation_object:
+                      type: string
+                      description: New device attestation (base64url)
+                      example: "o2NmbXRmcGFja2VkZ2F0dFN0bXQ..."
+              required:
+                - new_device_id
+                - attestation_object
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enrollment_id:
+                    type: string
+                    description: Unique enrollment identifier
+                    example: "bio_e1f2a3b4"
+                    readOnly: true
+                  device_id:
+                    type: string
+                    description: Updated device binding
+                    example: "dev_n3w1d2"
+                  binding_status:
+                    type: string
+                    description: Binding status
+                    example: "pending_verification"
+                    enum:
+                      - pending_verification
+                      - active
+                required:
+                  - enrollment_id
+                  - device_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /biometric/anti-spoofing/report:
+    get:
+      operationId: getAntiSpoofingReport
+      summary: Get anti-spoofing report
+      description: >-
+        Retrieve aggregated anti-spoofing and presentation attack detection statistics across all modalities
+        for the specified time period.
+      tags:
+        - Verification
+      parameters:
+        - name: period
+          in: query
+          required: false
+          description: Report period
+          schema:
+            type: "string"
+            enum:
+              - 24h
+              - 7d
+              - 30d
+              - 90d
+            default: "30d"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_verifications:
+                    type: integer
+                    description: Total verification attempts
+                    example: 15420
+                  attacks_detected:
+                    type: integer
+                    description: Presentation attacks blocked
+                    example: 23
+                  attack_rate_percent:
+                    type: number
+                    description: Percentage of attempts classified as attacks
+                    format: double
+                    example: 0.15
+                  breakdown_by_modality:
+                    type: object
+                    description: Per-modality attack statistics
+                  period_start:
+                    type: string
+                    description: Report period start
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  period_end:
+                    type: string
+                    description: Report period end
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - total_verifications
+                  - attacks_detected
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

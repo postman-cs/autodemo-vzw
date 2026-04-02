@@ -1,0 +1,1208 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Customer Document Management API
+  description: Enterprise document management for customer-related documents including identity proofs, income verification,
+    tax forms, contracts, and correspondence. Supports upload, automatic classification via ML, OCR text extraction, verification
+    workflows, secure sharing, and retention policy enforcement. Compliant with banking record retention regulations (BSA/AML
+    5-year, SOX 7-year).
+  version: 2.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-customer-documents
+  x-acme-domain: customer
+servers:
+- url: https://af-customer-documents.api.acmefin.com/v1
+  description: Production
+- url: https://af-customer-documents.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Document Lifecycle
+  description: Upload, classify, verify, and manage customer documents
+- name: Processing
+  description: OCR extraction and automated document classification
+- name: Access
+  description: Download, share, and control document access
+paths:
+  /documents/upload:
+    post:
+      operationId: uploadDocument
+      summary: Upload customer document
+      description: Uploads a document and associates it with a customer record. Accepts PDF, JPEG, PNG, and TIFF formats up
+        to 25MB. Automatically queues the document for ML classification and virus scanning. Documents are encrypted at rest
+        using AES-256.
+      tags:
+      - Document Lifecycle
+      requestBody:
+        required: true
+        description: Upload customer document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                  example: CIF-10042389
+                document_type:
+                  type: string
+                  description: Initial document classification (optional, will be auto-classified if omitted)
+                  enum:
+                  - id_proof
+                  - address_proof
+                  - income_proof
+                  - tax_form
+                  - contract
+                  - statement
+                file_name:
+                  type: string
+                  description: Original file name
+                  example: w2_2024.pdf
+                file_content_base64:
+                  type: string
+                  description: Base64-encoded file content
+                metadata:
+                  type: object
+                  description: Optional metadata tags
+                  properties:
+                    source:
+                      type: string
+                      example: customer_upload
+                    tax_year:
+                      type: string
+                      example: '2024'
+              required:
+              - customer_id
+              - file_name
+              - file_content_base64
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Generated document ID
+                  status:
+                    type: string
+                    description: Initial status
+                    example: uploaded
+                  uploaded_at:
+                    type: string
+                    description: Upload timestamp
+                    format: date-time
+                  virus_scan_status:
+                    type: string
+                    description: Virus scan result
+                    enum:
+                    - pending
+                    - clean
+                    - infected
+                required:
+                - document_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /documents:
+    get:
+      operationId: listDocuments
+      summary: List documents
+      description: Returns a paginated list of documents with optional filtering by customer, type, and processing status.
+        Supports bulk document inventory queries.
+      tags:
+      - Document Lifecycle
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: customer_id
+        in: query
+        required: false
+        description: Filter by customer CIF
+        schema:
+          type: string
+      - name: document_type
+        in: query
+        required: false
+        description: Filter by type
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        description: Filter by processing status
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                          description: Document unique identifier
+                          example: DOC-20250115-88432
+                        customer_id:
+                          type: string
+                          description: Owning customer CIF
+                        document_type:
+                          type: string
+                          description: Document classification
+                          enum:
+                          - id_proof
+                          - address_proof
+                          - income_proof
+                          - tax_form
+                          - contract
+                          - statement
+                          - correspondence
+                        file_name:
+                          type: string
+                          description: Original file name
+                          example: passport_scan.pdf
+                        mime_type:
+                          type: string
+                          description: MIME content type
+                          example: application/pdf
+                        file_size_bytes:
+                          type: integer
+                          description: File size in bytes
+                          example: 245760
+                        status:
+                          type: string
+                          description: Processing status
+                          enum:
+                          - uploaded
+                          - classifying
+                          - classified
+                          - verified
+                          - rejected
+                          - archived
+                        uploaded_at:
+                          type: string
+                          description: Upload timestamp
+                          format: date-time
+                        retention_until:
+                          type: string
+                          description: Retention policy expiry date
+                          format: date
+                          nullable: true
+                      required:
+                      - document_id
+                      - customer_id
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /documents/{document_id}:
+    get:
+      operationId: getDocument
+      summary: Get document details
+      description: Returns metadata and processing status for a specific document. Does not return file content — use the
+        download endpoint for that.
+      tags:
+      - Document Lifecycle
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        description: Unique document id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document unique identifier
+                    example: DOC-20250115-88432
+                  customer_id:
+                    type: string
+                    description: Owning customer CIF
+                  document_type:
+                    type: string
+                    description: Document classification
+                    enum:
+                    - id_proof
+                    - address_proof
+                    - income_proof
+                    - tax_form
+                    - contract
+                    - statement
+                    - correspondence
+                  file_name:
+                    type: string
+                    description: Original file name
+                    example: passport_scan.pdf
+                  mime_type:
+                    type: string
+                    description: MIME content type
+                    example: application/pdf
+                  file_size_bytes:
+                    type: integer
+                    description: File size in bytes
+                    example: 245760
+                  status:
+                    type: string
+                    description: Processing status
+                    enum:
+                    - uploaded
+                    - classifying
+                    - classified
+                    - verified
+                    - rejected
+                    - archived
+                  uploaded_at:
+                    type: string
+                    description: Upload timestamp
+                    format: date-time
+                  retention_until:
+                    type: string
+                    description: Retention policy expiry date
+                    format: date
+                    nullable: true
+                required:
+                - document_id
+                - customer_id
+                - document_type
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    delete:
+      operationId: deleteDocument
+      summary: Delete document
+      description: Permanently deletes a document and its stored content. Subject to retention policy checks — documents under
+        active retention cannot be deleted. Deletion is logged for audit purposes.
+      tags:
+      - Document Lifecycle
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        description: Unique document id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /documents/{document_id}/classify:
+    post:
+      operationId: classifyDocument
+      summary: Classify document
+      description: Triggers ML-based automatic classification of the document. The classifier identifies document type (ID,
+        address proof, income, etc.) with a confidence score. Low-confidence results are queued for manual review.
+      tags:
+      - Processing
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        description: Unique document id
+        schema:
+          type: string
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document ID
+                  classified_type:
+                    type: string
+                    description: ML-predicted document type
+                    enum:
+                    - id_proof
+                    - address_proof
+                    - income_proof
+                    - tax_form
+                    - contract
+                    - statement
+                    - unknown
+                  confidence:
+                    type: number
+                    description: Classification confidence 0.0-1.0
+                    format: double
+                    example: 0.94
+                    minimum: 0
+                    maximum: 1
+                  needs_review:
+                    type: boolean
+                    description: Whether manual review is recommended
+                    example: false
+                required:
+                - document_id
+                - classified_type
+                - confidence
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /documents/{document_id}/ocr:
+    post:
+      operationId: extractDocumentText
+      summary: Extract text via OCR
+      description: Runs optical character recognition on the document to extract text content. Supports multi-language documents.
+        Extracted fields are mapped to structured data (name, address, dates, amounts) where possible.
+      tags:
+      - Processing
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        description: Unique document id
+        schema:
+          type: string
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document ID
+                  raw_text:
+                    type: string
+                    description: Full extracted text content
+                  structured_fields:
+                    type: object
+                    description: Parsed structured data
+                    properties:
+                      full_name:
+                        type: string
+                        example: Margaret Chen
+                      date_of_birth:
+                        type: string
+                        example: '1985-03-22'
+                      address:
+                        type: string
+                        example: 123 Main St, New York, NY
+                  language:
+                    type: string
+                    description: Detected language
+                    example: en
+                  confidence:
+                    type: number
+                    description: OCR confidence
+                    format: double
+                    example: 0.91
+                required:
+                - document_id
+                - raw_text
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /documents/{document_id}/verify:
+    post:
+      operationId: verifyDocument
+      summary: Verify document authenticity
+      description: Submits the document for authenticity verification. Checks include tamper detection, expiration validation,
+        issuer verification, and cross-reference with customer profile data.
+      tags:
+      - Processing
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        description: Unique document id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Verify document authenticity request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verification_type:
+                  type: string
+                  description: Type of verification
+                  enum:
+                  - authenticity
+                  - expiration
+                  - issuer
+                  - full
+                cross_reference_profile:
+                  type: boolean
+                  description: Cross-reference extracted data with customer profile
+                  default: true
+              required:
+              - verification_type
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document ID
+                  verification_result:
+                    type: string
+                    description: Verification outcome
+                    enum:
+                    - passed
+                    - failed
+                    - inconclusive
+                    - pending_manual_review
+                  checks_performed:
+                    type: array
+                    description: Individual check results
+                    items:
+                      type: object
+                  verified_at:
+                    type: string
+                    description: Verification timestamp
+                    format: date-time
+                required:
+                - document_id
+                - verification_result
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /documents/{document_id}/download:
+    get:
+      operationId: downloadDocument
+      summary: Download document file
+      description: Generates a time-limited signed URL for downloading the document file. URL expires after 15 minutes. Access
+        is logged for audit compliance.
+      tags:
+      - Access
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        description: Unique document id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document ID
+                  download_url:
+                    type: string
+                    description: Pre-signed download URL
+                    example: https://docs.acmefin.com/dl/DOC-20250115-88432?token=xyz
+                  expires_at:
+                    type: string
+                    description: URL expiration timestamp
+                    format: date-time
+                  file_name:
+                    type: string
+                    description: Original file name
+                  mime_type:
+                    type: string
+                    description: Content type
+                required:
+                - document_id
+                - download_url
+                - expires_at
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /documents/{document_id}/share:
+    post:
+      operationId: shareDocument
+      summary: Share document
+      description: Creates a secure sharing link for the document with configurable access controls. Supports sharing with
+        internal users, external parties (e.g., auditors), and third-party integrations. All access is logged.
+      tags:
+      - Access
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        description: Unique document id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Share document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recipients:
+                  type: array
+                  description: Email addresses of recipients
+                  items:
+                    type: string
+                access_level:
+                  type: string
+                  description: Access permission level
+                  enum:
+                  - view
+                  - download
+                  - full
+                expires_in_hours:
+                  type: integer
+                  description: Link expiration in hours
+                  minimum: 1
+                  maximum: 720
+                  default: 72
+                message:
+                  type: string
+                  description: Optional message to recipients
+              required:
+              - recipients
+              - access_level
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  share_id:
+                    type: string
+                    description: Share link ID
+                  share_url:
+                    type: string
+                    description: Secure sharing URL
+                  expires_at:
+                    type: string
+                    description: Link expiration
+                    format: date-time
+                required:
+                - share_id
+                - share_url
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /documents/{document_id}/retention:
+    patch:
+      operationId: setRetentionPolicy
+      summary: Set document retention policy
+      description: Sets or updates the retention policy for a document. Retention policies are enforced automatically — documents
+        past their retention date are queued for secure destruction. Regulatory minimums (BSA 5-year, SOX 7-year) are enforced.
+      tags:
+      - Document Lifecycle
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        description: Unique document id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Set document retention policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retention_period_months:
+                  type: integer
+                  description: Retention period in months
+                  example: 84
+                  minimum: 12
+                  maximum: 120
+                retention_reason:
+                  type: string
+                  description: Business reason for retention
+                  enum:
+                  - regulatory
+                  - legal_hold
+                  - business_need
+                  - customer_request
+                legal_hold:
+                  type: boolean
+                  description: Place document under legal hold (prevents deletion)
+                  default: false
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document ID
+                  retention_until:
+                    type: string
+                    description: Retention expiry date
+                    format: date
+                  legal_hold:
+                    type: boolean
+                    description: Legal hold status
+                  updated_at:
+                    type: string
+                    description: Policy update timestamp
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}/documents:
+    get:
+      operationId: listCustomerDocuments
+      summary: List customer documents
+      description: Returns all documents associated with a specific customer. Useful for onboarding reviews and compliance
+        document completeness checks.
+      tags:
+      - Document Lifecycle
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: document_type
+        in: query
+        required: false
+        description: Filter by type
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        description: Filter by status
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                          description: Document unique identifier
+                          example: DOC-20250115-88432
+                        customer_id:
+                          type: string
+                          description: Owning customer CIF
+                        document_type:
+                          type: string
+                          description: Document classification
+                          enum:
+                          - id_proof
+                          - address_proof
+                          - income_proof
+                          - tax_form
+                          - contract
+                          - statement
+                          - correspondence
+                        file_name:
+                          type: string
+                          description: Original file name
+                          example: passport_scan.pdf
+                        mime_type:
+                          type: string
+                          description: MIME content type
+                          example: application/pdf
+                        file_size_bytes:
+                          type: integer
+                          description: File size in bytes
+                          example: 245760
+                        status:
+                          type: string
+                          description: Processing status
+                          enum:
+                          - uploaded
+                          - classifying
+                          - classified
+                          - verified
+                          - rejected
+                          - archived
+                        uploaded_at:
+                          type: string
+                          description: Upload timestamp
+                          format: date-time
+                        retention_until:
+                          type: string
+                          description: Retention policy expiry date
+                          format: date
+                          nullable: true
+                      required:
+                      - document_id
+                      - document_type
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

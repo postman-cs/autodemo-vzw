@@ -1,0 +1,1553 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Customer Support Ticketing API
+  description: Enterprise customer support platform for Acme Finance. Manages the full ticket lifecycle from creation through
+    resolution with SLA tracking, agent assignment, escalation workflows, and knowledge base integration. Provides multi-channel
+    support across phone, email, chat, branch, and social media with unified ticket history and CSAT measurement.
+  version: 2.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-customer-support
+  x-acme-domain: customer
+servers:
+- url: https://af-customer-support.api.acmefin.com/v1
+  description: Production
+- url: https://af-customer-support.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Tickets
+  description: Support ticket creation, updates, and lifecycle management
+- name: Workflow
+  description: Escalation, assignment, and resolution workflows
+- name: Knowledge Base
+  description: Self-service knowledge base search and article management
+- name: Analytics
+  description: Support metrics, SLA tracking, and performance reporting
+paths:
+  /tickets:
+    get:
+      operationId: listTickets
+      summary: List support tickets
+      description: Returns a paginated list of support tickets with comprehensive filtering. Supports filtering by status,
+        priority, category, agent, and SLA breach status.
+      tags:
+      - Tickets
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by ticket status
+        schema:
+          type: string
+      - name: priority
+        in: query
+        required: false
+        description: Filter by priority
+        schema:
+          type: string
+          enum:
+          - low
+          - medium
+          - high
+          - critical
+      - name: category
+        in: query
+        required: false
+        description: Filter by issue category
+        schema:
+          type: string
+      - name: assigned_agent
+        in: query
+        required: false
+        description: Filter by assigned agent
+        schema:
+          type: string
+      - name: sla_breached
+        in: query
+        required: false
+        description: Filter by SLA breach status
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ticket_id:
+                          type: string
+                          description: Support ticket identifier
+                          example: TKT-20250610-44218
+                        customer_id:
+                          type: string
+                          description: Customer CIF number
+                        subject:
+                          type: string
+                          description: Ticket subject
+                          example: Unable to access online banking
+                        category:
+                          type: string
+                          description: Issue category
+                          enum:
+                          - account_access
+                          - transaction
+                          - card_services
+                          - loan
+                          - fee_dispute
+                          - fraud
+                          - general_inquiry
+                          - technical
+                        priority:
+                          type: string
+                          description: Ticket priority
+                          enum:
+                          - low
+                          - medium
+                          - high
+                          - critical
+                        status:
+                          type: string
+                          description: Ticket status
+                          enum:
+                          - open
+                          - in_progress
+                          - waiting_customer
+                          - escalated
+                          - resolved
+                          - closed
+                        channel:
+                          type: string
+                          description: Contact channel
+                          enum:
+                          - phone
+                          - email
+                          - chat
+                          - branch
+                          - social_media
+                        assigned_agent:
+                          type: string
+                          description: Assigned support agent ID
+                          nullable: true
+                        created_at:
+                          type: string
+                          description: Ticket creation timestamp
+                          format: date-time
+                        sla_due_at:
+                          type: string
+                          description: SLA resolution deadline
+                          format: date-time
+                      required:
+                      - ticket_id
+                      - customer_id
+                      - subject
+                      - status
+                      - priority
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createTicket
+      summary: Create support ticket
+      description: Creates a new support ticket. Auto-assigns priority based on customer segment and issue category. SLA timer
+        starts immediately upon creation.
+      tags:
+      - Tickets
+      requestBody:
+        required: true
+        description: Create support ticket request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                subject:
+                  type: string
+                  description: Issue subject
+                  example: Unable to access online banking
+                description:
+                  type: string
+                  description: Detailed issue description
+                category:
+                  type: string
+                  description: Issue category
+                  enum:
+                  - account_access
+                  - transaction
+                  - card_services
+                  - loan
+                  - fee_dispute
+                  - fraud
+                  - general_inquiry
+                  - technical
+                channel:
+                  type: string
+                  description: Contact channel
+                  enum:
+                  - phone
+                  - email
+                  - chat
+                  - branch
+                  - social_media
+                priority_override:
+                  type: string
+                  description: Manual priority override (requires supervisor)
+                  enum:
+                  - low
+                  - medium
+                  - high
+                  - critical
+                  nullable: true
+              required:
+              - customer_id
+              - subject
+              - description
+              - category
+              - channel
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_id:
+                    type: string
+                    description: Support ticket identifier
+                    example: TKT-20250610-44218
+                  customer_id:
+                    type: string
+                    description: Customer CIF number
+                  subject:
+                    type: string
+                    description: Ticket subject
+                    example: Unable to access online banking
+                  category:
+                    type: string
+                    description: Issue category
+                    enum:
+                    - account_access
+                    - transaction
+                    - card_services
+                    - loan
+                    - fee_dispute
+                    - fraud
+                    - general_inquiry
+                    - technical
+                  priority:
+                    type: string
+                    description: Ticket priority
+                    enum:
+                    - low
+                    - medium
+                    - high
+                    - critical
+                  status:
+                    type: string
+                    description: Ticket status
+                    enum:
+                    - open
+                    - in_progress
+                    - waiting_customer
+                    - escalated
+                    - resolved
+                    - closed
+                  channel:
+                    type: string
+                    description: Contact channel
+                    enum:
+                    - phone
+                    - email
+                    - chat
+                    - branch
+                    - social_media
+                  assigned_agent:
+                    type: string
+                    description: Assigned support agent ID
+                    nullable: true
+                  created_at:
+                    type: string
+                    description: Ticket creation timestamp
+                    format: date-time
+                  sla_due_at:
+                    type: string
+                    description: SLA resolution deadline
+                    format: date-time
+                required:
+                - ticket_id
+                - customer_id
+                - status
+                - priority
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /tickets/{ticket_id}:
+    get:
+      operationId: getTicket
+      summary: Get ticket details
+      description: Returns full ticket details including description, conversation history, SLA status, and resolution information.
+      tags:
+      - Tickets
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        description: Unique ticket id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_id:
+                    type: string
+                    description: Support ticket identifier
+                    example: TKT-20250610-44218
+                  customer_id:
+                    type: string
+                    description: Customer CIF number
+                  subject:
+                    type: string
+                    description: Ticket subject
+                    example: Unable to access online banking
+                  category:
+                    type: string
+                    description: Issue category
+                    enum:
+                    - account_access
+                    - transaction
+                    - card_services
+                    - loan
+                    - fee_dispute
+                    - fraud
+                    - general_inquiry
+                    - technical
+                  priority:
+                    type: string
+                    description: Ticket priority
+                    enum:
+                    - low
+                    - medium
+                    - high
+                    - critical
+                  status:
+                    type: string
+                    description: Ticket status
+                    enum:
+                    - open
+                    - in_progress
+                    - waiting_customer
+                    - escalated
+                    - resolved
+                    - closed
+                  channel:
+                    type: string
+                    description: Contact channel
+                    enum:
+                    - phone
+                    - email
+                    - chat
+                    - branch
+                    - social_media
+                  assigned_agent:
+                    type: string
+                    description: Assigned support agent ID
+                    nullable: true
+                  created_at:
+                    type: string
+                    description: Ticket creation timestamp
+                    format: date-time
+                  sla_due_at:
+                    type: string
+                    description: SLA resolution deadline
+                    format: date-time
+                required:
+                - ticket_id
+                - customer_id
+                - subject
+                - status
+                - priority
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateTicket
+      summary: Update ticket
+      description: Updates ticket fields. Status transitions are validated against allowed workflows. Priority changes are
+        logged for SLA reporting.
+      tags:
+      - Tickets
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        description: Unique ticket id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update ticket request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: Updated status
+                  enum:
+                  - open
+                  - in_progress
+                  - waiting_customer
+                  - escalated
+                  - resolved
+                  - closed
+                priority:
+                  type: string
+                  description: Updated priority
+                  enum:
+                  - low
+                  - medium
+                  - high
+                  - critical
+                category:
+                  type: string
+                  description: Updated category
+                internal_notes:
+                  type: string
+                  description: Internal agent notes (not visible to customer)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_id:
+                    type: string
+                    description: Support ticket identifier
+                    example: TKT-20250610-44218
+                  customer_id:
+                    type: string
+                    description: Customer CIF number
+                  subject:
+                    type: string
+                    description: Ticket subject
+                    example: Unable to access online banking
+                  category:
+                    type: string
+                    description: Issue category
+                    enum:
+                    - account_access
+                    - transaction
+                    - card_services
+                    - loan
+                    - fee_dispute
+                    - fraud
+                    - general_inquiry
+                    - technical
+                  priority:
+                    type: string
+                    description: Ticket priority
+                    enum:
+                    - low
+                    - medium
+                    - high
+                    - critical
+                  status:
+                    type: string
+                    description: Ticket status
+                    enum:
+                    - open
+                    - in_progress
+                    - waiting_customer
+                    - escalated
+                    - resolved
+                    - closed
+                  channel:
+                    type: string
+                    description: Contact channel
+                    enum:
+                    - phone
+                    - email
+                    - chat
+                    - branch
+                    - social_media
+                  assigned_agent:
+                    type: string
+                    description: Assigned support agent ID
+                    nullable: true
+                  created_at:
+                    type: string
+                    description: Ticket creation timestamp
+                    format: date-time
+                  sla_due_at:
+                    type: string
+                    description: SLA resolution deadline
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /tickets/{ticket_id}/escalate:
+    post:
+      operationId: escalateTicket
+      summary: Escalate ticket
+      description: Escalates a ticket to a higher support tier or management. Resets SLA timers based on escalation level.
+        Sends notification to the escalation target.
+      tags:
+      - Workflow
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        description: Unique ticket id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Escalate ticket request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                escalation_level:
+                  type: string
+                  description: Escalation target tier
+                  enum:
+                  - tier_2
+                  - tier_3
+                  - management
+                  - executive
+                reason:
+                  type: string
+                  description: Escalation reason
+                  example: Customer requires specialized mortgage expertise
+                urgency:
+                  type: string
+                  description: Escalation urgency
+                  enum:
+                  - normal
+                  - urgent
+                  - immediate
+              required:
+              - escalation_level
+              - reason
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_id:
+                    type: string
+                    description: Ticket ID
+                  escalation_level:
+                    type: string
+                    description: New escalation level
+                  new_sla_due_at:
+                    type: string
+                    description: Updated SLA deadline
+                    format: date-time
+                  assigned_to:
+                    type: string
+                    description: New assigned agent/team
+                required:
+                - ticket_id
+                - escalation_level
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /tickets/{ticket_id}/assign:
+    post:
+      operationId: assignTicket
+      summary: Assign ticket to agent
+      description: Assigns or reassigns a ticket to a specific support agent. Validates agent availability and skill match.
+        Previous agent is notified of reassignment.
+      tags:
+      - Workflow
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        description: Unique ticket id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Assign ticket to agent request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                  description: Target agent ID
+                  example: AGT-1142
+                reason:
+                  type: string
+                  description: Assignment reason
+                force_assign:
+                  type: boolean
+                  description: Override capacity limits
+                  default: false
+              required:
+              - agent_id
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_id:
+                    type: string
+                    description: Ticket ID
+                  assigned_agent:
+                    type: string
+                    description: Newly assigned agent
+                  previous_agent:
+                    type: string
+                    description: Previous agent (if reassigned)
+                    nullable: true
+                  assigned_at:
+                    type: string
+                    description: Assignment timestamp
+                    format: date-time
+                required:
+                - ticket_id
+                - assigned_agent
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /tickets/{ticket_id}/resolve:
+    post:
+      operationId: resolveTicket
+      summary: Resolve ticket
+      description: Marks a ticket as resolved with a resolution summary. Triggers CSAT survey to the customer after a configurable
+        delay. Resolution is logged for knowledge base contribution.
+      tags:
+      - Workflow
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        description: Unique ticket id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Resolve ticket request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resolution_summary:
+                  type: string
+                  description: Summary of how the issue was resolved
+                  example: Password reset completed, 2FA re-enrolled
+                resolution_type:
+                  type: string
+                  description: Resolution classification
+                  enum:
+                  - fixed
+                  - workaround
+                  - no_issue
+                  - duplicate
+                  - cannot_reproduce
+                  - referred
+                send_csat_survey:
+                  type: boolean
+                  description: Send CSAT survey to customer
+                  default: true
+                knowledge_base_candidate:
+                  type: boolean
+                  description: Flag for knowledge base article creation
+                  default: false
+              required:
+              - resolution_summary
+              - resolution_type
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_id:
+                    type: string
+                    description: Ticket ID
+                  status:
+                    type: string
+                    description: Updated status
+                    example: resolved
+                  resolved_at:
+                    type: string
+                    description: Resolution timestamp
+                    format: date-time
+                  time_to_resolution_hours:
+                    type: number
+                    description: Hours from creation to resolution
+                    format: double
+                    example: 4.5
+                  sla_met:
+                    type: boolean
+                    description: Whether SLA was met
+                    example: true
+                required:
+                - ticket_id
+                - status
+                - sla_met
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /tickets/{ticket_id}/comments:
+    post:
+      operationId: addTicketComment
+      summary: Add comment to ticket
+      description: Adds a comment or reply to a ticket. Supports both agent replies (visible to customer) and internal notes
+        (agent-only).
+      tags:
+      - Tickets
+      requestBody:
+        required: true
+        description: Add comment to ticket request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                author_id:
+                  type: string
+                  description: Comment author ID
+                content:
+                  type: string
+                  description: Comment content
+                visibility:
+                  type: string
+                  description: Comment visibility
+                  enum:
+                  - public
+                  - internal
+                  default: public
+                attachments:
+                  type: array
+                  description: File attachment IDs
+                  items:
+                    type: string
+              required:
+              - author_id
+              - content
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comment_id:
+                    type: string
+                    description: Generated comment ID
+                  visibility:
+                    type: string
+                    description: Comment visibility
+                  created_at:
+                    type: string
+                    description: Comment timestamp
+                    format: date-time
+                  customer_notified:
+                    type: boolean
+                    description: Whether customer was notified
+                required:
+                - comment_id
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /tickets/{ticket_id}/sla:
+    get:
+      operationId: getTicketSla
+      summary: Get ticket SLA status
+      description: Returns the SLA tracking details for a ticket including time remaining, breach status, and response/resolution
+        SLA metrics.
+      tags:
+      - Analytics
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        description: Unique ticket id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket_id:
+                    type: string
+                    description: Ticket ID
+                  sla_policy:
+                    type: string
+                    description: Applied SLA policy
+                    example: premium-customer
+                  first_response_sla:
+                    type: object
+                    description: First response SLA
+                    properties:
+                      target_hours:
+                        type: number
+                        format: double
+                        example: 1.0
+                      actual_hours:
+                        type: number
+                        format: double
+                        example: 0.5
+                        nullable: true
+                      met:
+                        type: boolean
+                        example: true
+                  resolution_sla:
+                    type: object
+                    description: Resolution SLA
+                    properties:
+                      target_hours:
+                        type: number
+                        format: double
+                        example: 8.0
+                      remaining_hours:
+                        type: number
+                        format: double
+                        example: 3.5
+                      breached:
+                        type: boolean
+                        example: false
+                  escalation_count:
+                    type: integer
+                    description: Number of escalations
+                    example: 0
+                  sla_paused:
+                    type: boolean
+                    description: Whether SLA clock is paused (waiting on customer)
+                    example: false
+                required:
+                - ticket_id
+                - sla_policy
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /knowledge-base/search:
+    get:
+      operationId: searchKnowledgeBase
+      summary: Search knowledge base
+      description: Searches the customer support knowledge base for articles matching the query. Returns ranked results with
+        relevance scores. Used by agents during ticket handling and by customer self-service portals.
+      tags:
+      - Knowledge Base
+      parameters:
+      - name: q
+        in: query
+        required: true
+        description: Search query string
+        schema:
+          type: string
+      - name: category
+        in: query
+        required: false
+        description: Filter by article category
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        description: Max results (default 10)
+        schema:
+          type: integer
+          default: 10
+          maximum: 50
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    description: Matching knowledge base articles
+                    items:
+                      type: object
+                  total_results:
+                    type: integer
+                    description: Total matching articles
+                    example: 12
+                  query:
+                    type: string
+                    description: Search query echoed back
+                required:
+                - results
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /customers/{customer_id}/tickets:
+    get:
+      operationId: listCustomerTickets
+      summary: List customer tickets
+      description: Returns all support tickets for a specific customer. Provides agents with complete support history for
+        context during interactions.
+      tags:
+      - Tickets
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by status
+        schema:
+          type: string
+      - name: from_date
+        in: query
+        required: false
+        description: Created after date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ticket_id:
+                          type: string
+                          description: Support ticket identifier
+                          example: TKT-20250610-44218
+                        customer_id:
+                          type: string
+                          description: Customer CIF number
+                        subject:
+                          type: string
+                          description: Ticket subject
+                          example: Unable to access online banking
+                        category:
+                          type: string
+                          description: Issue category
+                          enum:
+                          - account_access
+                          - transaction
+                          - card_services
+                          - loan
+                          - fee_dispute
+                          - fraud
+                          - general_inquiry
+                          - technical
+                        priority:
+                          type: string
+                          description: Ticket priority
+                          enum:
+                          - low
+                          - medium
+                          - high
+                          - critical
+                        status:
+                          type: string
+                          description: Ticket status
+                          enum:
+                          - open
+                          - in_progress
+                          - waiting_customer
+                          - escalated
+                          - resolved
+                          - closed
+                        channel:
+                          type: string
+                          description: Contact channel
+                          enum:
+                          - phone
+                          - email
+                          - chat
+                          - branch
+                          - social_media
+                        assigned_agent:
+                          type: string
+                          description: Assigned support agent ID
+                          nullable: true
+                        created_at:
+                          type: string
+                          description: Ticket creation timestamp
+                          format: date-time
+                        sla_due_at:
+                          type: string
+                          description: SLA resolution deadline
+                          format: date-time
+                      required:
+                      - ticket_id
+                      - subject
+                      - status
+                      - priority
+                      - created_at
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /support/metrics:
+    get:
+      operationId: getSupportMetrics
+      summary: Get support metrics dashboard
+      description: Returns aggregate support metrics including ticket volume, resolution times, CSAT scores, SLA compliance
+        rates, and agent utilization. Used for operational dashboards and management reporting.
+      tags:
+      - Analytics
+      parameters:
+      - name: period
+        in: query
+        required: false
+        description: Reporting period
+        schema:
+          type: string
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - 90d
+          default: 30d
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_tickets:
+                    type: integer
+                    description: Total tickets in period
+                    example: 8421
+                  open_tickets:
+                    type: integer
+                    description: Currently open tickets
+                    example: 342
+                  avg_resolution_hours:
+                    type: number
+                    description: Average resolution time in hours
+                    format: double
+                    example: 6.2
+                  sla_compliance_rate:
+                    type: number
+                    description: SLA compliance percentage
+                    format: double
+                    example: 94.5
+                  csat_average:
+                    type: number
+                    description: Average CSAT score (1-5)
+                    format: double
+                    example: 4.3
+                  first_contact_resolution_rate:
+                    type: number
+                    description: FCR percentage
+                    format: double
+                    example: 72.8
+                  channel_distribution:
+                    type: object
+                    description: Ticket volume by channel
+                    properties:
+                      phone:
+                        type: integer
+                        example: 3200
+                      email:
+                        type: integer
+                        example: 2100
+                      chat:
+                        type: integer
+                        example: 1850
+                      branch:
+                        type: integer
+                        example: 871
+                      social_media:
+                        type: integer
+                        example: 400
+                required:
+                - total_tickets
+                - sla_compliance_rate
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

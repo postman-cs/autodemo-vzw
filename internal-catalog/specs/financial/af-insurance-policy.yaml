@@ -1,0 +1,2244 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Insurance Policy Administration API
+  description: >-
+    Comprehensive policy administration system supporting the full policy lifecycle across all personal and
+    commercial lines of business. Manage policy issuance, mid-term endorsements, cancellations (insured-requested,
+    underwriting, and non-payment), reinstatements, renewals, billing schedules, rider attachments, coverage
+    summaries, and policy document generation. Supports flat and auditable endorsement processing with premium
+    pro-ration, short-rate and pro-rata cancellation calculations, and NAIC annual statement reporting data
+    extraction.
+  version: 5.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-insurance-policy
+  x-acme-domain: insurance
+servers:
+  - url: https://af-insurance-policy.api.acmefin.com/v1
+    description: Production
+  - url: https://af-insurance-policy.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Policy Lifecycle
+    description: "Core policy operations: issuance, endorsement, cancellation, reinstatement, and renewal"
+  - name: Coverage
+    description: Coverage summaries, declarations pages, and coverage analysis
+  - name: Riders
+    description: Policy rider and optional coverage management
+  - name: Billing
+    description: Billing schedule, payment plan, and installment management
+  - name: Policy Service
+    description: Notes, document retrieval, history, and search
+paths:
+  /policies:
+    get:
+      operationId: listPolicies
+      summary: List policies
+      description: >-
+        Retrieve a paginated list of insurance policies across all lines of business. Supports filtering by
+        policy type, status, policyholder name, agent, and date ranges. Includes premium and billing status
+        summary.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: policy_type
+          in: query
+          required: false
+          description: Filter by line of business
+          schema:
+            type: "string"
+            enum:
+              - PERSONAL_AUTO
+              - HOMEOWNERS
+              - COMMERCIAL_PROPERTY
+              - GENERAL_LIABILITY
+              - WORKERS_COMP
+              - PROFESSIONAL_LIABILITY
+              - UMBRELLA
+              - BOP
+        - name: status
+          in: query
+          required: false
+          description: Filter by policy status
+          schema:
+            type: "string"
+            enum:
+              - ACTIVE
+              - CANCELLED
+              - EXPIRED
+              - PENDING
+              - SUSPENDED
+              - NON_RENEWED
+              - REINSTATED
+        - name: agent_id
+          in: query
+          required: false
+          description: Filter by servicing agent
+          schema:
+            type: "string"
+        - name: policyholder_name
+          in: query
+          required: false
+          description: Filter by named insured (partial match)
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        policy_id:
+                          type: string
+                          description: Unique policy number
+                          example: "POL-10029384"
+                        policy_type:
+                          type: string
+                          description: Line of business
+                          example: "HOMEOWNERS"
+                          enum:
+                            - PERSONAL_AUTO
+                            - HOMEOWNERS
+                            - COMMERCIAL_PROPERTY
+                            - GENERAL_LIABILITY
+                            - WORKERS_COMP
+                            - PROFESSIONAL_LIABILITY
+                            - UMBRELLA
+                            - BOP
+                        policyholder_name:
+                          type: string
+                          description: Named insured
+                          example: "Katherine M. Reynolds"
+                        effective_date:
+                          type: string
+                          format: date
+                          example: "2024-01-15"
+                        expiration_date:
+                          type: string
+                          format: date
+                          example: "2025-01-15"
+                        status:
+                          type: string
+                          example: "ACTIVE"
+                          enum:
+                            - ACTIVE
+                            - CANCELLED
+                            - EXPIRED
+                            - PENDING
+                            - SUSPENDED
+                            - NON_RENEWED
+                            - REINSTATED
+                        total_premium:
+                          type: number
+                          description: Total annual premium
+                          format: double
+                          example: 2340.0
+                        payment_plan:
+                          type: string
+                          example: "MONTHLY"
+                          enum:
+                            - PAID_IN_FULL
+                            - MONTHLY
+                            - QUARTERLY
+                            - SEMI_ANNUAL
+                            - MORTGAGEE_BILL
+                        agent_id:
+                          type: string
+                          description: Servicing agent
+                          example: "AGT-00482193"
+                        underwriter_id:
+                          type: string
+                          description: Assigned underwriter
+                          example: "UW-00291"
+                        cancel_reason:
+                          type: string
+                          description: Cancellation reason if applicable
+                          nullable: true
+                      required:
+                        - policy_id
+                        - policy_type
+                        - policyholder_name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: issuePolicy
+      summary: Issue new policy
+      description: >-
+        Issue a new insurance policy. The policy is created in PENDING status and transitions to ACTIVE on
+        the effective date. Premium is calculated based on rating factors, coverage selections, and
+        applicable discounts. The servicing agent receives commission based on the commission schedule.
+      tags:
+        - Policy Lifecycle
+      requestBody:
+        required: true
+        description: Issue new policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    policy_type:
+                      type: string
+                      description: Line of business
+                      example: "HOMEOWNERS"
+                      enum:
+                        - PERSONAL_AUTO
+                        - HOMEOWNERS
+                        - COMMERCIAL_PROPERTY
+                        - GENERAL_LIABILITY
+                        - WORKERS_COMP
+                        - PROFESSIONAL_LIABILITY
+                        - UMBRELLA
+                        - BOP
+                    policyholder_name:
+                      type: string
+                      description: Named insured
+                      example: "Katherine M. Reynolds"
+                    effective_date:
+                      type: string
+                      format: date
+                      example: "2024-01-15"
+                    payment_plan:
+                      type: string
+                      example: "MONTHLY"
+                      enum:
+                        - PAID_IN_FULL
+                        - MONTHLY
+                        - QUARTERLY
+                        - SEMI_ANNUAL
+                        - MORTGAGEE_BILL
+                    agent_id:
+                      type: string
+                      description: Servicing agent
+                      example: "AGT-00482193"
+              required:
+                - policy_type
+                - policyholder_name
+                - effective_date
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Unique policy number
+                    example: "POL-10029384"
+                  policy_type:
+                    type: string
+                    description: Line of business
+                    example: "HOMEOWNERS"
+                    enum:
+                      - PERSONAL_AUTO
+                      - HOMEOWNERS
+                      - COMMERCIAL_PROPERTY
+                      - GENERAL_LIABILITY
+                      - WORKERS_COMP
+                      - PROFESSIONAL_LIABILITY
+                      - UMBRELLA
+                      - BOP
+                  policyholder_name:
+                    type: string
+                    description: Named insured
+                    example: "Katherine M. Reynolds"
+                  effective_date:
+                    type: string
+                    format: date
+                    example: "2024-01-15"
+                  expiration_date:
+                    type: string
+                    format: date
+                    example: "2025-01-15"
+                  status:
+                    type: string
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - CANCELLED
+                      - EXPIRED
+                      - PENDING
+                      - SUSPENDED
+                      - NON_RENEWED
+                      - REINSTATED
+                  total_premium:
+                    type: number
+                    description: Total annual premium
+                    format: double
+                    example: 2340.0
+                  payment_plan:
+                    type: string
+                    example: "MONTHLY"
+                    enum:
+                      - PAID_IN_FULL
+                      - MONTHLY
+                      - QUARTERLY
+                      - SEMI_ANNUAL
+                      - MORTGAGEE_BILL
+                  agent_id:
+                    type: string
+                    description: Servicing agent
+                    example: "AGT-00482193"
+                  underwriter_id:
+                    type: string
+                    description: Assigned underwriter
+                    example: "UW-00291"
+                  cancel_reason:
+                    type: string
+                    description: Cancellation reason if applicable
+                    nullable: true
+                required:
+                  - policy_id
+                  - status
+                  - total_premium
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}:
+    get:
+      operationId: getPolicy
+      summary: Retrieve policy details
+      description: >-
+        Fetch complete policy details including named insureds, coverage selections, premium breakdown,
+        billing status, endorsement history, agent assignment, and underwriter notes.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Unique policy number
+                    example: "POL-10029384"
+                  policy_type:
+                    type: string
+                    description: Line of business
+                    example: "HOMEOWNERS"
+                    enum:
+                      - PERSONAL_AUTO
+                      - HOMEOWNERS
+                      - COMMERCIAL_PROPERTY
+                      - GENERAL_LIABILITY
+                      - WORKERS_COMP
+                      - PROFESSIONAL_LIABILITY
+                      - UMBRELLA
+                      - BOP
+                  policyholder_name:
+                    type: string
+                    description: Named insured
+                    example: "Katherine M. Reynolds"
+                  effective_date:
+                    type: string
+                    format: date
+                    example: "2024-01-15"
+                  expiration_date:
+                    type: string
+                    format: date
+                    example: "2025-01-15"
+                  status:
+                    type: string
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - CANCELLED
+                      - EXPIRED
+                      - PENDING
+                      - SUSPENDED
+                      - NON_RENEWED
+                      - REINSTATED
+                  total_premium:
+                    type: number
+                    description: Total annual premium
+                    format: double
+                    example: 2340.0
+                  payment_plan:
+                    type: string
+                    example: "MONTHLY"
+                    enum:
+                      - PAID_IN_FULL
+                      - MONTHLY
+                      - QUARTERLY
+                      - SEMI_ANNUAL
+                      - MORTGAGEE_BILL
+                  agent_id:
+                    type: string
+                    description: Servicing agent
+                    example: "AGT-00482193"
+                  underwriter_id:
+                    type: string
+                    description: Assigned underwriter
+                    example: "UW-00291"
+                  cancel_reason:
+                    type: string
+                    description: Cancellation reason if applicable
+                    nullable: true
+                required:
+                  - policy_id
+                  - policy_type
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updatePolicy
+      summary: Update policy details
+      description: >-
+        Modify non-coverage policy details such as policyholder contact information, payment plan, or
+        servicing agent. Coverage changes require an endorsement.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update policy details request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    policyholder_name:
+                      type: string
+                      description: Named insured
+                      example: "Katherine M. Reynolds"
+                    payment_plan:
+                      type: string
+                      example: "MONTHLY"
+                      enum:
+                        - PAID_IN_FULL
+                        - MONTHLY
+                        - QUARTERLY
+                        - SEMI_ANNUAL
+                        - MORTGAGEE_BILL
+                    agent_id:
+                      type: string
+                      description: Servicing agent
+                      example: "AGT-00482193"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Unique policy number
+                    example: "POL-10029384"
+                  policy_type:
+                    type: string
+                    description: Line of business
+                    example: "HOMEOWNERS"
+                    enum:
+                      - PERSONAL_AUTO
+                      - HOMEOWNERS
+                      - COMMERCIAL_PROPERTY
+                      - GENERAL_LIABILITY
+                      - WORKERS_COMP
+                      - PROFESSIONAL_LIABILITY
+                      - UMBRELLA
+                      - BOP
+                  policyholder_name:
+                    type: string
+                    description: Named insured
+                    example: "Katherine M. Reynolds"
+                  effective_date:
+                    type: string
+                    format: date
+                    example: "2024-01-15"
+                  expiration_date:
+                    type: string
+                    format: date
+                    example: "2025-01-15"
+                  status:
+                    type: string
+                    example: "ACTIVE"
+                    enum:
+                      - ACTIVE
+                      - CANCELLED
+                      - EXPIRED
+                      - PENDING
+                      - SUSPENDED
+                      - NON_RENEWED
+                      - REINSTATED
+                  total_premium:
+                    type: number
+                    description: Total annual premium
+                    format: double
+                    example: 2340.0
+                  payment_plan:
+                    type: string
+                    example: "MONTHLY"
+                    enum:
+                      - PAID_IN_FULL
+                      - MONTHLY
+                      - QUARTERLY
+                      - SEMI_ANNUAL
+                      - MORTGAGEE_BILL
+                  agent_id:
+                    type: string
+                    description: Servicing agent
+                    example: "AGT-00482193"
+                  underwriter_id:
+                    type: string
+                    description: Assigned underwriter
+                    example: "UW-00291"
+                  cancel_reason:
+                    type: string
+                    description: Cancellation reason if applicable
+                    nullable: true
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}/endorse:
+    post:
+      operationId: endorsePolicy
+      summary: Process policy endorsement
+      description: >-
+        Create a mid-term endorsement to change coverage, limits, deductibles, or other rated policy
+        attributes. The endorsement generates a pro-rated premium adjustment based on the remaining term.
+        Endorsements are applied sequentially and can be reversed.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Process policy endorsement request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    effective_date:
+                      type: string
+                      format: date
+                      example: "2024-06-15"
+                    endorsement_type:
+                      type: string
+                      description: Type of policy change
+                      example: "Coverage Change"
+                    changes:
+                      type: object
+                      description: Detailed changes being endorsed
+                    reason:
+                      type: string
+                      description: Reason for endorsement
+                      example: "Increase dwelling coverage to match updated replacement cost estimate"
+              required:
+                - effective_date
+                - endorsement_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endorsement_id:
+                    type: string
+                    example: "END-00918274"
+                  endorsement_number:
+                    type: integer
+                    description: Sequential endorsement number
+                    example: 3
+                  endorsement_type:
+                    type: string
+                    description: Type of endorsement
+                    example: "Coverage Change"
+                  effective_date:
+                    type: string
+                    format: date
+                    example: "2024-06-15"
+                  premium_change:
+                    type: number
+                    format: double
+                    example: 125.0
+                  description:
+                    type: string
+                    description: Endorsement description
+                    example: "Increased dwelling coverage from $350,000 to $400,000"
+                  status:
+                    type: string
+                    example: "APPLIED"
+                    enum:
+                      - APPLIED
+                      - PENDING
+                      - REVERSED
+                required:
+                  - endorsement_id
+                  - premium_change
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}/cancel:
+    post:
+      operationId: cancelPolicy
+      summary: Cancel policy
+      description: >-
+        Cancel an active policy. Cancellation can be insured-requested (pro-rata refund), underwriter-
+        initiated (short-rate refund with penalty), or non-payment (flat cancellation). State-specific
+        notice requirements and minimum earned premium rules are enforced automatically.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Cancel policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    cancellation_type:
+                      type: string
+                      example: "INSURED_REQUEST"
+                      enum:
+                        - INSURED_REQUEST
+                        - UNDERWRITING
+                        - NON_PAYMENT
+                        - MATERIAL_MISREPRESENTATION
+                    effective_date:
+                      type: string
+                      format: date
+                      example: "2024-09-01"
+                    reason:
+                      type: string
+                      description: Cancellation reason
+                      example: "Policyholder sold property"
+              required:
+                - cancellation_type
+                - effective_date
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cancellation_id:
+                    type: string
+                  refund_amount:
+                    type: number
+                    description: Premium refund amount
+                    format: double
+                    example: 580.0
+                  refund_method:
+                    type: string
+                    example: "PRO_RATA"
+                    enum:
+                      - PRO_RATA
+                      - SHORT_RATE
+                      - FLAT
+                  notice_required_days:
+                    type: integer
+                    description: Days of advance notice required by state regulation
+                    example: 30
+                  status:
+                    type: string
+                    example: "PENDING_EFFECTIVE_DATE"
+                required:
+                  - refund_amount
+                  - refund_method
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}/reinstate:
+    post:
+      operationId: reinstatePolicy
+      summary: Reinstate cancelled policy
+      description: >-
+        Reinstate a previously cancelled or lapsed policy. Reinstatement may require a lapse-in-coverage
+        questionnaire, updated inspection, and payment of any outstanding premium balance. Reinstatement
+        within 30 days of cancellation typically does not require re-underwriting.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Reinstate cancelled policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reinstatement_date:
+                      type: string
+                      format: date
+                      example: "2024-10-01"
+                    lapse_questionnaire_completed:
+                      type: boolean
+                      description: Whether lapse-in-coverage questionnaire was completed
+                      example: true
+                    outstanding_premium_paid:
+                      type: boolean
+                      example: true
+              required:
+                - reinstatement_date
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                  new_status:
+                    type: string
+                    example: "REINSTATED"
+                  lapse_period_days:
+                    type: integer
+                    example: 15
+                  additional_premium_due:
+                    type: number
+                    format: double
+                    example: 0.0
+                required:
+                  - policy_id
+                  - new_status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}/renew:
+    post:
+      operationId: renewPolicy
+      summary: Renew policy
+      description: >-
+        Process a policy renewal for the upcoming term. Renewal re-rates the policy using current rating
+        factors and loss experience. Premium changes exceeding thresholds trigger a renewal review by
+        underwriting.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Renew policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    renewal_term:
+                      type: string
+                      example: "12_MONTH"
+                      enum:
+                        - 6_MONTH
+                        - 12_MONTH
+                    coverage_changes:
+                      type: object
+                      description: Any coverage modifications for the renewal term
+                      nullable: true
+              required:
+                - renewal_term
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  renewal_policy_id:
+                    type: string
+                    description: New policy number for the renewal term
+                  new_premium:
+                    type: number
+                    format: double
+                  premium_change_pct:
+                    type: number
+                    description: Percentage change from expiring premium
+                    format: double
+                  status:
+                    type: string
+                    example: "RENEWED"
+                    enum:
+                      - RENEWED
+                      - PENDING_UW_REVIEW
+                required:
+                  - renewal_policy_id
+                  - new_premium
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}/coverage-summary:
+    get:
+      operationId: getCoverageSummary
+      summary: Get coverage summary
+      description: >-
+        Retrieve a consolidated summary of all coverage selections on a policy, including coverage types,
+        limits, deductibles, and any coverage restrictions or exclusions. This provides the at-a-glance
+        coverage view used by agents and customer service.
+      tags:
+        - Coverage
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                  coverages:
+                    type: array
+                    description: List of coverage selections
+                    items:
+                      type: object
+                  total_coverage_limit:
+                    type: number
+                    format: double
+                  aggregate_deductible:
+                    type: number
+                    format: double
+                  exclusions:
+                    type: array
+                    description: Active coverage exclusions
+                    items:
+                      type: string
+                required:
+                  - policy_id
+                  - coverages
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /policies/{policy_id}/billing-schedule:
+    get:
+      operationId: getBillingSchedule
+      summary: Get billing schedule
+      description: >-
+        Retrieve the billing schedule for a policy showing installment dates, amounts, payment status, and
+        outstanding balance. Supports paid-in-full, monthly, quarterly, semi-annual, and mortgagee-billed
+        payment plans.
+      tags:
+        - Billing
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                  payment_plan:
+                    type: string
+                    example: "MONTHLY"
+                    enum:
+                      - PAID_IN_FULL
+                      - MONTHLY
+                      - QUARTERLY
+                      - SEMI_ANNUAL
+                      - MORTGAGEE_BILL
+                  installments:
+                    type: array
+                    description: Scheduled installments
+                    items:
+                      type: object
+                  total_premium:
+                    type: number
+                    format: double
+                  total_paid:
+                    type: number
+                    format: double
+                  outstanding_balance:
+                    type: number
+                    format: double
+                  next_due_date:
+                    type: string
+                    format: date
+                required:
+                  - policy_id
+                  - installments
+                  - outstanding_balance
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /policies/{policy_id}/riders:
+    get:
+      operationId: listPolicyRiders2
+      summary: List policy riders
+      description: >-
+        Retrieve all optional coverage riders attached to a policy, including rider type, benefit amount,
+        additional premium, and status.
+      tags:
+        - Riders
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rider_id:
+                          type: string
+                        rider_code:
+                          type: string
+                          description: Rider form code
+                          example: "HO-61"
+                        rider_name:
+                          type: string
+                          example: "Scheduled Personal Property"
+                        benefit_amount:
+                          type: number
+                          format: double
+                        additional_premium:
+                          type: number
+                          format: double
+                        effective_date:
+                          type: string
+                          format: date
+                        status:
+                          type: string
+                          enum:
+                            - ACTIVE
+                            - EXPIRED
+                            - TERMINATED
+                      required:
+                        - rider_id
+                        - rider_name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: addRider
+      summary: Add rider to policy
+      description: >-
+        Attach an optional coverage rider to the policy. Rider addition generates a mid-term endorsement and
+        premium adjustment. Some riders require additional underwriting information.
+      tags:
+        - Riders
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Add rider to policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    rider_code:
+                      type: string
+                      description: Rider form code
+                      example: "HO-61"
+                    benefit_amount:
+                      type: number
+                      description: Rider benefit or coverage amount
+                      format: double
+                      example: 15000.0
+                    effective_date:
+                      type: string
+                      format: date
+                      example: "2024-06-15"
+                    scheduled_items:
+                      type: array
+                      description: Itemized schedule (for scheduled property riders)
+                      nullable: true
+                      items:
+                        type: object
+              required:
+                - rider_code
+                - effective_date
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rider_id:
+                    type: string
+                  additional_premium:
+                    type: number
+                    format: double
+                  endorsement_id:
+                    type: string
+                  status:
+                    type: string
+                    example: "ACTIVE"
+                required:
+                  - rider_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}/riders/{rider_id}:
+    patch:
+      operationId: updateRider
+      summary: Update policy rider
+      description: >-
+        Modify a rider's benefit amount or scheduled items. Changes generate a premium adjustment
+        endorsement.
+      tags:
+        - Riders
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: "string"
+        - name: rider_id
+          in: path
+          required: true
+          description: Rider identifier
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update policy rider request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    benefit_amount:
+                      type: number
+                      format: double
+                    scheduled_items:
+                      type: array
+                      items:
+                        type: object
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rider_id:
+                    type: string
+                  new_premium:
+                    type: number
+                    format: double
+                  endorsement_id:
+                    type: string
+                required:
+                  - rider_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: removeRider
+      summary: Remove policy rider
+      description: >-
+        Remove an optional coverage rider from the policy. Generates a premium credit endorsement for the
+        unexpired portion of the rider premium.
+      tags:
+        - Riders
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: "string"
+        - name: rider_id
+          in: path
+          required: true
+          description: Rider identifier
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Rider removed successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /policies/{policy_id}/declarations:
+    get:
+      operationId: getPolicyDeclarations
+      summary: Get declarations page
+      description: >-
+        Generate and retrieve the policy declarations page (dec page) showing all coverage details, named
+        insureds, premium breakdown, and endorsement schedule.
+      tags:
+        - Coverage
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_url:
+                    type: string
+                    format: uri
+                  policy_id:
+                    type: string
+                  named_insureds:
+                    type: array
+                    items:
+                      type: string
+                  coverages:
+                    type: array
+                    items:
+                      type: object
+                  total_premium:
+                    type: number
+                    format: double
+                  endorsement_count:
+                    type: integer
+                required:
+                  - document_url
+                  - policy_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /policies/{policy_id}/endorsements:
+    get:
+      operationId: listPolicyEndorsements
+      summary: List policy endorsements
+      description: >-
+        Retrieve the complete endorsement history for a policy, showing all mid-term changes, their
+        effective dates, premium impacts, and current status.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        endorsement_id:
+                          type: string
+                          example: "END-00918274"
+                        endorsement_number:
+                          type: integer
+                          description: Sequential endorsement number
+                          example: 3
+                        endorsement_type:
+                          type: string
+                          description: Type of endorsement
+                          example: "Coverage Change"
+                        effective_date:
+                          type: string
+                          format: date
+                          example: "2024-06-15"
+                        premium_change:
+                          type: number
+                          format: double
+                          example: 125.0
+                        description:
+                          type: string
+                          description: Endorsement description
+                          example: "Increased dwelling coverage from $350,000 to $400,000"
+                        status:
+                          type: string
+                          example: "APPLIED"
+                          enum:
+                            - APPLIED
+                            - PENDING
+                            - REVERSED
+                      required:
+                        - endorsement_id
+                        - endorsement_number
+                        - effective_date
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /policies/{policy_id}/history:
+    get:
+      operationId: getPolicyHistory
+      summary: Get policy transaction history
+      description: >-
+        Retrieve a chronological log of all policy transactions including issuance, endorsements,
+        cancellations, reinstatements, renewals, and billing events. Used for audit trails and policyholder
+        service inquiries.
+      tags:
+        - Policy Service
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    description: Chronological list of policy transactions
+                    items:
+                      type: object
+                  total_transactions:
+                    type: integer
+                  policy_age_days:
+                    type: integer
+                required:
+                  - transactions
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /policies/{policy_id}/documents:
+    get:
+      operationId: listPolicyDocuments
+      summary: List policy documents
+      description: >-
+        Retrieve all documents associated with a policy, including declarations pages, endorsements,
+        applications, binders, and correspondence.
+      tags:
+        - Policy Service
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                        document_type:
+                          type: string
+                        filename:
+                          type: string
+                        upload_date:
+                          type: string
+                          format: date-time
+                        download_url:
+                          type: string
+                          format: uri
+                      required:
+                        - document_id
+                        - document_type
+                        - filename
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /policies/{policy_id}/notes:
+    get:
+      operationId: listPolicyNotes
+      summary: List policy notes
+      description: >-
+        Retrieve diary notes and activity log entries for a policy. Notes capture underwriting decisions,
+        service interactions, billing correspondence, and claims activity.
+      tags:
+        - Policy Service
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: note_type
+          in: query
+          required: false
+          description: Filter by note category
+          schema:
+            type: "string"
+            enum:
+              - UNDERWRITING
+              - SERVICE
+              - BILLING
+              - CLAIMS
+              - GENERAL
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        note_id:
+                          type: string
+                          example: "NOTE-00482917"
+                        note_type:
+                          type: string
+                          example: "SERVICE"
+                          enum:
+                            - UNDERWRITING
+                            - SERVICE
+                            - BILLING
+                            - CLAIMS
+                            - GENERAL
+                        content:
+                          type: string
+                          description: Note content
+                          example: "Policyholder called to request additional insured endorsement for landlord."
+                        created_by:
+                          type: string
+                          example: "agent-00482"
+                        created_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - note_id
+                        - note_type
+                        - content
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: addPolicyNote
+      summary: Add policy note
+      description: >-
+        Add a diary note or activity entry to a policy record. Notes are timestamped and attributed to the
+        authenticated user. Underwriting notes trigger a diary follow-up reminder.
+      tags:
+        - Policy Service
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Add policy note request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    note_type:
+                      type: string
+                      example: "SERVICE"
+                      enum:
+                        - UNDERWRITING
+                        - SERVICE
+                        - BILLING
+                        - CLAIMS
+                        - GENERAL
+                    content:
+                      type: string
+                      description: Note content
+                      example: "Policyholder called to request additional insured endorsement for landlord."
+                    follow_up_date:
+                      type: string
+                      description: Date for diary follow-up reminder
+                      format: date
+                      nullable: true
+              required:
+                - note_type
+                - content
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note_id:
+                    type: string
+                    example: "NOTE-00482917"
+                  note_type:
+                    type: string
+                    example: "SERVICE"
+                    enum:
+                      - UNDERWRITING
+                      - SERVICE
+                      - BILLING
+                      - CLAIMS
+                      - GENERAL
+                  content:
+                    type: string
+                    description: Note content
+                    example: "Policyholder called to request additional insured endorsement for landlord."
+                  created_by:
+                    type: string
+                    example: "agent-00482"
+                  created_at:
+                    type: string
+                    format: date-time
+                required:
+                  - note_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/search:
+    post:
+      operationId: searchPolicies
+      summary: Search policies
+      description: >-
+        Full-text and structured search across all policies. Supports searching by policy number,
+        policyholder name, address, VIN, agent code, or any combination. Returns matching policies with
+        relevance scoring.
+      tags:
+        - Policy Service
+      requestBody:
+        required: true
+        description: Search policies request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    query:
+                      type: string
+                      description: Search query text
+                      example: "Katherine Reynolds"
+                    policy_type:
+                      type: string
+                      nullable: true
+                    status:
+                      type: string
+                      nullable: true
+                    date_from:
+                      type: string
+                      format: date
+                    date_to:
+                      type: string
+                      format: date
+              required:
+                - query
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                  total_matches:
+                    type: integer
+                  search_time_ms:
+                    type: integer
+                required:
+                  - results
+                  - total_matches
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}/non-renew:
+    post:
+      operationId: nonRenewPolicy
+      summary: Non-renew policy
+      description: >-
+        Issue a non-renewal notice for a policy expiring at the end of its current term. Non-renewal notices
+        must comply with state-specific advance notice requirements (typically 30-60 days). Reasons are
+        recorded for regulatory reporting.
+      tags:
+        - Policy Lifecycle
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Non-renew policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: Non-renewal reason
+                      example: "Adverse loss history — three claims in 24 months"
+                    notice_date:
+                      type: string
+                      description: Date non-renewal notice is issued
+                      format: date
+                      example: "2024-11-01"
+              required:
+                - reason
+                - notice_date
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notice_id:
+                    type: string
+                  expiration_date:
+                    type: string
+                    format: date
+                  state_notice_compliant:
+                    type: boolean
+                    description: Whether notice meets state minimum advance notice requirement
+                    example: true
+                required:
+                  - notice_id
+                  - state_notice_compliant
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

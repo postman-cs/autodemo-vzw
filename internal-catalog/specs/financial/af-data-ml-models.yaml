@@ -1,0 +1,2005 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance ML Model Registry API
+  description: >-
+    Centralized machine learning model lifecycle management covering registration, versioning, experiment
+    tracking, deployment orchestration, and real-time inference. Register models from any framework (scikit-learn,
+    XGBoost, TensorFlow, PyTorch, LightGBM), run hyperparameter experiments, deploy to production with canary and
+    A/B testing strategies, monitor prediction drift, and manage the feature store for online and offline serving.
+  version: 3.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-data-ml-models
+  x-acme-domain: data
+servers:
+  - url: https://af-data-ml-models.api.acmefin.com/v1
+    description: Production
+  - url: https://af-data-ml-models.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Models
+    description: Register, version, and manage ML model artifacts in the model registry
+  - name: Deployments
+    description: Deploy models to serving infrastructure and monitor health
+  - name: Experiments
+    description: Track ML experiments and hyperparameter optimization runs
+  - name: Feature Store
+    description: Manage computed features for model training and online serving
+  - name: Predictions
+    description: Run real-time and batch predictions against deployed models
+paths:
+  /models:
+    get:
+      operationId: listModels
+      summary: List registered models
+      description: >-
+        Retrieve all models in the registry with framework, task type, lifecycle status, and evaluation
+        metrics.
+      tags:
+        - Models
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: framework
+          in: query
+          required: false
+          description: Filter by ML framework
+          schema:
+            type: "string"
+        - name: task_type
+          in: query
+          required: false
+          description: Filter by ML task
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by lifecycle status
+          schema:
+            type: "string"
+            enum:
+              - draft
+              - staging
+              - production
+              - archived
+              - rejected
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        model_id:
+                          type: string
+                          description: "Model registry identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Model name"
+                          example: "credit-risk-scorer-v3"
+                        framework:
+                          type: string
+                          description: "ML framework"
+                          enum:
+                            - sklearn
+                            - xgboost
+                            - tensorflow
+                            - pytorch
+                            - lightgbm
+                            - custom
+                        task_type:
+                          type: string
+                          description: "ML task type"
+                          enum:
+                            - classification
+                            - regression
+                            - clustering
+                            - ranking
+                            - anomaly_detection
+                        description:
+                          type: string
+                          description: "Model purpose and methodology"
+                        owner:
+                          type: string
+                          description: "Model owner team"
+                        status:
+                          type: string
+                          description: "Registry lifecycle status"
+                          enum:
+                            - draft
+                            - staging
+                            - production
+                            - archived
+                            - rejected
+                        metrics:
+                          type: object
+                          description: "Evaluation metrics (AUC, F1, RMSE, etc.)"
+                        created_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - model_id
+                        - name
+                        - framework
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: registerModel
+      summary: Register model
+      description: >-
+        Register a new ML model in the registry with its artifact location, framework metadata, and
+        evaluation metrics.
+      tags:
+        - Models
+      requestBody:
+        required: true
+        description: Register model request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    framework:
+                      type: string
+                      enum:
+                        - sklearn
+                        - xgboost
+                        - tensorflow
+                        - pytorch
+                        - lightgbm
+                        - custom
+                    task_type:
+                      type: string
+                      enum:
+                        - classification
+                        - regression
+                        - clustering
+                        - ranking
+                        - anomaly_detection
+                    description:
+                      type: string
+                    artifact_uri:
+                      type: string
+                      description: "Model artifact storage URI"
+                    metrics:
+                      type: object
+                      description: "Evaluation metrics"
+              required:
+                - name
+                - framework
+                - task_type
+                - artifact_uri
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model_id:
+                    type: string
+                    description: "Model registry identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Model name"
+                    example: "credit-risk-scorer-v3"
+                  framework:
+                    type: string
+                    description: "ML framework"
+                    enum:
+                      - sklearn
+                      - xgboost
+                      - tensorflow
+                      - pytorch
+                      - lightgbm
+                      - custom
+                  task_type:
+                    type: string
+                    description: "ML task type"
+                    enum:
+                      - classification
+                      - regression
+                      - clustering
+                      - ranking
+                      - anomaly_detection
+                  description:
+                    type: string
+                    description: "Model purpose and methodology"
+                  owner:
+                    type: string
+                    description: "Model owner team"
+                  status:
+                    type: string
+                    description: "Registry lifecycle status"
+                    enum:
+                      - draft
+                      - staging
+                      - production
+                      - archived
+                      - rejected
+                  metrics:
+                    type: object
+                    description: "Evaluation metrics (AUC, F1, RMSE, etc.)"
+                  created_at:
+                    type: string
+                    format: date-time
+                required:
+                  - model_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /models/{model_id}:
+    get:
+      operationId: getModel
+      summary: Get model details
+      description: >-
+        Retrieve complete model metadata including version history, evaluation metrics, deployment status,
+        and lineage.
+      tags:
+        - Models
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          description: Unique model id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model_id:
+                    type: string
+                    description: "Model registry identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Model name"
+                    example: "credit-risk-scorer-v3"
+                  framework:
+                    type: string
+                    description: "ML framework"
+                    enum:
+                      - sklearn
+                      - xgboost
+                      - tensorflow
+                      - pytorch
+                      - lightgbm
+                      - custom
+                  task_type:
+                    type: string
+                    description: "ML task type"
+                    enum:
+                      - classification
+                      - regression
+                      - clustering
+                      - ranking
+                      - anomaly_detection
+                  description:
+                    type: string
+                    description: "Model purpose and methodology"
+                  owner:
+                    type: string
+                    description: "Model owner team"
+                  status:
+                    type: string
+                    description: "Registry lifecycle status"
+                    enum:
+                      - draft
+                      - staging
+                      - production
+                      - archived
+                      - rejected
+                  metrics:
+                    type: object
+                    description: "Evaluation metrics (AUC, F1, RMSE, etc.)"
+                  created_at:
+                    type: string
+                    format: date-time
+                required:
+                  - model_id
+                  - name
+                  - framework
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateModel
+      summary: Update model metadata
+      description: Update model description, owner, or promote to the next lifecycle stage.
+      tags:
+        - Models
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          description: Unique model id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update model metadata request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    description:
+                      type: string
+                    owner:
+                      type: string
+                    status:
+                      type: string
+                      enum:
+                        - staging
+                        - production
+                        - archived
+                        - rejected
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model_id:
+                    type: string
+                    description: "Model registry identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Model name"
+                    example: "credit-risk-scorer-v3"
+                  framework:
+                    type: string
+                    description: "ML framework"
+                    enum:
+                      - sklearn
+                      - xgboost
+                      - tensorflow
+                      - pytorch
+                      - lightgbm
+                      - custom
+                  task_type:
+                    type: string
+                    description: "ML task type"
+                    enum:
+                      - classification
+                      - regression
+                      - clustering
+                      - ranking
+                      - anomaly_detection
+                  description:
+                    type: string
+                    description: "Model purpose and methodology"
+                  owner:
+                    type: string
+                    description: "Model owner team"
+                  status:
+                    type: string
+                    description: "Registry lifecycle status"
+                    enum:
+                      - draft
+                      - staging
+                      - production
+                      - archived
+                      - rejected
+                  metrics:
+                    type: object
+                    description: "Evaluation metrics (AUC, F1, RMSE, etc.)"
+                  created_at:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteModel
+      summary: Delete model
+      description: >-
+        Remove a model and all versions from the registry. Active deployments must be terminated first.
+      tags:
+        - Models
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          description: Unique model id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /models/{model_id}/versions:
+    get:
+      operationId: listModelVersions
+      summary: List model versions
+      description: Retrieve all versions of a registered model with metrics comparison.
+      tags:
+        - Models
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version:
+                          type: integer
+                          description: "Version number"
+                        artifact_uri:
+                          type: string
+                        metrics:
+                          type: object
+                        status:
+                          type: string
+                          enum:
+                            - draft
+                            - staging
+                            - production
+                            - archived
+                        created_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - version
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createModelVersion
+      summary: Create model version
+      description: Publish a new version of an existing model with updated artifacts and metrics.
+      tags:
+        - Models
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          description: Unique model id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Create model version request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    artifact_uri:
+                      type: string
+                      description: "New artifact URI"
+                    metrics:
+                      type: object
+                    release_notes:
+                      type: string
+              required:
+                - artifact_uri
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                  model_id:
+                    type: string
+                  status:
+                    type: string
+                required:
+                  - version
+                  - model_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /models/{model_id}/deploy:
+    post:
+      operationId: deployModel
+      summary: Deploy model
+      description: >-
+        Deploy a model version to the serving infrastructure. Supports canary, blue-green, and shadow
+        deployment strategies.
+      tags:
+        - Models
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          description: Unique model id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Deploy model request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    version:
+                      type: integer
+                      description: "Model version to deploy"
+                    environment:
+                      type: string
+                      enum:
+                        - staging
+                        - production
+                        - shadow
+                    strategy:
+                      type: string
+                      description: "Deployment strategy"
+                      enum:
+                        - canary
+                        - blue_green
+                        - rolling
+                        - shadow
+                    replicas:
+                      type: integer
+                      description: "Number of serving replicas"
+                      default: 2
+              required:
+                - version
+                - environment
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deployment_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                  endpoint_url:
+                    type: string
+                required:
+                  - deployment_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /deployments:
+    get:
+      operationId: listDeployments
+      summary: List model deployments
+      description: >-
+        Retrieve all active model deployments with health metrics, latency, and throughput.
+      tags:
+        - Deployments
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: environment
+          in: query
+          required: false
+          description: Filter by deployment environment
+          schema:
+            type: "string"
+            enum:
+              - staging
+              - production
+              - shadow
+        - name: status
+          in: query
+          required: false
+          description: Filter by deployment status
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        deployment_id:
+                          type: string
+                          description: "Deployment identifier"
+                          format: uuid
+                          readOnly: true
+                        model_id:
+                          type: string
+                          format: uuid
+                        model_version:
+                          type: integer
+                          description: "Deployed model version"
+                        environment:
+                          type: string
+                          description: "Target deployment environment"
+                          enum:
+                            - staging
+                            - production
+                            - shadow
+                        endpoint_url:
+                          type: string
+                          description: "Prediction endpoint URL"
+                        status:
+                          type: string
+                          description: "Deployment health status"
+                          enum:
+                            - deploying
+                            - active
+                            - degraded
+                            - draining
+                            - terminated
+                        replicas:
+                          type: integer
+                          description: "Number of serving replicas"
+                        avg_latency_ms:
+                          type: number
+                          description: "Average prediction latency"
+                          format: double
+                        requests_per_minute:
+                          type: integer
+                          description: "Current throughput"
+                        deployed_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - deployment_id
+                        - model_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deployments/{deployment_id}:
+    get:
+      operationId: getDeployment
+      summary: Get deployment details
+      description: >-
+        Retrieve deployment configuration, health status, traffic metrics, and serving logs.
+      tags:
+        - Deployments
+      parameters:
+        - name: deployment_id
+          in: path
+          required: true
+          description: Unique deployment id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deployment_id:
+                    type: string
+                    description: "Deployment identifier"
+                    format: uuid
+                    readOnly: true
+                  model_id:
+                    type: string
+                    format: uuid
+                  model_version:
+                    type: integer
+                    description: "Deployed model version"
+                  environment:
+                    type: string
+                    description: "Target deployment environment"
+                    enum:
+                      - staging
+                      - production
+                      - shadow
+                  endpoint_url:
+                    type: string
+                    description: "Prediction endpoint URL"
+                  status:
+                    type: string
+                    description: "Deployment health status"
+                    enum:
+                      - deploying
+                      - active
+                      - degraded
+                      - draining
+                      - terminated
+                  replicas:
+                    type: integer
+                    description: "Number of serving replicas"
+                  avg_latency_ms:
+                    type: number
+                    description: "Average prediction latency"
+                    format: double
+                  requests_per_minute:
+                    type: integer
+                    description: "Current throughput"
+                  deployed_at:
+                    type: string
+                    format: date-time
+                required:
+                  - deployment_id
+                  - model_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: terminateDeployment
+      summary: Terminate deployment
+      description: >-
+        Drain traffic and shut down a model deployment. Active requests complete before termination.
+      tags:
+        - Deployments
+      parameters:
+        - name: deployment_id
+          in: path
+          required: true
+          description: Unique deployment id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deployments/{deployment_id}/metrics:
+    get:
+      operationId: getDeploymentMetrics
+      summary: Get deployment metrics
+      description: >-
+        Retrieve real-time serving metrics including latency percentiles, throughput, error rates, and
+        prediction distribution.
+      tags:
+        - Deployments
+      parameters:
+        - name: deployment_id
+          in: path
+          required: true
+          description: Unique deployment id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deployment_id:
+                    type: string
+                  latency_p50_ms:
+                    type: number
+                    format: double
+                  latency_p95_ms:
+                    type: number
+                    format: double
+                  latency_p99_ms:
+                    type: number
+                    format: double
+                  requests_per_minute:
+                    type: integer
+                  error_rate:
+                    type: number
+                    format: double
+                  prediction_drift_score:
+                    type: number
+                    description: "PSI-based drift score (>0.2 = significant drift)"
+                    format: double
+                required:
+                  - deployment_id
+                  - latency_p50_ms
+                  - requests_per_minute
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /deployments/{deployment_id}/ab-test:
+    post:
+      operationId: configureABTest
+      summary: Configure A/B test
+      description: >-
+        Set up an A/B test between two model versions on the same deployment endpoint with configurable
+        traffic splits.
+      tags:
+        - Deployments
+      parameters:
+        - name: deployment_id
+          in: path
+          required: true
+          description: Unique deployment id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Configure A/B test request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    variant_a_version:
+                      type: integer
+                      description: "Model version for variant A"
+                    variant_b_version:
+                      type: integer
+                      description: "Model version for variant B"
+                    traffic_split_percent:
+                      type: integer
+                      description: "Percentage of traffic routed to variant B"
+                      minimum: 1
+                      maximum: 99
+                    success_metric:
+                      type: string
+                      description: "Metric to evaluate (e.g. accuracy, AUC)"
+              required:
+                - variant_a_version
+                - variant_b_version
+                - traffic_split_percent
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ab_test_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum:
+                      - initializing
+                      - running
+                  endpoint_url:
+                    type: string
+                required:
+                  - ab_test_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /experiments:
+    get:
+      operationId: listExperiments
+      summary: List experiments
+      description: Retrieve ML experiments with run counts, best metrics, and completion status.
+      tags:
+        - Experiments
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        experiment_id:
+                          type: string
+                          description: "Experiment identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Experiment name"
+                          example: "credit-risk-hyperparameter-search"
+                        model_id:
+                          type: string
+                          format: uuid
+                        status:
+                          type: string
+                          description: "Experiment status"
+                          enum:
+                            - running
+                            - completed
+                            - failed
+                        total_runs:
+                          type: integer
+                          description: "Number of trial runs"
+                        best_metric_value:
+                          type: number
+                          description: "Best metric value across runs"
+                          format: double
+                        best_metric_name:
+                          type: string
+                          description: "Primary optimization metric"
+                      required:
+                        - experiment_id
+                        - name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createExperiment
+      summary: Create experiment
+      description: Start a new hyperparameter optimization experiment for a registered model.
+      tags:
+        - Experiments
+      requestBody:
+        required: true
+        description: Create experiment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    model_id:
+                      type: string
+                      format: uuid
+                    search_space:
+                      type: object
+                      description: "Hyperparameter search space definition"
+                    optimization_metric:
+                      type: string
+                      description: "Metric to optimize"
+                    max_runs:
+                      type: integer
+                      description: "Maximum number of trial runs"
+              required:
+                - name
+                - model_id
+                - optimization_metric
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  experiment_id:
+                    type: string
+                    description: "Experiment identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Experiment name"
+                    example: "credit-risk-hyperparameter-search"
+                  model_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    description: "Experiment status"
+                    enum:
+                      - running
+                      - completed
+                      - failed
+                  total_runs:
+                    type: integer
+                    description: "Number of trial runs"
+                  best_metric_value:
+                    type: number
+                    description: "Best metric value across runs"
+                    format: double
+                  best_metric_name:
+                    type: string
+                    description: "Primary optimization metric"
+                required:
+                  - experiment_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /experiments/{experiment_id}:
+    get:
+      operationId: getExperiment
+      summary: Get experiment details
+      description: >-
+        Retrieve experiment configuration, all trial runs with parameters, and convergence analysis.
+      tags:
+        - Experiments
+      parameters:
+        - name: experiment_id
+          in: path
+          required: true
+          description: Unique experiment id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  experiment_id:
+                    type: string
+                    description: "Experiment identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Experiment name"
+                    example: "credit-risk-hyperparameter-search"
+                  model_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    description: "Experiment status"
+                    enum:
+                      - running
+                      - completed
+                      - failed
+                  total_runs:
+                    type: integer
+                    description: "Number of trial runs"
+                  best_metric_value:
+                    type: number
+                    description: "Best metric value across runs"
+                    format: double
+                  best_metric_name:
+                    type: string
+                    description: "Primary optimization metric"
+                required:
+                  - experiment_id
+                  - name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /feature-store/features:
+    get:
+      operationId: listFeatures
+      summary: List features
+      description: >-
+        Retrieve all feature definitions in the feature store with freshness, entity, and serving status.
+      tags:
+        - Feature Store
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: entity
+          in: query
+          required: false
+          description: Filter by entity type
+          schema:
+            type: "string"
+        - name: is_online
+          in: query
+          required: false
+          description: Filter by online serving availability
+          schema:
+            type: "boolean"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        feature_id:
+                          type: string
+                          description: "Feature identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Feature name"
+                          example: "customer_avg_transaction_30d"
+                        entity:
+                          type: string
+                          description: "Entity this feature describes"
+                          example: "customer"
+                        dtype:
+                          type: string
+                          description: "Feature data type"
+                          enum:
+                            - float64
+                            - int64
+                            - string
+                            - boolean
+                            - timestamp
+                        description:
+                          type: string
+                          description: "Feature business meaning and computation logic"
+                        source_table:
+                          type: string
+                          description: "Source table for materialization"
+                        freshness_sla_hours:
+                          type: integer
+                          description: "Maximum allowed staleness"
+                        is_online:
+                          type: boolean
+                          description: "Whether available in online store"
+                      required:
+                        - feature_id
+                        - name
+                        - entity
+                        - dtype
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createFeature
+      summary: Register feature
+      description: >-
+        Register a new computed feature with its source table, aggregation logic, and freshness SLA.
+      tags:
+        - Feature Store
+      requestBody:
+        required: true
+        description: Register feature request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    entity:
+                      type: string
+                    dtype:
+                      type: string
+                      enum:
+                        - float64
+                        - int64
+                        - string
+                        - boolean
+                        - timestamp
+                    description:
+                      type: string
+                    source_table:
+                      type: string
+                    computation_sql:
+                      type: string
+                      description: "SQL expression for materialization"
+                    freshness_sla_hours:
+                      type: integer
+                    is_online:
+                      type: boolean
+                      default: false
+              required:
+                - name
+                - entity
+                - dtype
+                - source_table
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  feature_id:
+                    type: string
+                    description: "Feature identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Feature name"
+                    example: "customer_avg_transaction_30d"
+                  entity:
+                    type: string
+                    description: "Entity this feature describes"
+                    example: "customer"
+                  dtype:
+                    type: string
+                    description: "Feature data type"
+                    enum:
+                      - float64
+                      - int64
+                      - string
+                      - boolean
+                      - timestamp
+                  description:
+                    type: string
+                    description: "Feature business meaning and computation logic"
+                  source_table:
+                    type: string
+                    description: "Source table for materialization"
+                  freshness_sla_hours:
+                    type: integer
+                    description: "Maximum allowed staleness"
+                  is_online:
+                    type: boolean
+                    description: "Whether available in online store"
+                required:
+                  - feature_id
+                  - name
+                  - entity
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /feature-store/features/{feature_id}:
+    get:
+      operationId: getFeature
+      summary: Get feature details
+      description: >-
+        Retrieve feature definition with computation logic, materialization status, and staleness metrics.
+      tags:
+        - Feature Store
+      parameters:
+        - name: feature_id
+          in: path
+          required: true
+          description: Unique feature id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  feature_id:
+                    type: string
+                    description: "Feature identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Feature name"
+                    example: "customer_avg_transaction_30d"
+                  entity:
+                    type: string
+                    description: "Entity this feature describes"
+                    example: "customer"
+                  dtype:
+                    type: string
+                    description: "Feature data type"
+                    enum:
+                      - float64
+                      - int64
+                      - string
+                      - boolean
+                      - timestamp
+                  description:
+                    type: string
+                    description: "Feature business meaning and computation logic"
+                  source_table:
+                    type: string
+                    description: "Source table for materialization"
+                  freshness_sla_hours:
+                    type: integer
+                    description: "Maximum allowed staleness"
+                  is_online:
+                    type: boolean
+                    description: "Whether available in online store"
+                required:
+                  - feature_id
+                  - name
+                  - entity
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /predictions:
+    post:
+      operationId: runPrediction
+      summary: Run prediction
+      description: >-
+        Execute a real-time prediction against a deployed model. Features are automatically retrieved from
+        the online store if configured.
+      tags:
+        - Predictions
+      requestBody:
+        required: true
+        description: Run prediction request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    model_id:
+                      type: string
+                      description: "Target model"
+                      format: uuid
+                    version:
+                      type: integer
+                      description: "Model version (omit for latest production)"
+                    input_features:
+                      type: object
+                      description: "Input feature values for prediction"
+                    explain:
+                      type: boolean
+                      description: "Include SHAP-based feature attributions"
+                      default: false
+              required:
+                - model_id
+                - input_features
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prediction_id:
+                    type: string
+                    format: uuid
+                  prediction:
+                    type: object
+                    description: "Model prediction output"
+                  confidence:
+                    type: number
+                    description: "Prediction confidence score"
+                    format: double
+                  explanations:
+                    type: object
+                    description: "SHAP feature attributions (if requested)"
+                required:
+                  - prediction_id
+                  - prediction
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

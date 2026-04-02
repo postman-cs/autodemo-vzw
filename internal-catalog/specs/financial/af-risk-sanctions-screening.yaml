@@ -1,0 +1,1135 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Sanctions Screening API
+  description: >-
+    Real-time and batch sanctions screening platform supporting OFAC SDN list, OFAC Consolidated Sanctions List,
+    EU/UK/UN sanctions lists, and FATF high-risk jurisdiction screening. Provides fuzzy name matching with
+    configurable thresholds, match disposition workflow, false positive management, and integration with sanctions
+    list update feeds for continuous compliance with OFAC requirements.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-risk-sanctions-screening
+  x-acme-domain: risk
+servers:
+  - url: https://af-risk-sanctions-screening.api.acmefin.com/v1
+    description: Production
+  - url: https://af-risk-sanctions-screening.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Screening
+    description: Real-time and batch sanctions name screening
+  - name: Match Resolution
+    description: Match review, disposition, and false positive management
+  - name: List Management
+    description: Sanctions list inventory and update tracking
+paths:
+  /sanctions/screen:
+    post:
+      operationId: screenSanctions
+      summary: Screen against sanctions lists
+      description: >-
+        Perform real-time sanctions screening against configured sanctions lists (OFAC SDN, OFAC
+        Consolidated, EU, UK, UN, FATF). Uses phonetic and fuzzy matching algorithms with configurable match
+        thresholds. Designed for inline customer onboarding and transaction screening with sub-second
+        response time.
+      tags:
+        - Screening
+      requestBody:
+        required: true
+        description: Screen against sanctions lists request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Name to screen"
+                      example: "Al-Rashid Trading Company"
+                    name_type:
+                      type: string
+                      description: "Name type"
+                      example: "entity"
+                      enum:
+                        - individual
+                        - entity
+                        - vessel
+                        - aircraft
+                    country:
+                      type: string
+                      description: "Country for geographic filtering"
+                      example: "IR"
+                    date_of_birth:
+                      type: string
+                      description: "Date of birth for individuals"
+                      format: date
+                    id_number:
+                      type: string
+                      description: "Government ID or passport number"
+                    lists:
+                      type: array
+                      description: "Specific lists to screen against (empty = all)"
+                      items:
+                        type: string
+                        example: "ofac_sdn"
+                    match_threshold:
+                      type: integer
+                      description: "Minimum match score threshold (0-100)"
+                      example: 80
+                      minimum: 0
+                      maximum: 100
+              required:
+                - name
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  screening_id:
+                    type: string
+                    description: "Screening identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  match_count:
+                    type: integer
+                    description: "Number of matches found"
+                    example: 2
+                  highest_score:
+                    type: integer
+                    description: "Highest match score"
+                    example: 92
+                    minimum: 0
+                    maximum: 100
+                  matches:
+                    type: array
+                    description: "Screening matches"
+                    items:
+                      type: object
+                  screened_at:
+                    type: string
+                    description: "Screening timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  screening_time_ms:
+                    type: integer
+                    description: "Screening latency in milliseconds"
+                    example: 85
+                required:
+                  - screening_id
+                  - match_count
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sanctions/batch:
+    post:
+      operationId: batchScreenSanctions
+      summary: Batch sanctions screening
+      description: >-
+        Submit a batch of names for asynchronous sanctions screening. Suitable for periodic portfolio-wide
+        rescreening, customer list remediation, and correspondent bank screening. Returns a batch job ID for
+        status polling. Results are available via the matches endpoint after processing.
+      tags:
+        - Screening
+      requestBody:
+        required: true
+        description: Batch sanctions screening request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    batch_name:
+                      type: string
+                      description: "Batch job name"
+                      example: "Q2-2025-portfolio-rescreen"
+                    entries:
+                      type: array
+                      description: "Names and entities to screen"
+                      items:
+                        type: object
+                    lists:
+                      type: array
+                      description: "Lists to screen against"
+                      items:
+                        type: string
+                    match_threshold:
+                      type: integer
+                      description: "Match score threshold"
+                      example: 75
+              required:
+                - entries
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: "Batch job identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  total_entries:
+                    type: integer
+                    description: "Total names submitted"
+                    example: 15420
+                  status:
+                    type: string
+                    description: "Batch processing status"
+                    example: "queued"
+                    enum:
+                      - queued
+                      - processing
+                      - complete
+                      - failed
+                  estimated_completion:
+                    type: string
+                    description: "Estimated completion time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  submitted_at:
+                    type: string
+                    description: "Batch submission timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - batch_id
+                  - total_entries
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sanctions/matches:
+    get:
+      operationId: listSanctionsMatches
+      summary: List sanctions matches
+      description: >-
+        Retrieve sanctions screening matches pending review, confirmed matches, and false positives.
+        Supports the OFAC compliance disposition workflow and match investigation queue management.
+      tags:
+        - Match Resolution
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by disposition status
+          schema:
+            type: "string"
+            enum:
+              - pending_review
+              - confirmed_match
+              - false_positive
+              - escalated
+        - name: matched_list
+          in: query
+          required: false
+          description: Filter by sanctions list
+          schema:
+            type: "string"
+            enum:
+              - ofac_sdn
+              - ofac_consolidated
+              - eu_sanctions
+              - un_sanctions
+              - uk_sanctions
+        - name: min_score
+          in: query
+          required: false
+          description: Minimum match score
+          schema:
+            type: "integer"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        match_id:
+                          type: string
+                          description: "Unique match identifier"
+                          format: uuid
+                          example: "550e8400-e29b-41d4-a716-446655440000"
+                        screened_name:
+                          type: string
+                          description: "Name that was screened"
+                          example: "Al-Rashid Trading Company"
+                        matched_list:
+                          type: string
+                          description: "Sanctions list matched"
+                          example: "ofac_sdn"
+                          enum:
+                            - ofac_sdn
+                            - ofac_consolidated
+                            - eu_sanctions
+                            - un_sanctions
+                            - uk_sanctions
+                            - fatf_high_risk
+                        matched_entry:
+                          type: string
+                          description: "Matched list entry name"
+                          example: "AL-RASHID TRADING CO"
+                        match_score:
+                          type: integer
+                          description: "Fuzzy match confidence score"
+                          example: 92
+                          minimum: 0
+                          maximum: 100
+                        match_type:
+                          type: string
+                          description: "Match classification"
+                          example: "strong"
+                          enum:
+                            - exact
+                            - strong
+                            - partial
+                            - weak
+                        status:
+                          type: string
+                          description: "Match disposition status"
+                          example: "pending_review"
+                          enum:
+                            - pending_review
+                            - confirmed_match
+                            - false_positive
+                            - escalated
+                        screened_at:
+                          type: string
+                          description: "Screening timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        list_entry_id:
+                          type: string
+                          description: "Sanctions list entry identifier (e.g., OFAC SDN number)"
+                          example: "SDN-12847"
+                      required:
+                        - match_id
+                        - match_score
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /sanctions/matches/{match_id}:
+    get:
+      operationId: getSanctionsMatch
+      summary: Get match details
+      description: >-
+        Retrieve complete sanctions match details including the screened name, matched list entry, match
+        algorithm details, SDN program information, and investigation history.
+      tags:
+        - Match Resolution
+      parameters:
+        - name: match_id
+          in: path
+          required: true
+          description: Unique match id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  match_id:
+                    type: string
+                    description: "Unique match identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  screened_name:
+                    type: string
+                    description: "Name that was screened"
+                    example: "Al-Rashid Trading Company"
+                  matched_list:
+                    type: string
+                    description: "Sanctions list matched"
+                    example: "ofac_sdn"
+                    enum:
+                      - ofac_sdn
+                      - ofac_consolidated
+                      - eu_sanctions
+                      - un_sanctions
+                      - uk_sanctions
+                      - fatf_high_risk
+                  matched_entry:
+                    type: string
+                    description: "Matched list entry name"
+                    example: "AL-RASHID TRADING CO"
+                  match_score:
+                    type: integer
+                    description: "Fuzzy match confidence score"
+                    example: 92
+                    minimum: 0
+                    maximum: 100
+                  match_type:
+                    type: string
+                    description: "Match classification"
+                    example: "strong"
+                    enum:
+                      - exact
+                      - strong
+                      - partial
+                      - weak
+                  status:
+                    type: string
+                    description: "Match disposition status"
+                    example: "pending_review"
+                    enum:
+                      - pending_review
+                      - confirmed_match
+                      - false_positive
+                      - escalated
+                  screened_at:
+                    type: string
+                    description: "Screening timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  list_entry_id:
+                    type: string
+                    description: "Sanctions list entry identifier (e.g., OFAC SDN number)"
+                    example: "SDN-12847"
+                required:
+                  - match_id
+                  - match_score
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: dispositionSanctionsMatch
+      summary: Disposition sanctions match
+      description: >-
+        Record the disposition for a sanctions screening match. Confirmed matches trigger blocking/rejection
+        per OFAC requirements. False positive dispositions are recorded with justification for audit trail.
+      tags:
+        - Match Resolution
+      parameters:
+        - name: match_id
+          in: path
+          required: true
+          description: Unique match id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Disposition sanctions match request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    status:
+                      type: string
+                      description: "Disposition status"
+                      enum:
+                        - confirmed_match
+                        - false_positive
+                        - escalated
+                    disposition_reason:
+                      type: string
+                      description: "Justification for disposition"
+                    reviewer:
+                      type: string
+                      description: "Reviewing analyst"
+                      example: "sanctions-analyst-04"
+                    blocking_action_taken:
+                      type: boolean
+                      description: "Whether blocking/rejection was applied"
+              required:
+                - status
+                - disposition_reason
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  match_id:
+                    type: string
+                    description: "Unique match identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  screened_name:
+                    type: string
+                    description: "Name that was screened"
+                    example: "Al-Rashid Trading Company"
+                  matched_list:
+                    type: string
+                    description: "Sanctions list matched"
+                    example: "ofac_sdn"
+                    enum:
+                      - ofac_sdn
+                      - ofac_consolidated
+                      - eu_sanctions
+                      - un_sanctions
+                      - uk_sanctions
+                      - fatf_high_risk
+                  matched_entry:
+                    type: string
+                    description: "Matched list entry name"
+                    example: "AL-RASHID TRADING CO"
+                  match_score:
+                    type: integer
+                    description: "Fuzzy match confidence score"
+                    example: 92
+                    minimum: 0
+                    maximum: 100
+                  match_type:
+                    type: string
+                    description: "Match classification"
+                    example: "strong"
+                    enum:
+                      - exact
+                      - strong
+                      - partial
+                      - weak
+                  status:
+                    type: string
+                    description: "Match disposition status"
+                    example: "pending_review"
+                    enum:
+                      - pending_review
+                      - confirmed_match
+                      - false_positive
+                      - escalated
+                  screened_at:
+                    type: string
+                    description: "Screening timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  list_entry_id:
+                    type: string
+                    description: "Sanctions list entry identifier (e.g., OFAC SDN number)"
+                    example: "SDN-12847"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sanctions/lists:
+    get:
+      operationId: listSanctionsLists
+      summary: List sanctions lists
+      description: >-
+        Retrieve the inventory of sanctions lists configured in the screening system including OFAC SDN,
+        OFAC Consolidated, EU, UK, UN, and FATF lists. Shows list version, last update date, and entry
+        counts.
+      tags:
+        - List Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        list_id:
+                          type: string
+                          description: "List identifier"
+                          example: "ofac_sdn"
+                        list_name:
+                          type: string
+                          description: "List display name"
+                          example: "OFAC Specially Designated Nationals"
+                        source:
+                          type: string
+                          description: "List source authority"
+                          example: "U.S. Department of the Treasury"
+                        entry_count:
+                          type: integer
+                          description: "Total entries in list"
+                          example: 12847
+                        last_updated:
+                          type: string
+                          description: "Last list update applied"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        update_frequency:
+                          type: string
+                          description: "Update check frequency"
+                          example: "Every 30 minutes"
+                        version:
+                          type: string
+                          description: "Current list version"
+                          example: "2025-06-15-v2"
+                      required:
+                        - list_id
+                        - list_name
+                        - entry_count
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /sanctions/lists/{list_id}:
+    get:
+      operationId: getSanctionsList
+      summary: Get sanctions list details
+      description: >-
+        Retrieve detailed information about a specific sanctions list including update history, entry
+        statistics by program, and configuration settings.
+      tags:
+        - List Management
+      parameters:
+        - name: list_id
+          in: path
+          required: true
+          description: Unique list id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  list_id:
+                    type: string
+                    description: "List identifier"
+                    example: "ofac_sdn"
+                  list_name:
+                    type: string
+                    description: "List name"
+                    example: "OFAC Specially Designated Nationals"
+                  entry_count:
+                    type: integer
+                    description: "Total entries"
+                    example: 12847
+                  programs:
+                    type: array
+                    description: "Sanctions programs in list (e.g., SDGT, IRAN, CUBA)"
+                    items:
+                      type: string
+                      example: "SDGT"
+                  last_updated:
+                    type: string
+                    description: "Last update"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  update_history:
+                    type: array
+                    description: "Recent update log"
+                    items:
+                      type: object
+                required:
+                  - list_id
+                  - list_name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /sanctions/false-positives:
+    post:
+      operationId: recordFalsePositive
+      summary: Record false positive pattern
+      description: >-
+        Record a recurring false positive pattern to improve future screening accuracy. Creates a
+        suppression rule that automatically dispositions matching future hits as false positives, subject to
+        periodic review. Helps reduce OFAC screening noise while maintaining compliance.
+      tags:
+        - Match Resolution
+      requestBody:
+        required: true
+        description: Record false positive pattern request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    screened_name:
+                      type: string
+                      description: "Name generating false positives"
+                      example: "Al-Rashid Holdings Inc"
+                    matched_entry:
+                      type: string
+                      description: "Matched SDN entry name"
+                      example: "AL-RASHID TRADING CO"
+                    matched_list:
+                      type: string
+                      description: "Sanctions list"
+                      example: "ofac_sdn"
+                    justification:
+                      type: string
+                      description: "False positive justification"
+                      example: "Different entity - US-incorporated holding company, no connection to SDN entry"
+                    approved_by:
+                      type: string
+                      description: "OFAC compliance officer who approved suppression"
+                      example: "ofac-officer-01"
+                    review_frequency:
+                      type: string
+                      description: "Suppression review frequency"
+                      example: "quarterly"
+                      enum:
+                        - monthly
+                        - quarterly
+                        - semi_annual
+                        - annual
+              required:
+                - screened_name
+                - matched_entry
+                - justification
+                - approved_by
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suppression_id:
+                    type: string
+                    description: "Suppression rule identifier"
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  active:
+                    type: boolean
+                    description: "Suppression is active"
+                    example: true
+                  next_review_date:
+                    type: string
+                    description: "Next scheduled review"
+                    format: date
+                    example: "2025-09-30"
+                  created_at:
+                    type: string
+                    description: "Suppression creation timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - suppression_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

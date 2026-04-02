@@ -1,0 +1,1095 @@
+openapi: 3.0.3
+info:
+  title: VZW Campus Device Registry API
+  description: >-
+    Provides enterprise-grade endpoint onboarding, SIM and eSIM binding, and capability inventory management
+    for private 5G campus networks. This API manages device identity, ownership, lifecycle controls, trust posture,
+    and policy-based connectivity activation so network operators can safely onboard and operate heterogeneous
+    campus endpoints at scale.
+  version: 1.0.0
+  contact:
+    name: Verizon Campus API Support
+    email: campus-api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms
+  x-verizon-catalog-id: vzw-campus-device-registry-api
+  x-verizon-domain: campus
+servers:
+  - url: https://vzw-campus-device-registry-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-campus-device-registry-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Devices
+    description: Register, query, and maintain campus endpoint inventory records
+  - name: SIM Bindings
+    description: Bind or unbind SIM and eSIM subscriptions for enrolled endpoints
+  - name: Device Profiles
+    description: Enumerate approved endpoint profile templates and capability bundles
+paths:
+  /v1/devices:
+    post:
+      operationId: registerDevice
+      summary: Register endpoint
+      description: >-
+        Registers a new endpoint in the campus device registry using hardware identity and a vetted device profile.
+        During registration, the platform validates IMEI and EID formats, applies profile defaults, and creates an
+        auditable enrollment record. Devices remain in PENDING_BINDING state until a SIM or eSIM binding is activated.
+      tags:
+        - Devices
+      requestBody:
+        required: true
+        description: Device registration payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRegistrationRequest"
+            example:
+              campus_id: "campus-chi-01"
+              imei: "356938035643809"
+              eid: "89049032004001234567012345678901"
+              serial_number: "AGV-ROVER-0173"
+              ownership:
+                owner_type: ENTERPRISE
+                owner_id: "ops-team-west"
+              device_profile:
+                profile_id: "agv"
+                firmware_channel: STABLE
+                compliance_state: ATTESTED
+              metadata:
+                asset_tag: "WH-AGV-0173"
+                location_hint: "warehouse-zone-b"
+                cost_center: "supply-chain-ops"
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listDevices
+      summary: List registered devices
+      description: >-
+        Returns a cursor-paginated inventory of enrolled endpoints filtered by campus and lifecycle criteria.
+        Use this endpoint to drive fleet dashboards, ownership audits, and operational workflows that need
+        deterministic pagination under high write throughput.
+      tags:
+        - Devices
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/CampusId"
+        - $ref: "#/components/parameters/LifecycleState"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceListResponse"
+              example:
+                data:
+                  - device_id: "dev-2f2f31c7"
+                    campus_id: "campus-chi-01"
+                    imei: "356938035643809"
+                    eid: "89049032004001234567012345678901"
+                    serial_number: "AGV-ROVER-0173"
+                    lifecycle_state: ACTIVE
+                    ownership:
+                      owner_type: ENTERPRISE
+                      owner_id: "ops-team-west"
+                    device_profile:
+                      profile_id: "agv"
+                      profile_name: "Automated Guided Vehicle"
+                      firmware_channel: STABLE
+                      compliance_state: ATTESTED
+                    trust_posture:
+                      score: 92
+                      state: TRUSTED
+                      last_evaluated_at: "2026-03-26T09:02:18Z"
+                    created_at: "2026-03-20T12:10:44Z"
+                    updated_at: "2026-03-26T09:02:18Z"
+                pagination:
+                  next_cursor: "eyJjcmVhdGVkX2F0IjoiMjAyNi0wMy0yNlQwOTowMjoxOFoiLCJpZCI6ImRldi0yZjJmMzFjNyJ9"
+                  has_more: true
+                  limit: 50
+                trace_id: "e66ec302-7f98-4f89-a5f9-e64990ba724f"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/devices/{deviceId}:
+    get:
+      operationId: getDevice
+      summary: Get device profile and trust posture
+      description: >-
+        Retrieves a full endpoint record including profile assignment, current slice memberships,
+        trust posture, active SIM bindings, and audit metadata. Use this endpoint as the canonical
+        source for troubleshooting and control-plane reconciliation.
+      tags:
+        - Devices
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceDetailResponse"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateDevice
+      summary: Update device controls
+      description: >-
+        Applies partial updates to mutable endpoint fields including ownership assignment, firmware channel,
+        and compliance state. Immutable identity attributes such as IMEI, EID, and initial campus enrollment
+        cannot be changed after registration.
+      tags:
+        - Devices
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        description: Mutable device fields to update
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DevicePatchRequest"
+            example:
+              ownership:
+                owner_type: PARTNER
+                owner_id: "robotics-integrator-east"
+              device_profile:
+                firmware_channel: RAPID
+                compliance_state: QUARANTINED
+              update_reason: "Automated policy enforcement after failed integrity checks"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/devices/{deviceId}/sim-bindings:
+    post:
+      operationId: createSimBinding
+      summary: Bind SIM or eSIM and activate policy package
+      description: >-
+        Associates a SIM or eSIM subscription with an enrolled endpoint and activates a policy package.
+        Binding activation can trigger immediate network authorization, slice assignment, and quality-of-service
+        controls depending on the referenced package.
+      tags:
+        - SIM Bindings
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        description: SIM or eSIM binding activation request
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimBindingCreateRequest"
+            example:
+              subscription_type: ESIM
+              iccid: "8914800000567890123"
+              imsi: "311480123456789"
+              policy_package_id: "pkg-agv-low-latency"
+              requested_slice_membership:
+                - slice_id: "slice-motion-control"
+                  qos_profile: "URLLC"
+              activate_at: "2026-03-27T14:00:00Z"
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimBinding"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/devices/{deviceId}/sim-bindings/{bindingId}:
+    delete:
+      operationId: deleteSimBinding
+      summary: Deactivate SIM binding
+      description: >-
+        Deactivates an active SIM or eSIM binding for the target endpoint. Deactivation revokes associated
+        policy package grants and removes dynamic network slice memberships propagated by the binding.
+      tags:
+        - SIM Bindings
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/BindingId"
+      responses:
+        "204":
+          description: Binding deactivated successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/device-profiles:
+    get:
+      operationId: listDeviceProfiles
+      summary: List device profile templates
+      description: >-
+        Enumerates approved profile templates that define expected capabilities, policy baselines,
+        and attestation requirements for endpoint classes such as AGV, camera, scanner, and robot arm.
+      tags:
+        - Device Profiles
+      parameters:
+        - name: category
+          in: query
+          required: false
+          description: Filter templates by normalized endpoint class
+          schema:
+            type: string
+            enum:
+              - agv
+              - camera
+              - scanner
+              - robot-arm
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceProfileListResponse"
+              example:
+                data:
+                  - profile_id: "agv"
+                    profile_name: "Automated Guided Vehicle"
+                    category: agv
+                    description: "Low-latency motion control endpoint with deterministic telemetry streaming"
+                    required_capabilities:
+                      - capability_id: "cap-slice-urllc"
+                        description: "Support URLLC network slice assignment"
+                      - capability_id: "cap-attestation-tpm"
+                        description: "Provide TPM-backed device attestation evidence"
+                    default_policy_package_id: "pkg-agv-low-latency"
+                    compliance_requirements:
+                      - "Secure boot enabled"
+                      - "Firmware signature validation"
+                    supported_firmware_channels:
+                      - STABLE
+                      - RAPID
+                trace_id: "1fbf20fd-2728-47d1-a253-94ea30aac4ee"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      description: Unique device identifier assigned by the registry
+      schema:
+        type: string
+      example: "dev-2f2f31c7"
+    BindingId:
+      name: bindingId
+      in: path
+      required: true
+      description: Unique SIM binding identifier
+      schema:
+        type: string
+      example: "bind-5e8b6f44"
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque continuation token from a previous list response
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of resources to return
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    CampusId:
+      name: campus_id
+      in: query
+      required: false
+      description: Restrict results to a specific campus tenancy
+      schema:
+        type: string
+        example: "campus-chi-01"
+    LifecycleState:
+      name: lifecycle_state
+      in: query
+      required: false
+      description: Filter inventory by lifecycle state
+      schema:
+        $ref: "#/components/schemas/LifecycleState"
+  schemas:
+    DeviceRegistrationRequest:
+      type: object
+      description: Request payload to register a new endpoint
+      properties:
+        campus_id:
+          type: string
+          description: Campus tenancy identifier where the device is enrolled
+          example: "campus-chi-01"
+        imei:
+          type: string
+          description: 3GPP IMEI identifier for endpoint hardware
+          pattern: "^[0-9]{15}$"
+          example: "356938035643809"
+        eid:
+          type: string
+          description: 32-digit eUICC EID value for eSIM-capable endpoints
+          pattern: "^[0-9]{32}$"
+          example: "89049032004001234567012345678901"
+        serial_number:
+          type: string
+          description: Manufacturer or enterprise serial number
+          example: "AGV-ROVER-0173"
+          maxLength: 80
+        ownership:
+          $ref: "#/components/schemas/Ownership"
+        device_profile:
+          $ref: "#/components/schemas/DeviceProfileAssignmentRequest"
+        metadata:
+          $ref: "#/components/schemas/DeviceMetadata"
+      required:
+        - campus_id
+        - imei
+        - eid
+        - device_profile
+    DevicePatchRequest:
+      type: object
+      description: Partial update payload for mutable device attributes
+      properties:
+        ownership:
+          $ref: "#/components/schemas/Ownership"
+        device_profile:
+          type: object
+          description: Mutable profile assignment controls
+          properties:
+            firmware_channel:
+              $ref: "#/components/schemas/FirmwareChannel"
+            compliance_state:
+              $ref: "#/components/schemas/ComplianceState"
+        update_reason:
+          type: string
+          description: Human-readable explanation for audit and policy review
+          example: "Compliance quarantine triggered by attestation mismatch"
+          maxLength: 500
+      minProperties: 1
+    Device:
+      type: object
+      description: Canonical endpoint enrollment record
+      properties:
+        device_id:
+          type: string
+          description: Unique registry-assigned device identifier
+          example: "dev-2f2f31c7"
+        campus_id:
+          type: string
+          description: Campus tenancy identifier
+          example: "campus-chi-01"
+        imei:
+          type: string
+          description: 3GPP IMEI identifier
+          example: "356938035643809"
+        eid:
+          type: string
+          description: eUICC EID for eSIM-capable endpoint
+          example: "89049032004001234567012345678901"
+        serial_number:
+          type: string
+          description: Device serial number
+          example: "AGV-ROVER-0173"
+        lifecycle_state:
+          $ref: "#/components/schemas/LifecycleState"
+        ownership:
+          $ref: "#/components/schemas/Ownership"
+        device_profile:
+          $ref: "#/components/schemas/DeviceProfileAssignment"
+        trust_posture:
+          $ref: "#/components/schemas/TrustPosture"
+        metadata:
+          $ref: "#/components/schemas/DeviceMetadata"
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when device record was created
+          example: "2026-03-20T12:10:44Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when device record was last updated
+          example: "2026-03-26T09:02:18Z"
+      required:
+        - device_id
+        - campus_id
+        - imei
+        - eid
+        - lifecycle_state
+        - device_profile
+        - created_at
+        - updated_at
+    DeviceDetailResponse:
+      type: object
+      description: Detailed endpoint view including active bindings and slices
+      properties:
+        data:
+          allOf:
+            - $ref: "#/components/schemas/Device"
+            - type: object
+              properties:
+                active_sim_bindings:
+                  type: array
+                  description: Currently active subscriptions bound to this endpoint
+                  items:
+                    $ref: "#/components/schemas/SimBinding"
+                current_slice_membership:
+                  type: array
+                  description: Real-time slice memberships in effect for the endpoint
+                  items:
+                    $ref: "#/components/schemas/SliceMembership"
+                audit:
+                  $ref: "#/components/schemas/AuditInfo"
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier for request correlation
+          example: "b6e42f2b-2f4f-42f0-b7d8-3c5588e1f167"
+      required:
+        - data
+        - trace_id
+    DeviceListResponse:
+      type: object
+      description: Cursor-paginated device inventory response
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Device"
+        pagination:
+          $ref: "#/components/schemas/CursorPagination"
+        trace_id:
+          type: string
+          format: uuid
+          example: "e66ec302-7f98-4f89-a5f9-e64990ba724f"
+      required:
+        - data
+        - pagination
+        - trace_id
+    SimBindingCreateRequest:
+      type: object
+      description: Request payload to create and activate a SIM binding
+      properties:
+        subscription_type:
+          $ref: "#/components/schemas/SubscriptionType"
+        iccid:
+          type: string
+          description: Integrated Circuit Card Identifier for the subscription
+          pattern: "^[0-9]{19,22}$"
+          example: "8914800000567890123"
+        imsi:
+          type: string
+          description: IMSI associated with the subscription profile
+          pattern: "^[0-9]{14,15}$"
+          example: "311480123456789"
+        policy_package_id:
+          type: string
+          description: Identifier of the policy package to activate with this binding
+          example: "pkg-agv-low-latency"
+        requested_slice_membership:
+          type: array
+          description: Slice assignments requested as part of binding activation
+          items:
+            $ref: "#/components/schemas/SliceMembershipRequest"
+        activate_at:
+          type: string
+          format: date-time
+          description: Optional deferred activation timestamp in UTC
+          example: "2026-03-27T14:00:00Z"
+      required:
+        - subscription_type
+        - iccid
+        - policy_package_id
+    SimBinding:
+      type: object
+      description: Active or historical SIM and eSIM association record
+      properties:
+        binding_id:
+          type: string
+          description: Unique binding identifier
+          example: "bind-5e8b6f44"
+        device_id:
+          type: string
+          description: Registry endpoint identifier
+          example: "dev-2f2f31c7"
+        subscription_type:
+          $ref: "#/components/schemas/SubscriptionType"
+        iccid:
+          type: string
+          description: ICCID associated with this binding
+          example: "8914800000567890123"
+        imsi:
+          type: string
+          description: IMSI associated with this binding
+          example: "311480123456789"
+        policy_package_id:
+          type: string
+          description: Activated policy package identifier
+          example: "pkg-agv-low-latency"
+        status:
+          type: string
+          description: Binding lifecycle status
+          enum:
+            - ACTIVE
+            - PENDING_ACTIVATION
+            - DEACTIVATED
+            - FAILED
+          example: ACTIVE
+        activated_at:
+          type: string
+          format: date-time
+          description: Timestamp when network policy activation completed
+          example: "2026-03-27T14:00:05Z"
+        deactivated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when binding was deactivated
+          example: null
+        slice_membership:
+          type: array
+          description: Effective slice memberships created by this binding
+          items:
+            $ref: "#/components/schemas/SliceMembership"
+      required:
+        - binding_id
+        - device_id
+        - subscription_type
+        - iccid
+        - policy_package_id
+        - status
+    DeviceProfileListResponse:
+      type: object
+      description: Enumerated profile template response
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceProfileTemplate"
+        trace_id:
+          type: string
+          format: uuid
+          example: "1fbf20fd-2728-47d1-a253-94ea30aac4ee"
+      required:
+        - data
+        - trace_id
+    DeviceProfileTemplate:
+      type: object
+      description: Approved endpoint profile template and capability baseline
+      properties:
+        profile_id:
+          type: string
+          description: Stable profile identifier
+          example: "agv"
+        profile_name:
+          type: string
+          description: Human-readable profile name
+          example: "Automated Guided Vehicle"
+        category:
+          type: string
+          description: Normalized endpoint profile category
+          enum:
+            - agv
+            - camera
+            - scanner
+            - robot-arm
+          example: agv
+        description:
+          type: string
+          description: Functional summary of endpoint class expectations
+          example: "Low-latency motion control endpoint with deterministic telemetry streaming"
+        required_capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/CapabilityRequirement"
+        default_policy_package_id:
+          type: string
+          description: Default connectivity policy package for profile enrollments
+          example: "pkg-agv-low-latency"
+        compliance_requirements:
+          type: array
+          description: Security and compliance controls required by this profile
+          items:
+            type: string
+        supported_firmware_channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/FirmwareChannel"
+      required:
+        - profile_id
+        - profile_name
+        - category
+    DeviceProfileAssignmentRequest:
+      type: object
+      description: Profile settings applied when registering an endpoint
+      properties:
+        profile_id:
+          type: string
+          description: Device profile template identifier
+          example: "agv"
+        firmware_channel:
+          $ref: "#/components/schemas/FirmwareChannel"
+        compliance_state:
+          $ref: "#/components/schemas/ComplianceState"
+      required:
+        - profile_id
+    DeviceProfileAssignment:
+      type: object
+      description: Expanded profile assignment on a registered endpoint
+      properties:
+        profile_id:
+          type: string
+          description: Device profile template identifier
+          example: "agv"
+        profile_name:
+          type: string
+          description: Human-readable profile name
+          example: "Automated Guided Vehicle"
+        firmware_channel:
+          $ref: "#/components/schemas/FirmwareChannel"
+        compliance_state:
+          $ref: "#/components/schemas/ComplianceState"
+      required:
+        - profile_id
+        - profile_name
+    Ownership:
+      type: object
+      description: Ownership assignment for responsibility and chargeback
+      properties:
+        owner_type:
+          type: string
+          description: Owning party classification
+          enum:
+            - ENTERPRISE
+            - PARTNER
+            - MANAGED_SERVICE
+          example: ENTERPRISE
+        owner_id:
+          type: string
+          description: Identifier of the owning team, partner, or managed service group
+          example: "ops-team-west"
+      required:
+        - owner_type
+        - owner_id
+    TrustPosture:
+      type: object
+      description: Current trust evaluation and scoring result for endpoint health
+      properties:
+        score:
+          type: integer
+          description: Numeric trust score from 0 to 100
+          minimum: 0
+          maximum: 100
+          example: 92
+        state:
+          type: string
+          description: Simplified trust category derived from score and policy checks
+          enum:
+            - TRUSTED
+            - DEGRADED
+            - UNTRUSTED
+          example: TRUSTED
+        evidence_version:
+          type: string
+          description: Version of trust evidence bundle used in evaluation
+          example: "tp-evidence-v5"
+        last_evaluated_at:
+          type: string
+          format: date-time
+          description: Timestamp of the latest trust evaluation
+          example: "2026-03-26T09:02:18Z"
+      required:
+        - score
+        - state
+        - last_evaluated_at
+    DeviceMetadata:
+      type: object
+      description: Enterprise-supplied metadata fields attached to endpoint records
+      properties:
+        asset_tag:
+          type: string
+          description: Internal asset tracking identifier
+          example: "WH-AGV-0173"
+          maxLength: 120
+        location_hint:
+          type: string
+          description: Human-readable location hint inside campus
+          example: "warehouse-zone-b"
+          maxLength: 120
+        cost_center:
+          type: string
+          description: Cost center for ownership and reporting attribution
+          example: "supply-chain-ops"
+          maxLength: 120
+        labels:
+          type: object
+          description: Arbitrary key-value labels for governance and filtering
+          additionalProperties:
+            type: string
+    SliceMembershipRequest:
+      type: object
+      description: Requested network slice membership to apply during binding activation
+      properties:
+        slice_id:
+          type: string
+          description: Campus slice identifier
+          example: "slice-motion-control"
+        qos_profile:
+          type: string
+          description: Requested quality-of-service profile
+          enum:
+            - URLLC
+            - EMBB
+            - MIOT
+          example: URLLC
+      required:
+        - slice_id
+    SliceMembership:
+      type: object
+      description: Effective network slice assignment for a device
+      properties:
+        slice_id:
+          type: string
+          description: Campus slice identifier
+          example: "slice-motion-control"
+        qos_profile:
+          type: string
+          description: Applied quality-of-service profile
+          enum:
+            - URLLC
+            - EMBB
+            - MIOT
+          example: URLLC
+        attached_at:
+          type: string
+          format: date-time
+          description: Timestamp when the assignment became active
+          example: "2026-03-27T14:00:07Z"
+      required:
+        - slice_id
+        - qos_profile
+    CapabilityRequirement:
+      type: object
+      description: Capability that endpoints must satisfy for a profile
+      properties:
+        capability_id:
+          type: string
+          description: Stable capability identifier
+          example: "cap-attestation-tpm"
+        description:
+          type: string
+          description: Capability expectation details
+          example: "Provide TPM-backed device attestation evidence"
+      required:
+        - capability_id
+    CursorPagination:
+      type: object
+      description: Cursor metadata for stable continuation
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque token for subsequent page retrieval, null when exhausted
+          example: "eyJjcmVhdGVkX2F0IjoiMjAyNi0wMy0yNlQwOTowMjoxOFoiLCJpZCI6ImRldi0yZjJmMzFjNyJ9"
+        has_more:
+          type: boolean
+          description: Indicates whether additional pages are available
+          example: true
+        limit:
+          type: integer
+          description: Maximum resources requested per page
+          example: 50
+      required:
+        - has_more
+        - limit
+    AuditInfo:
+      type: object
+      description: Audit metadata for resource mutation accountability
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when resource was created
+          example: "2026-03-20T12:10:44Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when resource was last updated
+          example: "2026-03-27T14:00:07Z"
+        created_by:
+          type: string
+          description: Principal that created the resource
+          example: "svc-campus-registry"
+        updated_by:
+          type: string
+          description: Principal that last updated the resource
+          example: "svc-policy-activation"
+      required:
+        - created_at
+        - updated_at
+    Error:
+      type: object
+      description: Standard error response envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error explanation
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Field-level or domain-specific error details
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: Request field associated with the issue
+                    example: imei
+                  reason:
+                    type: string
+                    description: Description of validation or business rule failure
+                    example: Must contain exactly 15 digits.
+            request_id:
+              type: string
+              format: uuid
+              description: Unique request identifier for support and traceability
+              example: "4e5b8f2d-17d8-4f48-9c56-9f828b9dd1d7"
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    LifecycleState:
+      type: string
+      description: Current endpoint lifecycle state in the registry
+      enum:
+        - PENDING_BINDING
+        - ACTIVE
+        - SUSPENDED
+        - RETIRED
+      example: ACTIVE
+    FirmwareChannel:
+      type: string
+      description: Firmware rollout channel used for update management
+      enum:
+        - STABLE
+        - RAPID
+        - LTS
+      example: STABLE
+    ComplianceState:
+      type: string
+      description: Compliance posture outcome from policy and attestation checks
+      enum:
+        - ATTESTED
+        - NON_COMPLIANT
+        - QUARANTINED
+      example: ATTESTED
+    SubscriptionType:
+      type: string
+      description: Physical or embedded subscription form factor
+      enum:
+        - SIM
+        - ESIM
+      example: ESIM
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by Verizon enterprise identity services
+  responses:
+    "400":
+      description: Bad Request — The request is malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: imei
+                  reason: Must contain exactly 15 digits.
+              request_id: "4e5b8f2d-17d8-4f48-9c56-9f828b9dd1d7"
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: "85f8b8ca-0cf7-419f-97f2-5c8c91340725"
+    "403":
+      description: Forbidden — The authenticated principal is not allowed to perform this action.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have access to this campus tenancy.
+              request_id: "0512f47d-084f-40db-ab01-381f41ffc424"
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: Device record was not found for the supplied identifier.
+              request_id: "e140f157-f4f7-4d53-8d5b-f1f8f4196c53"
+    "409":
+      description: Conflict — The request conflicts with current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: A device with this IMEI and EID is already registered.
+              request_id: "8f0938c4-cf72-4780-ad57-66295d95c057"
+    "422":
+      description: Unprocessable Entity — Semantic validation failed for business rules.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Requested policy package is not allowed for this profile.
+              details:
+                - field: policy_package_id
+                  reason: Package pkg-agv-low-latency requires profile category agv.
+              request_id: "4f490c0a-041d-4ae9-bf19-566f1d4e0e83"
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests. Retry after 30 seconds.
+              request_id: "637b0634-53d3-4f50-ad7b-2b72e8efcf02"
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please retry later.
+              request_id: "952b40d0-2a54-4a5e-bb5f-5f716f0fd84f"

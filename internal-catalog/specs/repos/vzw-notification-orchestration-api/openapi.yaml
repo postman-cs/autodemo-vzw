@@ -1,0 +1,1395 @@
+openapi: 3.0.3
+info:
+  title: VZW Notification Orchestration API
+  description: >-
+    Orchestrates customer and operator notifications across SMS, email, and push channels with runtime preference
+    enforcement. Supports message template lifecycle management, notification dispatch tracking, and per-party
+    communication preference controls including quiet hours, channel policy, locale, and opt-in status.
+  version: 1.0.0
+  contact:
+    name: Verizon API Platform Team
+    email: api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/about/terms-conditions
+  x-verizon-catalog-id: vzw-notification-orchestration-api
+  x-verizon-domain: notifications
+servers:
+  - url: https://vzw-notification-orchestration-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-notification-orchestration-api.staging.api.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Notifications
+    description: Create and retrieve multi-channel notification delivery records
+  - name: Templates
+    description: Manage reusable notification templates and delivery metadata
+  - name: Preferences
+    description: Upsert and retrieve communication preferences for customers and operators
+paths:
+  /v1/notifications:
+    post:
+      operationId: createNotification
+      summary: Create and dispatch notification
+      description: >-
+        Creates a notification request and dispatches content to one or more channels based on runtime
+        preference enforcement. The orchestrator applies channel policy, opt-in status, locale selection,
+        and quiet-hour constraints before selecting final delivery channel order.
+      tags:
+        - Notifications
+      requestBody:
+        required: true
+        description: Notification dispatch payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNotificationRequest"
+            examples:
+              smsFirstAlert:
+                summary: SMS-first outage alert notification
+                value:
+                  party_id: "cust-935714"
+                  correlation_id: "a53d13a9-3d8c-44d5-a385-2f8617b4b542"
+                  event_type: "NETWORK_OUTAGE_ALERT"
+                  recipient_type: "CUSTOMER"
+                  priority: "HIGH"
+                  template_id: "tpl-network-outage-v3"
+                  locale: "en-US"
+                  channel_policy: "sms_first"
+                  variables:
+                    incident_id: "inc-7742"
+                    service_area: "Dallas, TX"
+                    estimated_restore_time: "2026-03-27T22:00:00Z"
+                  metadata:
+                    source_system: "network-ops"
+                    operator_id: "ops-112"
+                    request_origin: "nms"
+      responses:
+        "201":
+          description: Notification accepted and queued for channel delivery
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+              examples:
+                acceptedForDelivery:
+                  summary: Notification accepted
+                  value:
+                    notification_id: "ntf-01JPQ6X2Y8S9M3W4D0Q47E7TNY"
+                    correlation_id: "a53d13a9-3d8c-44d5-a385-2f8617b4b542"
+                    party_id: "cust-935714"
+                    recipient_type: "CUSTOMER"
+                    event_type: "NETWORK_OUTAGE_ALERT"
+                    status: "QUEUED"
+                    priority: "HIGH"
+                    locale: "en-US"
+                    channel_policy: "sms_first"
+                    quiet_hours:
+                      enabled: true
+                      timezone: "America/Chicago"
+                      start: "22:00"
+                      end: "07:00"
+                    opt_in_status: "OPTED_IN"
+                    channels_attempted:
+                      - channel: "SMS"
+                        delivery_status: "PENDING"
+                        attempted_at: "2026-03-27T20:13:31Z"
+                    template_id: "tpl-network-outage-v3"
+                    created_at: "2026-03-27T20:13:31Z"
+                    updated_at: "2026-03-27T20:13:31Z"
+                    trace_id: "b6f3b16f-e80d-45d5-a6eb-17246fa648e6"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/notifications/{notificationId}:
+    get:
+      operationId: getNotificationById
+      summary: Get notification by identifier
+      description: >-
+        Retrieves current dispatch status for a notification including final channel outcomes,
+        preference context used for routing decisions, and delivery timestamps for each attempted channel.
+      tags:
+        - Notifications
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          description: Notification details returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+              examples:
+                deliveredEmailFallback:
+                  summary: Delivered through email fallback
+                  value:
+                    notification_id: "ntf-01JPQ6X2Y8S9M3W4D0Q47E7TNY"
+                    correlation_id: "a53d13a9-3d8c-44d5-a385-2f8617b4b542"
+                    party_id: "cust-935714"
+                    recipient_type: "CUSTOMER"
+                    event_type: "NETWORK_OUTAGE_ALERT"
+                    status: "DELIVERED"
+                    priority: "HIGH"
+                    locale: "en-US"
+                    channel_policy: "sms_first"
+                    quiet_hours:
+                      enabled: true
+                      timezone: "America/Chicago"
+                      start: "22:00"
+                      end: "07:00"
+                    opt_in_status: "OPTED_IN"
+                    channels_attempted:
+                      - channel: "SMS"
+                        delivery_status: "FAILED"
+                        attempted_at: "2026-03-27T20:13:31Z"
+                        provider_message_id: "sms-msg-927741"
+                        failure_reason: "HANDSET_UNREACHABLE"
+                      - channel: "EMAIL"
+                        delivery_status: "DELIVERED"
+                        attempted_at: "2026-03-27T20:14:02Z"
+                        delivered_at: "2026-03-27T20:14:09Z"
+                        provider_message_id: "ses-msg-112872"
+                    template_id: "tpl-network-outage-v3"
+                    created_at: "2026-03-27T20:13:31Z"
+                    updated_at: "2026-03-27T20:14:09Z"
+                    trace_id: "b6f3b16f-e80d-45d5-a6eb-17246fa648e6"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/templates:
+    post:
+      operationId: createTemplate
+      summary: Create notification template
+      description: >-
+        Creates a versioned notification template that can be reused for event-driven dispatch.
+        Templates may define channel-specific content variants and localization defaults.
+      tags:
+        - Templates
+      requestBody:
+        required: true
+        description: Template creation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTemplateRequest"
+            examples:
+              outageTemplate:
+                summary: Outage status template
+                value:
+                  name: "Network Outage Alert"
+                  event_type: "NETWORK_OUTAGE_ALERT"
+                  description: "Customer outage status update with restoration ETA"
+                  locale: "en-US"
+                  channels:
+                    sms:
+                      enabled: true
+                      body: "Verizon: Service disruption in {{service_area}}. ETA {{estimated_restore_time}}. Incident {{incident_id}}."
+                    email:
+                      enabled: true
+                      subject: "Service Alert: {{service_area}}"
+                      body: "We are working to resolve an outage in {{service_area}}. Estimated restoration time: {{estimated_restore_time}}."
+                    push:
+                      enabled: true
+                      title: "Service Alert"
+                      body: "Outage in {{service_area}}. ETA {{estimated_restore_time}}."
+                  active: true
+      responses:
+        "201":
+          description: Template created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+              examples:
+                createdTemplate:
+                  summary: Created template response
+                  value:
+                    template_id: "tpl-network-outage-v3"
+                    version: 3
+                    name: "Network Outage Alert"
+                    event_type: "NETWORK_OUTAGE_ALERT"
+                    description: "Customer outage status update with restoration ETA"
+                    locale: "en-US"
+                    channels:
+                      sms:
+                        enabled: true
+                        body: "Verizon: Service disruption in {{service_area}}. ETA {{estimated_restore_time}}. Incident {{incident_id}}."
+                      email:
+                        enabled: true
+                        subject: "Service Alert: {{service_area}}"
+                        body: "We are working to resolve an outage in {{service_area}}. Estimated restoration time: {{estimated_restore_time}}."
+                      push:
+                        enabled: true
+                        title: "Service Alert"
+                        body: "Outage in {{service_area}}. ETA {{estimated_restore_time}}."
+                    active: true
+                    created_at: "2026-03-27T18:00:00Z"
+                    updated_at: "2026-03-27T18:00:00Z"
+                    created_by: "ops-admin-42"
+                    updated_by: "ops-admin-42"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listTemplates
+      summary: List notification templates
+      description: >-
+        Returns a paginated list of templates filtered by event type, locale, and active status.
+        Results are ordered by most recently updated first.
+      tags:
+        - Templates
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: event_type
+          in: query
+          required: false
+          description: Filter templates by event type
+          schema:
+            type: string
+            example: "NETWORK_OUTAGE_ALERT"
+        - name: locale
+          in: query
+          required: false
+          description: Filter templates by locale code
+          schema:
+            $ref: "#/components/schemas/LocaleCode"
+        - name: active
+          in: query
+          required: false
+          description: Filter templates by active status
+          schema:
+            type: boolean
+            example: true
+      responses:
+        "200":
+          description: Paginated template list returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplatePage"
+              examples:
+                pageOne:
+                  summary: First page of templates
+                  value:
+                    data:
+                      - template_id: "tpl-network-outage-v3"
+                        version: 3
+                        name: "Network Outage Alert"
+                        event_type: "NETWORK_OUTAGE_ALERT"
+                        description: "Customer outage status update with restoration ETA"
+                        locale: "en-US"
+                        channels:
+                          sms:
+                            enabled: true
+                            body: "Verizon: Service disruption in {{service_area}}. ETA {{estimated_restore_time}}. Incident {{incident_id}}."
+                          email:
+                            enabled: true
+                            subject: "Service Alert: {{service_area}}"
+                            body: "We are working to resolve an outage in {{service_area}}. Estimated restoration time: {{estimated_restore_time}}."
+                          push:
+                            enabled: true
+                            title: "Service Alert"
+                            body: "Outage in {{service_area}}. ETA {{estimated_restore_time}}."
+                        active: true
+                        created_at: "2026-03-20T17:00:00Z"
+                        updated_at: "2026-03-27T18:00:00Z"
+                        created_by: "ops-admin-42"
+                        updated_by: "ops-admin-42"
+                      - template_id: "tpl-operator-escalation-v1"
+                        version: 1
+                        name: "Operator Escalation"
+                        event_type: "OPERATOR_ESCALATION_REQUIRED"
+                        description: "Internal escalation notice to operator shifts"
+                        locale: "en-US"
+                        channels:
+                          sms:
+                            enabled: true
+                            body: "Escalation {{incident_id}} assigned to {{operator_name}} at {{site_code}}."
+                          email:
+                            enabled: true
+                            subject: "Escalation {{incident_id}}"
+                            body: "Escalation {{incident_id}} requires immediate review at {{site_code}}."
+                          push:
+                            enabled: false
+                        active: true
+                        created_at: "2026-03-11T08:30:00Z"
+                        updated_at: "2026-03-22T13:05:00Z"
+                        created_by: "ops-manager-7"
+                        updated_by: "ops-manager-7"
+                    page: 1
+                    page_size: 2
+                    total_items: 18
+                    total_pages: 9
+                    has_next: true
+                    has_previous: false
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/templates/{templateId}:
+    patch:
+      operationId: updateTemplate
+      summary: Update notification template
+      description: >-
+        Applies partial updates to a template. Update requests may change content, activation state,
+        or locale metadata. The service increments template version when channel bodies are modified.
+      tags:
+        - Templates
+      parameters:
+        - $ref: "#/components/parameters/TemplateId"
+      requestBody:
+        required: true
+        description: Partial template update payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTemplateRequest"
+            examples:
+              updatePushBody:
+                summary: Update push message text
+                value:
+                  description: "Customer outage status update with restoration ETA and impacted services"
+                  channels:
+                    push:
+                      enabled: true
+                      title: "Service Alert"
+                      body: "Outage in {{service_area}} affecting {{service_type}}. ETA {{estimated_restore_time}}."
+                  active: true
+      responses:
+        "200":
+          description: Template updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+              examples:
+                updatedTemplate:
+                  summary: Updated template response
+                  value:
+                    template_id: "tpl-network-outage-v3"
+                    version: 4
+                    name: "Network Outage Alert"
+                    event_type: "NETWORK_OUTAGE_ALERT"
+                    description: "Customer outage status update with restoration ETA and impacted services"
+                    locale: "en-US"
+                    channels:
+                      sms:
+                        enabled: true
+                        body: "Verizon: Service disruption in {{service_area}}. ETA {{estimated_restore_time}}. Incident {{incident_id}}."
+                      email:
+                        enabled: true
+                        subject: "Service Alert: {{service_area}}"
+                        body: "We are working to resolve an outage in {{service_area}} affecting {{service_type}}. Estimated restoration time: {{estimated_restore_time}}."
+                      push:
+                        enabled: true
+                        title: "Service Alert"
+                        body: "Outage in {{service_area}} affecting {{service_type}}. ETA {{estimated_restore_time}}."
+                    active: true
+                    created_at: "2026-03-20T17:00:00Z"
+                    updated_at: "2026-03-27T20:30:00Z"
+                    created_by: "ops-admin-42"
+                    updated_by: "ops-admin-11"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/preferences/{partyId}:upsert:
+    post:
+      operationId: upsertPreferenceProfile
+      summary: Upsert party communication preferences
+      description: >-
+        Creates or updates the communication preference profile for a customer or operator party identifier.
+        Preference updates are applied atomically and become effective for all subsequent notification dispatches.
+      tags:
+        - Preferences
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      requestBody:
+        required: true
+        description: Preference profile upsert payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertPreferenceRequest"
+            examples:
+              operatorProfile:
+                summary: Operator preference upsert
+                value:
+                  recipient_type: "OPERATOR"
+                  channel_policy: "email_first"
+                  priority: "MEDIUM"
+                  locale: "en-US"
+                  quiet_hours:
+                    enabled: false
+                    timezone: "America/New_York"
+                    start: "22:00"
+                    end: "06:00"
+                  opt_in_status: "OPTED_IN"
+                  channels:
+                    sms:
+                      enabled: true
+                      address: "+14155559876"
+                      verified: true
+                    email:
+                      enabled: true
+                      address: "operator.shift1@verizon.com"
+                      verified: true
+                    push:
+                      enabled: true
+                      address: "device-token-4428"
+                      verified: true
+      responses:
+        "200":
+          description: Preference profile upserted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreferenceProfile"
+              examples:
+                upsertedProfile:
+                  summary: Upserted preference profile
+                  value:
+                    party_id: "opr-2291"
+                    recipient_type: "OPERATOR"
+                    channel_policy: "email_first"
+                    priority: "MEDIUM"
+                    locale: "en-US"
+                    quiet_hours:
+                      enabled: false
+                      timezone: "America/New_York"
+                      start: "22:00"
+                      end: "06:00"
+                    opt_in_status: "OPTED_IN"
+                    channels:
+                      sms:
+                        enabled: true
+                        address: "+14155559876"
+                        verified: true
+                      email:
+                        enabled: true
+                        address: "operator.shift1@verizon.com"
+                        verified: true
+                      push:
+                        enabled: true
+                        address: "device-token-4428"
+                        verified: true
+                    created_at: "2026-03-11T08:20:00Z"
+                    updated_at: "2026-03-27T20:45:00Z"
+                    created_by: "preference-service"
+                    updated_by: "preference-service"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/preferences/{partyId}:
+    get:
+      operationId: getPreferenceProfile
+      summary: Get party communication preferences
+      description: >-
+        Returns the effective communication preferences for the specified party identifier,
+        including channel addresses, default priority, locale, quiet-hours, and opt-in status.
+      tags:
+        - Preferences
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      responses:
+        "200":
+          description: Preference profile returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreferenceProfile"
+              examples:
+                customerProfile:
+                  summary: Customer preference profile
+                  value:
+                    party_id: "cust-935714"
+                    recipient_type: "CUSTOMER"
+                    channel_policy: "sms_first"
+                    priority: "LOW"
+                    locale: "es-US"
+                    quiet_hours:
+                      enabled: true
+                      timezone: "America/Chicago"
+                      start: "21:00"
+                      end: "08:00"
+                    opt_in_status: "OPTED_IN"
+                    channels:
+                      sms:
+                        enabled: true
+                        address: "+12145557890"
+                        verified: true
+                      email:
+                        enabled: true
+                        address: "customer935714@example.com"
+                        verified: true
+                      push:
+                        enabled: false
+                        address: ""
+                        verified: false
+                    created_at: "2026-01-05T12:00:00Z"
+                    updated_at: "2026-03-25T09:50:00Z"
+                    created_by: "customer-portal"
+                    updated_by: "customer-portal"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      description: Unique notification identifier
+      schema:
+        type: string
+        minLength: 10
+        maxLength: 64
+        example: "ntf-01JPQ6X2Y8S9M3W4D0Q47E7TNY"
+    TemplateId:
+      name: templateId
+      in: path
+      required: true
+      description: Unique template identifier
+      schema:
+        type: string
+        minLength: 6
+        maxLength: 80
+        example: "tpl-network-outage-v3"
+    PartyId:
+      name: partyId
+      in: path
+      required: true
+      description: Customer or operator party identifier
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 80
+        example: "cust-935714"
+    Page:
+      name: page
+      in: query
+      required: false
+      description: One-based page index
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+        example: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Number of records per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+        example: 25
+  schemas:
+    CreateNotificationRequest:
+      type: object
+      description: Request payload for creating a notification dispatch
+      properties:
+        party_id:
+          type: string
+          description: Target customer or operator party identifier
+          example: "cust-935714"
+        correlation_id:
+          type: string
+          format: uuid
+          description: Upstream correlation identifier used for idempotency and tracing
+          example: "a53d13a9-3d8c-44d5-a385-2f8617b4b542"
+        event_type:
+          type: string
+          description: Domain event that triggered this notification
+          example: "NETWORK_OUTAGE_ALERT"
+        recipient_type:
+          $ref: "#/components/schemas/RecipientType"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        template_id:
+          type: string
+          description: Identifier of the template to render
+          example: "tpl-network-outage-v3"
+        locale:
+          $ref: "#/components/schemas/LocaleCode"
+        channel_policy:
+          $ref: "#/components/schemas/ChannelPolicy"
+        variables:
+          type: object
+          description: Named variables used when rendering template content
+          additionalProperties:
+            type: string
+          example:
+            incident_id: "inc-7742"
+            service_area: "Dallas, TX"
+            estimated_restore_time: "2026-03-27T22:00:00Z"
+        metadata:
+          $ref: "#/components/schemas/RequestMetadata"
+      required:
+        - party_id
+        - event_type
+        - recipient_type
+        - priority
+        - template_id
+    Notification:
+      type: object
+      description: Notification dispatch record with channel outcomes and preference context
+      properties:
+        notification_id:
+          type: string
+          description: Notification identifier
+          example: "ntf-01JPQ6X2Y8S9M3W4D0Q47E7TNY"
+        correlation_id:
+          type: string
+          format: uuid
+          description: Correlation identifier for cross-service traceability
+          example: "a53d13a9-3d8c-44d5-a385-2f8617b4b542"
+        party_id:
+          type: string
+          description: Target customer or operator party identifier
+          example: "cust-935714"
+        recipient_type:
+          $ref: "#/components/schemas/RecipientType"
+        event_type:
+          type: string
+          description: Domain event that triggered this notification
+          example: "NETWORK_OUTAGE_ALERT"
+        status:
+          $ref: "#/components/schemas/NotificationStatus"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        locale:
+          $ref: "#/components/schemas/LocaleCode"
+        channel_policy:
+          $ref: "#/components/schemas/ChannelPolicy"
+        quiet_hours:
+          $ref: "#/components/schemas/QuietHours"
+        opt_in_status:
+          $ref: "#/components/schemas/OptInStatus"
+        channels_attempted:
+          type: array
+          description: Ordered list of channel attempts and delivery outcomes
+          items:
+            $ref: "#/components/schemas/DeliveryAttempt"
+        template_id:
+          type: string
+          description: Template identifier used to render message content
+          example: "tpl-network-outage-v3"
+        created_at:
+          type: string
+          format: date-time
+          description: Resource creation timestamp
+          example: "2026-03-27T20:13:31Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-03-27T20:14:09Z"
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier
+          example: "b6f3b16f-e80d-45d5-a6eb-17246fa648e6"
+      required:
+        - notification_id
+        - party_id
+        - recipient_type
+        - event_type
+        - status
+        - priority
+        - channel_policy
+        - opt_in_status
+        - created_at
+        - updated_at
+    DeliveryAttempt:
+      type: object
+      description: Outcome for one channel attempt
+      properties:
+        channel:
+          $ref: "#/components/schemas/ChannelType"
+        delivery_status:
+          $ref: "#/components/schemas/DeliveryStatus"
+        attempted_at:
+          type: string
+          format: date-time
+          description: Timestamp when delivery was attempted
+          example: "2026-03-27T20:13:31Z"
+        delivered_at:
+          type: string
+          format: date-time
+          description: Timestamp when provider confirmed delivery
+          example: "2026-03-27T20:14:09Z"
+        provider_message_id:
+          type: string
+          description: Message identifier from downstream provider
+          example: "ses-msg-112872"
+        failure_reason:
+          type: string
+          description: Delivery failure reason when applicable
+          example: "HANDSET_UNREACHABLE"
+      required:
+        - channel
+        - delivery_status
+        - attempted_at
+    CreateTemplateRequest:
+      type: object
+      description: Request payload for creating a template
+      properties:
+        name:
+          type: string
+          description: Template display name
+          minLength: 3
+          maxLength: 120
+          example: "Network Outage Alert"
+        event_type:
+          type: string
+          description: Event type associated with this template
+          example: "NETWORK_OUTAGE_ALERT"
+        description:
+          type: string
+          description: Business purpose of the template
+          maxLength: 500
+          example: "Customer outage status update with restoration ETA"
+        locale:
+          $ref: "#/components/schemas/LocaleCode"
+        channels:
+          $ref: "#/components/schemas/TemplateChannelSet"
+        active:
+          type: boolean
+          description: Indicates whether template can be used for dispatch
+          default: true
+          example: true
+      required:
+        - name
+        - event_type
+        - locale
+        - channels
+    UpdateTemplateRequest:
+      type: object
+      description: Partial template update payload
+      properties:
+        name:
+          type: string
+          description: Updated template display name
+          minLength: 3
+          maxLength: 120
+          example: "Network Outage Alert"
+        description:
+          type: string
+          description: Updated template business description
+          maxLength: 500
+          example: "Customer outage status update with restoration ETA and impacted services"
+        locale:
+          $ref: "#/components/schemas/LocaleCode"
+        channels:
+          $ref: "#/components/schemas/TemplateChannelPatchSet"
+        active:
+          type: boolean
+          description: Active status toggle
+          example: true
+      minProperties: 1
+    Template:
+      type: object
+      description: Notification template with version and channel content
+      properties:
+        template_id:
+          type: string
+          description: Template identifier
+          example: "tpl-network-outage-v3"
+        version:
+          type: integer
+          description: Monotonically increasing template version
+          minimum: 1
+          example: 4
+        name:
+          type: string
+          description: Template display name
+          example: "Network Outage Alert"
+        event_type:
+          type: string
+          description: Event type associated with this template
+          example: "NETWORK_OUTAGE_ALERT"
+        description:
+          type: string
+          description: Business purpose of this template
+          example: "Customer outage status update with restoration ETA and impacted services"
+        locale:
+          $ref: "#/components/schemas/LocaleCode"
+        channels:
+          $ref: "#/components/schemas/TemplateChannelSet"
+        active:
+          type: boolean
+          description: Whether the template can be selected for delivery
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-03-20T17:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-03-27T20:30:00Z"
+        created_by:
+          type: string
+          description: Principal that created the template
+          example: "ops-admin-42"
+        updated_by:
+          type: string
+          description: Principal that last modified the template
+          example: "ops-admin-11"
+      required:
+        - template_id
+        - version
+        - name
+        - event_type
+        - locale
+        - channels
+        - active
+        - created_at
+        - updated_at
+    TemplatePage:
+      type: object
+      description: Paginated list of templates
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Template"
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        page_size:
+          type: integer
+          minimum: 1
+          example: 25
+        total_items:
+          type: integer
+          minimum: 0
+          example: 18
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 1
+        has_next:
+          type: boolean
+          example: false
+        has_previous:
+          type: boolean
+          example: false
+      required:
+        - data
+        - page
+        - page_size
+        - total_items
+        - total_pages
+        - has_next
+        - has_previous
+    TemplateChannelSet:
+      type: object
+      description: Per-channel content configuration for a template
+      properties:
+        sms:
+          $ref: "#/components/schemas/SmsTemplateContent"
+        email:
+          $ref: "#/components/schemas/EmailTemplateContent"
+        push:
+          $ref: "#/components/schemas/PushTemplateContent"
+      required:
+        - sms
+        - email
+        - push
+    TemplateChannelPatchSet:
+      type: object
+      description: Partial per-channel template updates for PATCH operations
+      properties:
+        sms:
+          $ref: "#/components/schemas/SmsTemplateContent"
+        email:
+          $ref: "#/components/schemas/EmailTemplateContent"
+        push:
+          $ref: "#/components/schemas/PushTemplateContent"
+      minProperties: 1
+    SmsTemplateContent:
+      type: object
+      description: SMS content for template
+      properties:
+        enabled:
+          type: boolean
+          description: Indicates whether SMS rendering is enabled
+          example: true
+        body:
+          type: string
+          description: SMS body template
+          maxLength: 1024
+          example: "Verizon: Service disruption in {{service_area}}. ETA {{estimated_restore_time}}."
+      required:
+        - enabled
+    EmailTemplateContent:
+      type: object
+      description: Email content for template
+      properties:
+        enabled:
+          type: boolean
+          description: Indicates whether email rendering is enabled
+          example: true
+        subject:
+          type: string
+          description: Email subject template
+          maxLength: 255
+          example: "Service Alert: {{service_area}}"
+        body:
+          type: string
+          description: Email body template
+          maxLength: 10000
+          example: "We are working to resolve an outage in {{service_area}}. Estimated restoration time: {{estimated_restore_time}}."
+      required:
+        - enabled
+    PushTemplateContent:
+      type: object
+      description: Push notification content for template
+      properties:
+        enabled:
+          type: boolean
+          description: Indicates whether push rendering is enabled
+          example: true
+        title:
+          type: string
+          description: Push notification title
+          maxLength: 120
+          example: "Service Alert"
+        body:
+          type: string
+          description: Push notification message body
+          maxLength: 512
+          example: "Outage in {{service_area}}. ETA {{estimated_restore_time}}."
+      required:
+        - enabled
+    UpsertPreferenceRequest:
+      type: object
+      description: Upsert payload for preference profile
+      properties:
+        recipient_type:
+          $ref: "#/components/schemas/RecipientType"
+        channel_policy:
+          $ref: "#/components/schemas/ChannelPolicy"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        locale:
+          $ref: "#/components/schemas/LocaleCode"
+        quiet_hours:
+          $ref: "#/components/schemas/QuietHours"
+        opt_in_status:
+          $ref: "#/components/schemas/OptInStatus"
+        channels:
+          $ref: "#/components/schemas/PreferenceChannels"
+      required:
+        - recipient_type
+        - channel_policy
+        - priority
+        - locale
+        - quiet_hours
+        - opt_in_status
+        - channels
+    PreferenceProfile:
+      type: object
+      description: Effective communication preferences for a party identifier
+      properties:
+        party_id:
+          type: string
+          description: Customer or operator identifier
+          example: "cust-935714"
+        recipient_type:
+          $ref: "#/components/schemas/RecipientType"
+        channel_policy:
+          $ref: "#/components/schemas/ChannelPolicy"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        locale:
+          $ref: "#/components/schemas/LocaleCode"
+        quiet_hours:
+          $ref: "#/components/schemas/QuietHours"
+        opt_in_status:
+          $ref: "#/components/schemas/OptInStatus"
+        channels:
+          $ref: "#/components/schemas/PreferenceChannels"
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-01-05T12:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-03-25T09:50:00Z"
+        created_by:
+          type: string
+          description: Principal that created the profile
+          example: "customer-portal"
+        updated_by:
+          type: string
+          description: Principal that last modified the profile
+          example: "customer-portal"
+      required:
+        - party_id
+        - recipient_type
+        - channel_policy
+        - priority
+        - locale
+        - quiet_hours
+        - opt_in_status
+        - channels
+        - created_at
+        - updated_at
+    PreferenceChannels:
+      type: object
+      description: Delivery channel configuration for a preference profile
+      properties:
+        sms:
+          $ref: "#/components/schemas/PreferenceChannelAddress"
+        email:
+          $ref: "#/components/schemas/PreferenceChannelAddress"
+        push:
+          $ref: "#/components/schemas/PreferenceChannelAddress"
+      required:
+        - sms
+        - email
+        - push
+    PreferenceChannelAddress:
+      type: object
+      description: Channel address and verification status
+      properties:
+        enabled:
+          type: boolean
+          description: Whether this channel may be used for notification dispatch
+          example: true
+        address:
+          type: string
+          description: Destination address such as phone number, email, or device token
+          example: "+12145557890"
+        verified:
+          type: boolean
+          description: Whether channel ownership has been verified
+          example: true
+      required:
+        - enabled
+        - verified
+    QuietHours:
+      type: object
+      description: Time window during which non-critical notifications should be deferred
+      properties:
+        enabled:
+          type: boolean
+          description: Indicates whether quiet-hour suppression is enabled
+          example: true
+        timezone:
+          type: string
+          description: IANA timezone for quiet-hour interpretation
+          example: "America/Chicago"
+        start:
+          type: string
+          description: Quiet-hour start in HH:MM 24-hour format
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          example: "22:00"
+        end:
+          type: string
+          description: Quiet-hour end in HH:MM 24-hour format
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          example: "07:00"
+      required:
+        - enabled
+        - timezone
+        - start
+        - end
+    RequestMetadata:
+      type: object
+      description: Source metadata for diagnostic and audit traces
+      properties:
+        source_system:
+          type: string
+          description: Name of system creating the request
+          example: "network-ops"
+        operator_id:
+          type: string
+          description: Operator identifier when request is manually initiated
+          example: "ops-112"
+        request_origin:
+          type: string
+          description: Logical origin within the source system
+          example: "nms"
+    ChannelPolicy:
+      type: string
+      description: Channel routing policy used to determine dispatch order
+      enum:
+        - sms_first
+        - email_first
+        - push_only
+      example: sms_first
+    Priority:
+      type: string
+      description: Priority class used for delivery SLA and quiet-hour override behavior
+      enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+        - CRITICAL
+      example: HIGH
+    LocaleCode:
+      type: string
+      description: Locale code used for template selection and rendering
+      pattern: "^[a-z]{2}-[A-Z]{2}$"
+      example: en-US
+    RecipientType:
+      type: string
+      description: Target recipient type
+      enum:
+        - CUSTOMER
+        - OPERATOR
+      example: CUSTOMER
+    OptInStatus:
+      type: string
+      description: Effective consent state for outbound messaging
+      enum:
+        - OPTED_IN
+        - OPTED_OUT
+        - PENDING_RECONFIRMATION
+      example: OPTED_IN
+    ChannelType:
+      type: string
+      description: Delivery channel type
+      enum:
+        - SMS
+        - EMAIL
+        - PUSH
+      example: SMS
+    NotificationStatus:
+      type: string
+      description: Notification lifecycle status
+      enum:
+        - QUEUED
+        - PROCESSING
+        - DELIVERED
+        - PARTIALLY_DELIVERED
+        - FAILED
+        - SUPPRESSED
+      example: DELIVERED
+    DeliveryStatus:
+      type: string
+      description: Channel delivery outcome status
+      enum:
+        - PENDING
+        - SENT
+        - DELIVERED
+        - FAILED
+        - SUPPRESSED
+      example: DELIVERED
+    Error:
+      type: object
+      description: Standard error response envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Optional field-level validation details
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    example: priority
+                  reason:
+                    type: string
+                    example: Must be one of LOW, MEDIUM, HIGH, CRITICAL
+            request_id:
+              type: string
+              description: Request identifier for support and tracing
+              example: req-66a13cd9-4622-42f8-b1a7-f5593af3f8a9
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by Verizon Identity platform
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: channel_policy
+                  reason: Must be one of sms_first, email_first, push_only
+              request_id: req-66a13cd9-4622-42f8-b1a7-f5593af3f8a9
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-8d0078a9-c61f-4bd8-9d4f-b0bdd24fe9d2
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-8a1ca5be-26cc-496f-acf8-00f9429ee40a
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-e484f785-4ad9-442f-9e2f-50cae8fd69a4
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource already exists or cannot be modified in its current state.
+              request_id: req-15738657-caf4-414d-a4f8-ec86e8af7351
+    "422":
+      description: Unprocessable Entity — Request is syntactically valid but violates business rules.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Notification cannot be sent due to OPTED_OUT preference status.
+              details:
+                - field: opt_in_status
+                  reason: Party is currently OPTED_OUT for selected event type
+              request_id: req-39c7815e-5699-43f0-979a-ddf8e8f3fd2b
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Retry after 30 seconds.
+              request_id: req-85c861d8-20d6-4dbd-a7f9-90ca97a2a0f7
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-7eb4388b-5c95-431d-8f06-b6c674ea1128

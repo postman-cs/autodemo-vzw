@@ -1,0 +1,65 @@
+local_server_session := "se-catalog-dev"
+local_server_url := "http://localhost:5173"
+local_server_log := ".sisyphus/runtime/se-catalog-dev.log"
+
+# Launch the unified local dev server in tmux and wait for health.
+local-server-launch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p .sisyphus/runtime
+    if tmux has-session -t {{local_server_session}} 2>/dev/null; then
+      echo "local server already running: {{local_server_session}}"
+      exit 0
+    fi
+    tmux new-session -d -s {{local_server_session}} "cd '{{justfile_directory()}}' && npm run dev 2>&1 | tee '{{local_server_log}}'"
+    for _ in $(seq 1 60); do
+      if curl -fsS --max-time 2 '{{local_server_url}}/api/health' >/dev/null 2>&1; then
+        echo "local server ready: {{local_server_url}}"
+        echo "logs: {{local_server_log}}"
+        exit 0
+      fi
+      sleep 1
+    done
+    echo "local server did not become healthy; inspect {{local_server_log}}" >&2
+    exit 1
+
+# Restart the unified local dev server.
+local-server-restart:
+    just local-server-kill
+    just local-server-launch
+
+# Stop the unified local dev server tmux session.
+local-server-kill:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if tmux has-session -t {{local_server_session}} 2>/dev/null; then
+      tmux kill-session -t {{local_server_session}}
+      echo "local server stopped: {{local_server_session}}"
+    else
+      echo "local server already stopped"
+    fi
+
+# Report local dev server status and health.
+local-server-status:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if tmux has-session -t {{local_server_session}} 2>/dev/null; then
+      echo "session: running ({{local_server_session}})"
+      if curl -fsS --max-time 2 '{{local_server_url}}/api/health' >/dev/null 2>&1; then
+        echo "health: ok ({{local_server_url}})"
+      else
+        echo "health: starting or unhealthy"
+      fi
+      echo "logs: {{local_server_log}}"
+    else
+      echo "session: stopped"
+      exit 1
+    fi
+
+# Deploy active catalog-admin worker
+catalog-admin:
+    env -i HOME="{{env_var('HOME')}}" PATH="{{env_var('PATH')}}" npx wrangler deploy --config wrangler.toml
+
+# Deploy active worker
+deploy:
+    just catalog-admin

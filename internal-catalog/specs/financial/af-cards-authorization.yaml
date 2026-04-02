@@ -1,0 +1,2079 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Card Authorization API
+  description: >-
+    Processes real-time card transaction authorizations including pre-authorization holds, full and partial
+    captures, reversals, incremental authorizations, and voids. Integrates with fraud detection for risk scoring
+    and with card limits for spend control. Supports all major card networks (Visa, Mastercard, Amex, Discover)
+    across POS, e-commerce, ATM, contactless, and recurring payment channels. Authorization holds expire after 7
+    days for most merchant categories per network rules.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-cards-authorization
+  x-acme-domain: cards
+servers:
+  - url: https://af-cards-authorization.api.acmefin.com/v1
+    description: Production
+  - url: https://af-cards-authorization.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Authorizations
+    description: Transaction authorization lifecycle from initial hold through capture and settlement
+  - name: Merchant Controls
+    description: Merchant category and channel-level authorization controls
+paths:
+  /authorizations:
+    get:
+      operationId: listAuthorizations
+      summary: List authorizations
+      description: >-
+        Returns a paginated list of card authorizations. Supports filtering by card, status, merchant,
+        channel, and date range. Each entry includes the authorization amount, captured amount, merchant
+        details, and current lifecycle status. Use for transaction monitoring and reconciliation.
+      tags:
+        - Authorizations
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: card_id
+          in: query
+          required: false
+          description: Filter by card identifier
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by authorization status
+          schema:
+            type: "string"
+            enum:
+              - AUTHORIZED
+              - CAPTURED
+              - REVERSED
+              - VOIDED
+              - DECLINED
+        - name: channel
+          in: query
+          required: false
+          description: Filter by transaction channel
+          schema:
+            type: "string"
+            enum:
+              - POS
+              - ECOMMERCE
+              - ATM
+              - MOTO
+              - CONTACTLESS
+              - RECURRING
+        - name: from_date
+          in: query
+          required: false
+          description: Include authorizations on or after this date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        authorization_id:
+                          type: string
+                          description: Unique authorization identifier
+                          example: "auth-4f8a21c9"
+                        card_id:
+                          type: string
+                          description: Unique card identifier
+                          example: "card-8a2f4b91"
+                        masked_pan:
+                          type: string
+                          description: Masked primary account number
+                          example: "****-****-****-4532"
+                        amount:
+                          type: number
+                          description: Monetary amount
+                          format: double
+                          example: 250.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        status:
+                          type: string
+                          description: Authorization lifecycle status
+                          example: "AUTHORIZED"
+                          enum:
+                            - AUTHORIZED
+                            - CAPTURED
+                            - PARTIALLY_CAPTURED
+                            - REVERSED
+                            - VOIDED
+                            - DECLINED
+                            - EXPIRED
+                            - PENDING
+                        authorization_code:
+                          type: string
+                          description: Six-character authorization approval code returned by the issuer
+                          example: "A12B3C"
+                        merchant_name:
+                          type: string
+                          description: Merchant name as registered with the acquirer
+                          example: "ACME Electronics Store"
+                        merchant_category_code:
+                          type: string
+                          description: ISO 18245 merchant category code
+                          example: "5411"
+                          pattern: '^[0-9]{4}$'
+                        acquirer_id:
+                          type: string
+                          description: Acquiring bank identifier
+                          example: "ACQ-001234"
+                        retrieval_reference:
+                          type: string
+                          description: Network retrieval reference number for reconciliation
+                          example: "025614800012"
+                        network:
+                          type: string
+                          description: Card network that processed the authorization
+                          example: "VISA"
+                          enum:
+                            - VISA
+                            - MASTERCARD
+                            - AMEX
+                            - DISCOVER
+                        channel:
+                          type: string
+                          description: Transaction channel
+                          example: "POS"
+                          enum:
+                            - POS
+                            - ECOMMERCE
+                            - ATM
+                            - MOTO
+                            - CONTACTLESS
+                            - RECURRING
+                        captured_amount:
+                          type: number
+                          description: Amount captured so far against this authorization
+                          format: double
+                          example: 0.0
+                        interchange_fee:
+                          type: number
+                          description: Interchange fee for this transaction
+                          format: double
+                          example: 4.5
+                        settlement_date:
+                          type: string
+                          description: Expected settlement date
+                          format: date
+                          example: "2025-06-17"
+                          nullable: true
+                        auth_expiry:
+                          type: string
+                          description: Timestamp when the authorization hold expires if not captured
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        trace_id:
+                          type: string
+                          description: Distributed tracing identifier for cross-service correlation
+                          format: uuid
+                          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                        created_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - authorization_id
+                        - card_id
+                        - amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createAuthorization
+      summary: Create an authorization
+      description: >-
+        Submits a real-time authorization request for a card transaction. The system evaluates fraud risk,
+        card limits, and merchant controls before approving or declining. Approved authorizations place a
+        hold on the cardholder's available balance. Authorization holds expire after 7 days if not captured.
+        Returns within 200ms at p99.
+      tags:
+        - Authorizations
+      requestBody:
+        required: true
+        description: Create an authorization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    card_id:
+                      type: string
+                      description: Unique card identifier
+                      example: "card-8a2f4b91"
+                    amount:
+                      type: number
+                      description: Monetary amount
+                      format: double
+                      example: 250.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    merchant_name:
+                      type: string
+                      description: Merchant name as registered with the acquirer
+                      example: "ACME Electronics Store"
+                    merchant_category_code:
+                      type: string
+                      description: ISO 18245 merchant category code
+                      example: "5411"
+                      pattern: '^[0-9]{4}$'
+                    acquirer_id:
+                      type: string
+                      description: Acquiring bank identifier
+                      example: "ACQ-001234"
+                    channel:
+                      type: string
+                      description: Transaction channel
+                      example: "POS"
+                      enum:
+                        - POS
+                        - ECOMMERCE
+                        - ATM
+                        - MOTO
+                        - CONTACTLESS
+                        - RECURRING
+                    is_recurring:
+                      type: boolean
+                      description: Whether this is a recurring payment authorization
+                      example: false
+              required:
+                - card_id
+                - amount
+                - currency
+                - merchant_name
+                - merchant_category_code
+                - channel
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Unique authorization identifier
+                    example: "auth-4f8a21c9"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    description: Authorization lifecycle status
+                    example: "AUTHORIZED"
+                    enum:
+                      - AUTHORIZED
+                      - CAPTURED
+                      - PARTIALLY_CAPTURED
+                      - REVERSED
+                      - VOIDED
+                      - DECLINED
+                      - EXPIRED
+                      - PENDING
+                  authorization_code:
+                    type: string
+                    description: Six-character authorization approval code returned by the issuer
+                    example: "A12B3C"
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  acquirer_id:
+                    type: string
+                    description: Acquiring bank identifier
+                    example: "ACQ-001234"
+                  retrieval_reference:
+                    type: string
+                    description: Network retrieval reference number for reconciliation
+                    example: "025614800012"
+                  network:
+                    type: string
+                    description: Card network that processed the authorization
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  channel:
+                    type: string
+                    description: Transaction channel
+                    example: "POS"
+                    enum:
+                      - POS
+                      - ECOMMERCE
+                      - ATM
+                      - MOTO
+                      - CONTACTLESS
+                      - RECURRING
+                  captured_amount:
+                    type: number
+                    description: Amount captured so far against this authorization
+                    format: double
+                    example: 0.0
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee for this transaction
+                    format: double
+                    example: 4.5
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-17"
+                    nullable: true
+                  auth_expiry:
+                    type: string
+                    description: Timestamp when the authorization hold expires if not captured
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  trace_id:
+                    type: string
+                    description: Distributed tracing identifier for cross-service correlation
+                    format: uuid
+                    example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authorization_id
+                  - status
+                  - authorization_code
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /authorizations/{authorization_id}:
+    get:
+      operationId: getAuthorization
+      summary: Get authorization details
+      description: >-
+        Retrieves the full details of an authorization including merchant information, amounts, status,
+        interchange fees, and settlement date. For partially captured authorizations, shows the captured
+        amount versus the original hold amount.
+      tags:
+        - Authorizations
+      parameters:
+        - name: authorization_id
+          in: path
+          required: true
+          description: Unique authorization id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Unique authorization identifier
+                    example: "auth-4f8a21c9"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    description: Authorization lifecycle status
+                    example: "AUTHORIZED"
+                    enum:
+                      - AUTHORIZED
+                      - CAPTURED
+                      - PARTIALLY_CAPTURED
+                      - REVERSED
+                      - VOIDED
+                      - DECLINED
+                      - EXPIRED
+                      - PENDING
+                  authorization_code:
+                    type: string
+                    description: Six-character authorization approval code returned by the issuer
+                    example: "A12B3C"
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  acquirer_id:
+                    type: string
+                    description: Acquiring bank identifier
+                    example: "ACQ-001234"
+                  retrieval_reference:
+                    type: string
+                    description: Network retrieval reference number for reconciliation
+                    example: "025614800012"
+                  network:
+                    type: string
+                    description: Card network that processed the authorization
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  channel:
+                    type: string
+                    description: Transaction channel
+                    example: "POS"
+                    enum:
+                      - POS
+                      - ECOMMERCE
+                      - ATM
+                      - MOTO
+                      - CONTACTLESS
+                      - RECURRING
+                  captured_amount:
+                    type: number
+                    description: Amount captured so far against this authorization
+                    format: double
+                    example: 0.0
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee for this transaction
+                    format: double
+                    example: 4.5
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-17"
+                    nullable: true
+                  auth_expiry:
+                    type: string
+                    description: Timestamp when the authorization hold expires if not captured
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  trace_id:
+                    type: string
+                    description: Distributed tracing identifier for cross-service correlation
+                    format: uuid
+                    example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authorization_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /authorizations/{authorization_id}/capture:
+    post:
+      operationId: captureAuthorization
+      summary: Capture an authorization
+      description: >-
+        Captures a previously authorized transaction, initiating the settlement process. The capture amount
+        can be equal to or less than the original authorization amount. If the capture amount is less, the
+        remaining hold is released. Only authorizations in AUTHORIZED status can be captured. Settlement
+        typically occurs within 1-2 business days.
+      tags:
+        - Authorizations
+      parameters:
+        - name: authorization_id
+          in: path
+          required: true
+          description: Unique authorization id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Capture an authorization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    amount:
+                      type: number
+                      description: Amount to capture (must be <= authorized amount)
+                      format: double
+                      example: 250.0
+                    settlement_descriptor:
+                      type: string
+                      description: Statement descriptor for the settlement
+                      example: "ACME ELECTRONICS #4521"
+              required:
+                - amount
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Unique authorization identifier
+                    example: "auth-4f8a21c9"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    description: Authorization lifecycle status
+                    example: "AUTHORIZED"
+                    enum:
+                      - AUTHORIZED
+                      - CAPTURED
+                      - PARTIALLY_CAPTURED
+                      - REVERSED
+                      - VOIDED
+                      - DECLINED
+                      - EXPIRED
+                      - PENDING
+                  authorization_code:
+                    type: string
+                    description: Six-character authorization approval code returned by the issuer
+                    example: "A12B3C"
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  acquirer_id:
+                    type: string
+                    description: Acquiring bank identifier
+                    example: "ACQ-001234"
+                  retrieval_reference:
+                    type: string
+                    description: Network retrieval reference number for reconciliation
+                    example: "025614800012"
+                  network:
+                    type: string
+                    description: Card network that processed the authorization
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  channel:
+                    type: string
+                    description: Transaction channel
+                    example: "POS"
+                    enum:
+                      - POS
+                      - ECOMMERCE
+                      - ATM
+                      - MOTO
+                      - CONTACTLESS
+                      - RECURRING
+                  captured_amount:
+                    type: number
+                    description: Amount captured so far against this authorization
+                    format: double
+                    example: 0.0
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee for this transaction
+                    format: double
+                    example: 4.5
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-17"
+                    nullable: true
+                  auth_expiry:
+                    type: string
+                    description: Timestamp when the authorization hold expires if not captured
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  trace_id:
+                    type: string
+                    description: Distributed tracing identifier for cross-service correlation
+                    format: uuid
+                    example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authorization_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /authorizations/{authorization_id}/reversal:
+    post:
+      operationId: reverseAuthorization
+      summary: Reverse an authorization
+      description: >-
+        Reverses an authorized transaction, releasing the hold on the cardholder's available balance. Full
+        reversals release the entire hold amount. The reversal is processed through the card network and the
+        acquirer is notified. Only authorizations in AUTHORIZED status can be fully reversed.
+      tags:
+        - Authorizations
+      parameters:
+        - name: authorization_id
+          in: path
+          required: true
+          description: Unique authorization id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Reverse an authorization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: Reason for the reversal
+                      example: "Customer cancelled order before shipment"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Unique authorization identifier
+                    example: "auth-4f8a21c9"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    description: Authorization lifecycle status
+                    example: "AUTHORIZED"
+                    enum:
+                      - AUTHORIZED
+                      - CAPTURED
+                      - PARTIALLY_CAPTURED
+                      - REVERSED
+                      - VOIDED
+                      - DECLINED
+                      - EXPIRED
+                      - PENDING
+                  authorization_code:
+                    type: string
+                    description: Six-character authorization approval code returned by the issuer
+                    example: "A12B3C"
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  acquirer_id:
+                    type: string
+                    description: Acquiring bank identifier
+                    example: "ACQ-001234"
+                  retrieval_reference:
+                    type: string
+                    description: Network retrieval reference number for reconciliation
+                    example: "025614800012"
+                  network:
+                    type: string
+                    description: Card network that processed the authorization
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  channel:
+                    type: string
+                    description: Transaction channel
+                    example: "POS"
+                    enum:
+                      - POS
+                      - ECOMMERCE
+                      - ATM
+                      - MOTO
+                      - CONTACTLESS
+                      - RECURRING
+                  captured_amount:
+                    type: number
+                    description: Amount captured so far against this authorization
+                    format: double
+                    example: 0.0
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee for this transaction
+                    format: double
+                    example: 4.5
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-17"
+                    nullable: true
+                  auth_expiry:
+                    type: string
+                    description: Timestamp when the authorization hold expires if not captured
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  trace_id:
+                    type: string
+                    description: Distributed tracing identifier for cross-service correlation
+                    format: uuid
+                    example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authorization_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /authorizations/{authorization_id}/incremental:
+    post:
+      operationId: incrementalAuth
+      summary: Request incremental authorization
+      description: >-
+        Increases the authorized amount for an existing authorization. Common for hotels, car rentals, and
+        restaurants where the final amount may exceed the initial authorization. The cardholder's available
+        balance is reduced by the incremental amount. Subject to fraud and limit checks. Not all merchant
+        categories support incremental authorizations.
+      tags:
+        - Authorizations
+      parameters:
+        - name: authorization_id
+          in: path
+          required: true
+          description: Unique authorization id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Request incremental authorization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    additional_amount:
+                      type: number
+                      description: Additional amount to add to the authorization
+                      format: double
+                      example: 250.0
+                    reason:
+                      type: string
+                      description: Reason for the incremental authorization
+                      example: "Extended hotel stay - 2 additional nights"
+              required:
+                - additional_amount
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Unique authorization identifier
+                    example: "auth-4f8a21c9"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    description: Authorization lifecycle status
+                    example: "AUTHORIZED"
+                    enum:
+                      - AUTHORIZED
+                      - CAPTURED
+                      - PARTIALLY_CAPTURED
+                      - REVERSED
+                      - VOIDED
+                      - DECLINED
+                      - EXPIRED
+                      - PENDING
+                  authorization_code:
+                    type: string
+                    description: Six-character authorization approval code returned by the issuer
+                    example: "A12B3C"
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  acquirer_id:
+                    type: string
+                    description: Acquiring bank identifier
+                    example: "ACQ-001234"
+                  retrieval_reference:
+                    type: string
+                    description: Network retrieval reference number for reconciliation
+                    example: "025614800012"
+                  network:
+                    type: string
+                    description: Card network that processed the authorization
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  channel:
+                    type: string
+                    description: Transaction channel
+                    example: "POS"
+                    enum:
+                      - POS
+                      - ECOMMERCE
+                      - ATM
+                      - MOTO
+                      - CONTACTLESS
+                      - RECURRING
+                  captured_amount:
+                    type: number
+                    description: Amount captured so far against this authorization
+                    format: double
+                    example: 0.0
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee for this transaction
+                    format: double
+                    example: 4.5
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-17"
+                    nullable: true
+                  auth_expiry:
+                    type: string
+                    description: Timestamp when the authorization hold expires if not captured
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  trace_id:
+                    type: string
+                    description: Distributed tracing identifier for cross-service correlation
+                    format: uuid
+                    example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authorization_id
+                  - status
+                  - amount
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /authorizations/{authorization_id}/partial-capture:
+    post:
+      operationId: partialCapture
+      summary: Perform a partial capture
+      description: >-
+        Captures a portion of the authorized amount and keeps the remaining hold active for a subsequent
+        capture. Useful for split shipments where different items ship at different times. The remaining
+        hold continues until captured or the authorization expires. Maximum of five partial captures per
+        authorization.
+      tags:
+        - Authorizations
+      parameters:
+        - name: authorization_id
+          in: path
+          required: true
+          description: Unique authorization id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Perform a partial capture request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    amount:
+                      type: number
+                      description: Amount to capture in this partial capture
+                      format: double
+                      example: 250.0
+                    is_final:
+                      type: boolean
+                      description: Whether this is the final capture (releases remaining hold)
+                      example: false
+              required:
+                - amount
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Unique authorization identifier
+                    example: "auth-4f8a21c9"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    description: Authorization lifecycle status
+                    example: "AUTHORIZED"
+                    enum:
+                      - AUTHORIZED
+                      - CAPTURED
+                      - PARTIALLY_CAPTURED
+                      - REVERSED
+                      - VOIDED
+                      - DECLINED
+                      - EXPIRED
+                      - PENDING
+                  authorization_code:
+                    type: string
+                    description: Six-character authorization approval code returned by the issuer
+                    example: "A12B3C"
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  acquirer_id:
+                    type: string
+                    description: Acquiring bank identifier
+                    example: "ACQ-001234"
+                  retrieval_reference:
+                    type: string
+                    description: Network retrieval reference number for reconciliation
+                    example: "025614800012"
+                  network:
+                    type: string
+                    description: Card network that processed the authorization
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  channel:
+                    type: string
+                    description: Transaction channel
+                    example: "POS"
+                    enum:
+                      - POS
+                      - ECOMMERCE
+                      - ATM
+                      - MOTO
+                      - CONTACTLESS
+                      - RECURRING
+                  captured_amount:
+                    type: number
+                    description: Amount captured so far against this authorization
+                    format: double
+                    example: 0.0
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee for this transaction
+                    format: double
+                    example: 4.5
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-17"
+                    nullable: true
+                  auth_expiry:
+                    type: string
+                    description: Timestamp when the authorization hold expires if not captured
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  trace_id:
+                    type: string
+                    description: Distributed tracing identifier for cross-service correlation
+                    format: uuid
+                    example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authorization_id
+                  - status
+                  - captured_amount
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /authorizations/{authorization_id}/void:
+    post:
+      operationId: voidAuthorization
+      summary: Void an authorization
+      description: >-
+        Voids an authorization that has already been captured but not yet settled. The settlement is
+        cancelled and the cardholder's balance is restored. Voids must be submitted before the settlement
+        cutoff time (typically 11 PM ET). After settlement, a refund must be used instead.
+      tags:
+        - Authorizations
+      parameters:
+        - name: authorization_id
+          in: path
+          required: true
+          description: Unique authorization id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Void an authorization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: Reason for voiding the authorization
+                      example: "Duplicate transaction"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Unique authorization identifier
+                    example: "auth-4f8a21c9"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    description: Authorization lifecycle status
+                    example: "AUTHORIZED"
+                    enum:
+                      - AUTHORIZED
+                      - CAPTURED
+                      - PARTIALLY_CAPTURED
+                      - REVERSED
+                      - VOIDED
+                      - DECLINED
+                      - EXPIRED
+                      - PENDING
+                  authorization_code:
+                    type: string
+                    description: Six-character authorization approval code returned by the issuer
+                    example: "A12B3C"
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  acquirer_id:
+                    type: string
+                    description: Acquiring bank identifier
+                    example: "ACQ-001234"
+                  retrieval_reference:
+                    type: string
+                    description: Network retrieval reference number for reconciliation
+                    example: "025614800012"
+                  network:
+                    type: string
+                    description: Card network that processed the authorization
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  channel:
+                    type: string
+                    description: Transaction channel
+                    example: "POS"
+                    enum:
+                      - POS
+                      - ECOMMERCE
+                      - ATM
+                      - MOTO
+                      - CONTACTLESS
+                      - RECURRING
+                  captured_amount:
+                    type: number
+                    description: Amount captured so far against this authorization
+                    format: double
+                    example: 0.0
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee for this transaction
+                    format: double
+                    example: 4.5
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-17"
+                    nullable: true
+                  auth_expiry:
+                    type: string
+                    description: Timestamp when the authorization hold expires if not captured
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  trace_id:
+                    type: string
+                    description: Distributed tracing identifier for cross-service correlation
+                    format: uuid
+                    example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authorization_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /authorizations/{authorization_id}/history:
+    get:
+      operationId: getAuthorizationHistory
+      summary: Get authorization event history
+      description: >-
+        Returns the complete event history for an authorization including the initial request, fraud check
+        results, approval/decline decision, captures, reversals, and settlement events. Each event includes
+        a timestamp, type, and associated data. Use for detailed transaction audit and investigation.
+      tags:
+        - Authorizations
+      parameters:
+        - name: authorization_id
+          in: path
+          required: true
+          description: Unique authorization id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    description: Authorization lifecycle events in chronological order
+                    items:
+                      type: string
+                      example: "2025-06-15T14:30:00Z: AUTHORIZED for $250.00"
+                  total_events:
+                    type: integer
+                    description: Total number of lifecycle events
+                    example: 4
+                required:
+                  - events
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /pre-authorizations:
+    post:
+      operationId: createPreAuth
+      summary: Create a pre-authorization
+      description: >-
+        Creates a pre-authorization hold for a future transaction. Pre-authorizations are used for estimated
+        charges where the final amount is not yet known, such as hotel check-ins, car rentals, and gas
+        station pay-at-pump. Pre-auth holds have extended expiry periods (up to 30 days for lodging). The
+        hold amount is not charged to the cardholder.
+      tags:
+        - Authorizations
+      requestBody:
+        required: true
+        description: Create a pre-authorization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    card_id:
+                      type: string
+                      description: Unique card identifier
+                      example: "card-8a2f4b91"
+                    estimated_amount:
+                      type: number
+                      description: Estimated transaction amount for the hold
+                      format: double
+                      example: 250.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    merchant_name:
+                      type: string
+                      description: Merchant name as registered with the acquirer
+                      example: "ACME Electronics Store"
+                    merchant_category_code:
+                      type: string
+                      description: ISO 18245 merchant category code
+                      example: "5411"
+                      pattern: '^[0-9]{4}$'
+                    hold_duration_days:
+                      type: integer
+                      description: Requested hold duration in days (max 30 for lodging)
+                      example: 7
+                      minimum: 1
+                      maximum: 30
+              required:
+                - card_id
+                - estimated_amount
+                - currency
+                - merchant_name
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_id:
+                    type: string
+                    description: Unique authorization identifier
+                    example: "auth-4f8a21c9"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  masked_pan:
+                    type: string
+                    description: Masked primary account number
+                    example: "****-****-****-4532"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  status:
+                    type: string
+                    description: Authorization lifecycle status
+                    example: "AUTHORIZED"
+                    enum:
+                      - AUTHORIZED
+                      - CAPTURED
+                      - PARTIALLY_CAPTURED
+                      - REVERSED
+                      - VOIDED
+                      - DECLINED
+                      - EXPIRED
+                      - PENDING
+                  authorization_code:
+                    type: string
+                    description: Six-character authorization approval code returned by the issuer
+                    example: "A12B3C"
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  acquirer_id:
+                    type: string
+                    description: Acquiring bank identifier
+                    example: "ACQ-001234"
+                  retrieval_reference:
+                    type: string
+                    description: Network retrieval reference number for reconciliation
+                    example: "025614800012"
+                  network:
+                    type: string
+                    description: Card network that processed the authorization
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  channel:
+                    type: string
+                    description: Transaction channel
+                    example: "POS"
+                    enum:
+                      - POS
+                      - ECOMMERCE
+                      - ATM
+                      - MOTO
+                      - CONTACTLESS
+                      - RECURRING
+                  captured_amount:
+                    type: number
+                    description: Amount captured so far against this authorization
+                    format: double
+                    example: 0.0
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee for this transaction
+                    format: double
+                    example: 4.5
+                  settlement_date:
+                    type: string
+                    description: Expected settlement date
+                    format: date
+                    example: "2025-06-17"
+                    nullable: true
+                  auth_expiry:
+                    type: string
+                    description: Timestamp when the authorization hold expires if not captured
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  trace_id:
+                    type: string
+                    description: Distributed tracing identifier for cross-service correlation
+                    format: uuid
+                    example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authorization_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /merchant-controls:
+    get:
+      operationId: getMerchantControls
+      summary: Get merchant category controls
+      description: >-
+        Returns the merchant category and channel-level authorization controls for a card. Controls define
+        which MCCs and channels are allowed or blocked for transactions. Use this to display the
+        cardholder's current control settings.
+      tags:
+        - Merchant Controls
+      parameters:
+        - name: card_id
+          in: query
+          required: true
+          description: Card identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  blocked_mccs:
+                    type: array
+                    description: List of blocked merchant category codes
+                    items:
+                      type: string
+                      example: "7995"
+                  blocked_channels:
+                    type: array
+                    description: List of blocked transaction channels
+                    items:
+                      type: string
+                      example: "ATM"
+                  international_enabled:
+                    type: boolean
+                    description: Whether international transactions are allowed
+                    example: true
+                  online_gambling_enabled:
+                    type: boolean
+                    description: Whether online gambling transactions are allowed
+                    example: false
+                required:
+                  - card_id
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: updateMerchantControls
+      summary: Update merchant category controls
+      description: >-
+        Updates the merchant category and channel-level authorization controls for a card. Changes take
+        effect immediately for subsequent transactions. Use this to block specific merchant categories
+        (e.g., gambling, adult entertainment) or restrict transaction channels (e.g., ATM-only, no online).
+      tags:
+        - Merchant Controls
+      requestBody:
+        required: true
+        description: Update merchant category controls request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    card_id:
+                      type: string
+                      description: Unique card identifier
+                      example: "card-8a2f4b91"
+                    blocked_mccs:
+                      type: array
+                      description: MCCs to block
+                      items:
+                        type: string
+                        example: "7995"
+                    blocked_channels:
+                      type: array
+                      description: Channels to block
+                      items:
+                        type: string
+                        example: "ATM"
+                    international_enabled:
+                      type: boolean
+                      description: Allow/disallow international transactions
+                    online_gambling_enabled:
+                      type: boolean
+                      description: Allow/disallow online gambling
+              required:
+                - card_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  blocked_mccs:
+                    type: array
+                    items:
+                      type: string
+                  blocked_channels:
+                    type: array
+                    items:
+                      type: string
+                  international_enabled:
+                    type: boolean
+                    example: true
+                  updated_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - card_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

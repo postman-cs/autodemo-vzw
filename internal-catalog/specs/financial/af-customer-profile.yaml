@@ -1,0 +1,1299 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Customer Profile API
+  description: Core customer master data management for Acme Finance. Provides CRUD operations on customer profiles, duplicate
+    detection and merge, address validation, and supplementary data management (employment, tax). Serves as the system of
+    record for customer PII with full audit trails and RBAC-based field-level access control.
+  version: 3.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-customer-profile
+  x-acme-domain: customer
+servers:
+- url: https://af-customer-profile.api.acmefin.com/v1
+  description: Production
+- url: https://af-customer-profile.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Customer Records
+  description: Core customer profile CRUD and search operations
+- name: Data Quality
+  description: Duplicate detection, merge, and address validation
+- name: Supplementary Data
+  description: Employment, tax, and extended customer information
+paths:
+  /customers:
+    get:
+      operationId: listCustomers
+      summary: List customers
+      description: Returns a paginated list of customer profiles. Supports filtering by status, segment, creation date, and
+        relationship manager. Results are masked based on the caller's RBAC permissions.
+      tags:
+      - Customer Records
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by account status
+        schema:
+          type: string
+          enum:
+          - active
+          - suspended
+          - closed
+      - name: segment
+        in: query
+        required: false
+        description: Filter by customer segment
+        schema:
+          type: string
+          enum:
+          - mass
+          - affluent
+          - hnw
+          - uhnw
+      - name: created_after
+        in: query
+        required: false
+        description: Created after date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        customer_id:
+                          type: string
+                          description: Customer Information File (CIF) number
+                          example: CIF-10042389
+                        first_name:
+                          type: string
+                          description: Legal first name
+                          example: Margaret
+                        last_name:
+                          type: string
+                          description: Legal last name
+                          example: Chen
+                        date_of_birth:
+                          type: string
+                          description: Date of birth
+                          format: date
+                          example: '1985-03-22'
+                        email:
+                          type: string
+                          description: Primary email address
+                          format: email
+                          example: margaret.chen@email.com
+                        phone:
+                          type: string
+                          description: Primary phone number
+                          example: +1-555-0142
+                        ssn_masked:
+                          type: string
+                          description: Masked SSN (last 4 visible)
+                          example: '***-**-4832'
+                          readOnly: true
+                        status:
+                          type: string
+                          description: Account status
+                          enum:
+                          - active
+                          - suspended
+                          - closed
+                          - deceased
+                        segment:
+                          type: string
+                          description: Customer segment
+                          enum:
+                          - mass
+                          - affluent
+                          - hnw
+                          - uhnw
+                        created_at:
+                          type: string
+                          description: Record creation date
+                          format: date-time
+                      required:
+                      - customer_id
+                      - first_name
+                      - last_name
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createCustomer
+      summary: Create customer profile
+      description: Creates a new customer master record. Performs duplicate detection before creation and returns potential
+        matches if found. CIF number is auto-generated.
+      tags:
+      - Customer Records
+      requestBody:
+        required: true
+        description: Create customer profile request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                  description: Legal first name
+                  example: James
+                last_name:
+                  type: string
+                  description: Legal last name
+                  example: Wilson
+                date_of_birth:
+                  type: string
+                  description: Date of birth
+                  format: date
+                email:
+                  type: string
+                  description: Primary email
+                  format: email
+                phone:
+                  type: string
+                  description: Primary phone
+                ssn:
+                  type: string
+                  description: Social Security Number (encrypted at rest)
+                  pattern: ^\d{3}-\d{2}-\d{4}$
+                address:
+                  type: object
+                  description: Primary address
+                  properties:
+                    line1:
+                      type: string
+                    city:
+                      type: string
+                    state:
+                      type: string
+                    postal_code:
+                      type: string
+                    country:
+                      type: string
+              required:
+              - first_name
+              - last_name
+              - date_of_birth
+              - email
+              - ssn
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: Customer Information File (CIF) number
+                    example: CIF-10042389
+                  first_name:
+                    type: string
+                    description: Legal first name
+                    example: Margaret
+                  last_name:
+                    type: string
+                    description: Legal last name
+                    example: Chen
+                  date_of_birth:
+                    type: string
+                    description: Date of birth
+                    format: date
+                    example: '1985-03-22'
+                  email:
+                    type: string
+                    description: Primary email address
+                    format: email
+                    example: margaret.chen@email.com
+                  phone:
+                    type: string
+                    description: Primary phone number
+                    example: +1-555-0142
+                  ssn_masked:
+                    type: string
+                    description: Masked SSN (last 4 visible)
+                    example: '***-**-4832'
+                    readOnly: true
+                  status:
+                    type: string
+                    description: Account status
+                    enum:
+                    - active
+                    - suspended
+                    - closed
+                    - deceased
+                  segment:
+                    type: string
+                    description: Customer segment
+                    enum:
+                    - mass
+                    - affluent
+                    - hnw
+                    - uhnw
+                  created_at:
+                    type: string
+                    description: Record creation date
+                    format: date-time
+                required:
+                - customer_id
+                - first_name
+                - last_name
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}:
+    get:
+      operationId: getCustomer
+      summary: Get customer profile
+      description: Returns the full customer profile. Sensitive fields (SSN, DOB) are masked unless the caller has PII- read
+        permission.
+      tags:
+      - Customer Records
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: Customer Information File (CIF) number
+                    example: CIF-10042389
+                  first_name:
+                    type: string
+                    description: Legal first name
+                    example: Margaret
+                  last_name:
+                    type: string
+                    description: Legal last name
+                    example: Chen
+                  date_of_birth:
+                    type: string
+                    description: Date of birth
+                    format: date
+                    example: '1985-03-22'
+                  email:
+                    type: string
+                    description: Primary email address
+                    format: email
+                    example: margaret.chen@email.com
+                  phone:
+                    type: string
+                    description: Primary phone number
+                    example: +1-555-0142
+                  ssn_masked:
+                    type: string
+                    description: Masked SSN (last 4 visible)
+                    example: '***-**-4832'
+                    readOnly: true
+                  status:
+                    type: string
+                    description: Account status
+                    enum:
+                    - active
+                    - suspended
+                    - closed
+                    - deceased
+                  segment:
+                    type: string
+                    description: Customer segment
+                    enum:
+                    - mass
+                    - affluent
+                    - hnw
+                    - uhnw
+                  created_at:
+                    type: string
+                    description: Record creation date
+                    format: date-time
+                required:
+                - customer_id
+                - first_name
+                - last_name
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateCustomer
+      summary: Update customer profile
+      description: Updates customer profile fields. All changes are audit-logged. Email and phone changes trigger re- verification.
+      tags:
+      - Customer Records
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update customer profile request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  description: Updated email
+                  format: email
+                phone:
+                  type: string
+                  description: Updated phone
+                address:
+                  type: object
+                  description: Updated address
+                  properties:
+                    line1:
+                      type: string
+                    city:
+                      type: string
+                    state:
+                      type: string
+                    postal_code:
+                      type: string
+                segment:
+                  type: string
+                  description: Customer segment override
+                  enum:
+                  - mass
+                  - affluent
+                  - hnw
+                  - uhnw
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: Customer Information File (CIF) number
+                    example: CIF-10042389
+                  first_name:
+                    type: string
+                    description: Legal first name
+                    example: Margaret
+                  last_name:
+                    type: string
+                    description: Legal last name
+                    example: Chen
+                  date_of_birth:
+                    type: string
+                    description: Date of birth
+                    format: date
+                    example: '1985-03-22'
+                  email:
+                    type: string
+                    description: Primary email address
+                    format: email
+                    example: margaret.chen@email.com
+                  phone:
+                    type: string
+                    description: Primary phone number
+                    example: +1-555-0142
+                  ssn_masked:
+                    type: string
+                    description: Masked SSN (last 4 visible)
+                    example: '***-**-4832'
+                    readOnly: true
+                  status:
+                    type: string
+                    description: Account status
+                    enum:
+                    - active
+                    - suspended
+                    - closed
+                    - deceased
+                  segment:
+                    type: string
+                    description: Customer segment
+                    enum:
+                    - mass
+                    - affluent
+                    - hnw
+                    - uhnw
+                  created_at:
+                    type: string
+                    description: Record creation date
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+    delete:
+      operationId: deleteCustomer
+      summary: Delete customer profile
+      description: Soft-deletes a customer profile (marks as closed). Hard deletion requires a separate GDPR erasure request.
+        Active products must be closed first.
+      tags:
+      - Customer Records
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /customers/merge:
+    post:
+      operationId: mergeCustomerProfiles
+      summary: Merge duplicate customer profiles
+      description: Merges two duplicate customer records into a single master record. The surviving record inherits all products,
+        interactions, and relationships from the merged record. The merged CIF is tombstoned with a redirect pointer.
+      tags:
+      - Data Quality
+      requestBody:
+        required: true
+        description: Merge duplicate customer profiles request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                primary_customer_id:
+                  type: string
+                  description: CIF to keep (surviving record)
+                  example: CIF-10042389
+                duplicate_customer_id:
+                  type: string
+                  description: CIF to merge and retire
+                  example: CIF-10089001
+                merge_strategy:
+                  type: string
+                  description: How to handle conflicting fields
+                  enum:
+                  - keep_primary
+                  - keep_newest
+                  - manual_review
+                reviewed_by:
+                  type: string
+                  description: Officer who reviewed the merge
+                  example: OFF-2241
+              required:
+              - primary_customer_id
+              - duplicate_customer_id
+              - merge_strategy
+              - reviewed_by
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merge_id:
+                    type: string
+                    description: Merge operation ID
+                  surviving_customer_id:
+                    type: string
+                    description: CIF of surviving record
+                  retired_customer_id:
+                    type: string
+                    description: CIF of retired record
+                  products_transferred:
+                    type: integer
+                    description: Number of products moved
+                    example: 3
+                  interactions_transferred:
+                    type: integer
+                    description: Number of interactions moved
+                    example: 47
+                  merged_at:
+                    type: string
+                    description: Merge timestamp
+                    format: date-time
+                required:
+                - merge_id
+                - surviving_customer_id
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}/address-validate:
+    post:
+      operationId: validateCustomerAddress
+      summary: Validate customer address
+      description: Validates and standardizes the customer's primary address using USPS CASS-certified address verification.
+        Returns standardized address, deliverability status, and congressional district.
+      tags:
+      - Data Quality
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Validate customer address request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                address:
+                  type: object
+                  description: Address to validate
+                  properties:
+                    line1:
+                      type: string
+                      example: 123 Main St
+                    city:
+                      type: string
+                      example: New York
+                    state:
+                      type: string
+                      example: NY
+                    postal_code:
+                      type: string
+                      example: '10001'
+                auto_update:
+                  type: boolean
+                  description: Automatically update profile with standardized address
+                  default: false
+              required:
+              - address
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    description: Address is valid and deliverable
+                    example: true
+                  standardized_address:
+                    type: object
+                    description: USPS-standardized address
+                    properties:
+                      line1:
+                        type: string
+                        example: 123 MAIN ST
+                      city:
+                        type: string
+                        example: NEW YORK
+                      state:
+                        type: string
+                        example: NY
+                      postal_code:
+                        type: string
+                        example: 10001-5432
+                  deliverability:
+                    type: string
+                    description: Deliverability status
+                    enum:
+                    - deliverable
+                    - undeliverable
+                    - missing_unit
+                  profile_updated:
+                    type: boolean
+                    description: Whether profile was updated
+                required:
+                - valid
+                - standardized_address
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}/employment:
+    get:
+      operationId: getEmploymentInfo
+      summary: Get employment information
+      description: Returns the customer's employment details including employer, occupation, income, and employment duration.
+        Used for credit decisioning and annual reviews.
+      tags:
+      - Supplementary Data
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  employment_status:
+                    type: string
+                    description: Current employment status
+                    enum:
+                    - employed
+                    - self_employed
+                    - retired
+                    - student
+                    - unemployed
+                  employer_name:
+                    type: string
+                    description: Employer name
+                    example: Acme Technologies Inc.
+                  occupation:
+                    type: string
+                    description: Job title/occupation
+                    example: Senior Software Engineer
+                  annual_income:
+                    type: number
+                    description: Gross annual income
+                    format: double
+                    example: 145000.0
+                  employment_start_date:
+                    type: string
+                    description: Employment start date
+                    format: date
+                    example: '2020-01-15'
+                  income_verified:
+                    type: boolean
+                    description: Whether income has been independently verified
+                    example: true
+                  last_updated:
+                    type: string
+                    description: Last update timestamp
+                    format: date-time
+                required:
+                - customer_id
+                - employment_status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateEmploymentInfo
+      summary: Update employment information
+      description: Updates the customer's employment information. Income changes may trigger re-evaluation of credit limits
+        and product eligibility.
+      tags:
+      - Supplementary Data
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update employment information request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                employment_status:
+                  type: string
+                  description: Employment status
+                  enum:
+                  - employed
+                  - self_employed
+                  - retired
+                  - student
+                  - unemployed
+                employer_name:
+                  type: string
+                  description: Employer name
+                occupation:
+                  type: string
+                  description: Job title
+                annual_income:
+                  type: number
+                  description: Annual income
+                  format: double
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  employment_status:
+                    type: string
+                    description: Updated status
+                  annual_income:
+                    type: number
+                    description: Updated income
+                    format: double
+                  updated_at:
+                    type: string
+                    description: Update timestamp
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}/tax-info:
+    get:
+      operationId: getTaxInfo
+      summary: Get tax information
+      description: Returns the customer's tax-related information including tax filing status, W-9 status, tax ID, and withholding
+        preferences.
+      tags:
+      - Supplementary Data
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  tax_id_type:
+                    type: string
+                    description: Tax ID type
+                    enum:
+                    - ssn
+                    - itin
+                    - ein
+                  tax_id_masked:
+                    type: string
+                    description: Masked tax ID
+                    example: '***-**-4832'
+                    readOnly: true
+                  filing_status:
+                    type: string
+                    description: Tax filing status
+                    enum:
+                    - single
+                    - married_filing_jointly
+                    - married_filing_separately
+                    - head_of_household
+                  w9_on_file:
+                    type: boolean
+                    description: Whether W-9 is on file
+                    example: true
+                  w9_date:
+                    type: string
+                    description: W-9 submission date
+                    format: date
+                  backup_withholding:
+                    type: boolean
+                    description: Subject to backup withholding
+                    example: false
+                  foreign_tax_resident:
+                    type: boolean
+                    description: Foreign tax residency status
+                    example: false
+                required:
+                - customer_id
+                - tax_id_type
+                - filing_status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateTaxInfo
+      summary: Update tax information
+      description: Updates customer tax information. Changes to tax filing status or withholding may trigger updated 1099
+        reporting configurations.
+      tags:
+      - Supplementary Data
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update tax information request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filing_status:
+                  type: string
+                  description: Tax filing status
+                  enum:
+                  - single
+                  - married_filing_jointly
+                  - married_filing_separately
+                  - head_of_household
+                backup_withholding:
+                  type: boolean
+                  description: Backup withholding flag
+                foreign_tax_resident:
+                  type: boolean
+                  description: Foreign tax resident flag
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  filing_status:
+                    type: string
+                    description: Updated filing status
+                  updated_at:
+                    type: string
+                    description: Update timestamp
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

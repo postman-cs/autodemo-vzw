@@ -1,0 +1,1531 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Credit Bureau Integration API
+  description: >-
+    Interface with the three major US credit bureaus (Experian, Equifax, and TransUnion) to pull consumer credit
+    reports, inspect tradeline and inquiry details, file FCRA-compliant disputes, and manage credit file freezes.
+    Supports standard, tri-merge, and mortgage-supplement report types with full tradeline-level granularity
+    including payment history, utilization calculations, and derogatory mark identification.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-credit-bureau
+  x-acme-domain: credit
+servers:
+  - url: https://af-credit-bureau.api.acmefin.com/v1
+    description: Production
+  - url: https://af-credit-bureau.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Credit Reports
+    description: Pull, retrieve, and refresh consumer credit reports from major bureaus with tradeline and inquiry details
+  - name: Disputes
+    description: File and track FCRA-compliant disputes against tradeline items on credit reports
+  - name: Consumer Management
+    description: Manage consumer credit file freezes, thaw requests, and fraud alert configurations
+paths:
+  /reports:
+    get:
+      operationId: listCreditReports
+      summary: List credit reports
+      description: >-
+        Retrieve previously pulled credit reports with filtering by consumer, bureau, report type, and date
+        range. Results include summary-level data; use the detail endpoint for full tradeline data.
+      tags:
+        - Credit Reports
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: consumer_id
+          in: query
+          required: false
+          description: Filter by consumer
+          schema:
+            type: "string"
+        - name: bureau
+          in: query
+          required: false
+          description: Filter by bureau
+          schema:
+            type: "string"
+            enum:
+              - experian
+              - equifax
+              - transunion
+        - name: report_type
+          in: query
+          required: false
+          description: Filter by report type
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        report_id:
+                          type: string
+                          description: Credit report identifier
+                          format: uuid
+                          example: "rpt-1a2b3c4d-e5f6-7890-abcd-ef1234567890"
+                        consumer_id:
+                          type: string
+                          description: Consumer identifier
+                          format: uuid
+                          example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                        bureau:
+                          type: string
+                          description: Reporting bureau
+                          example: "experian"
+                          enum:
+                            - experian
+                            - equifax
+                            - transunion
+                        report_type:
+                          type: string
+                          description: Type of credit report pulled
+                          example: "standard"
+                          enum:
+                            - standard
+                            - tri_merge
+                            - mortgage_supplement
+                            - employment
+                        pull_type:
+                          type: string
+                          description: Hard or soft inquiry classification
+                          example: "hard"
+                          enum:
+                            - hard
+                            - soft
+                        status:
+                          type: string
+                          description: Report processing status
+                          example: "pending"
+                          enum:
+                            - pending
+                            - completed
+                            - partial
+                            - error
+                        total_tradelines:
+                          type: integer
+                          description: Number of tradelines on the report
+                          example: 14
+                        total_inquiries:
+                          type: integer
+                          description: Number of inquiries on file
+                          example: 3
+                        oldest_account:
+                          type: string
+                          description: Date of oldest open tradeline
+                          format: date-time
+                          example: "2012-06-01T00:00:00Z"
+                        pulled_at:
+                          type: string
+                          description: When the report was pulled
+                          format: date-time
+                          example: "2025-03-15T10:00:00Z"
+                      required:
+                        - report_id
+                        - consumer_id
+                        - bureau
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: pullCreditReport
+      summary: Pull credit report
+      description: >-
+        Initiate a new credit report pull from the specified bureau. For soft pulls (prequalification), no
+        inquiry is recorded on the consumer's file. Hard pulls are recorded and may impact the consumer's
+        credit score. Tri-merge reports pull from all three bureaus simultaneously.
+      tags:
+        - Credit Reports
+      requestBody:
+        required: true
+        description: Pull credit report request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    consumer_id:
+                      type: string
+                      description: Consumer to pull report for
+                      format: uuid
+                      example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                    bureau:
+                      type: string
+                      description: Target bureau
+                      example: "experian"
+                      enum:
+                        - experian
+                        - equifax
+                        - transunion
+                        - tri_merge
+                    report_type:
+                      type: string
+                      description: Report type
+                      example: "standard"
+                      enum:
+                        - standard
+                        - tri_merge
+                        - mortgage_supplement
+                        - employment
+                    pull_type:
+                      type: string
+                      description: Hard or soft inquiry
+                      example: "hard"
+                      enum:
+                        - hard
+                        - soft
+                    permissible_purpose:
+                      type: string
+                      description: FCRA permissible purpose code
+                      example: "credit_application"
+                      enum:
+                        - credit_application
+                        - account_review
+                        - prequalification
+                        - employment
+                        - insurance
+              required:
+                - consumer_id
+                - bureau
+                - pull_type
+                - permissible_purpose
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: Credit report identifier
+                    format: uuid
+                    example: "rpt-1a2b3c4d-e5f6-7890-abcd-ef1234567890"
+                  consumer_id:
+                    type: string
+                    description: Consumer identifier
+                    format: uuid
+                    example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                  bureau:
+                    type: string
+                    description: Reporting bureau
+                    example: "experian"
+                    enum:
+                      - experian
+                      - equifax
+                      - transunion
+                  report_type:
+                    type: string
+                    description: Type of credit report pulled
+                    example: "standard"
+                    enum:
+                      - standard
+                      - tri_merge
+                      - mortgage_supplement
+                      - employment
+                  pull_type:
+                    type: string
+                    description: Hard or soft inquiry classification
+                    example: "hard"
+                    enum:
+                      - hard
+                      - soft
+                  status:
+                    type: string
+                    description: Report processing status
+                    example: "pending"
+                    enum:
+                      - pending
+                      - completed
+                      - partial
+                      - error
+                  total_tradelines:
+                    type: integer
+                    description: Number of tradelines on the report
+                    example: 14
+                  total_inquiries:
+                    type: integer
+                    description: Number of inquiries on file
+                    example: 3
+                  oldest_account:
+                    type: string
+                    description: Date of oldest open tradeline
+                    format: date-time
+                    example: "2012-06-01T00:00:00Z"
+                  pulled_at:
+                    type: string
+                    description: When the report was pulled
+                    format: date-time
+                    example: "2025-03-15T10:00:00Z"
+                required:
+                  - report_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /reports/{report_id}:
+    get:
+      operationId: getCreditReport
+      summary: Get credit report
+      description: >-
+        Retrieve the full credit report including all tradelines, inquiries, public records, and summary
+        statistics. Large reports may exceed 100 tradelines; use sub-resource endpoints for paginated
+        access.
+      tags:
+        - Credit Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: Credit report identifier
+                    format: uuid
+                    example: "rpt-1a2b3c4d-e5f6-7890-abcd-ef1234567890"
+                  consumer_id:
+                    type: string
+                    description: Consumer identifier
+                    format: uuid
+                    example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                  bureau:
+                    type: string
+                    description: Reporting bureau
+                    example: "experian"
+                    enum:
+                      - experian
+                      - equifax
+                      - transunion
+                  report_type:
+                    type: string
+                    description: Type of credit report pulled
+                    example: "standard"
+                    enum:
+                      - standard
+                      - tri_merge
+                      - mortgage_supplement
+                      - employment
+                  pull_type:
+                    type: string
+                    description: Hard or soft inquiry classification
+                    example: "hard"
+                    enum:
+                      - hard
+                      - soft
+                  status:
+                    type: string
+                    description: Report processing status
+                    example: "pending"
+                    enum:
+                      - pending
+                      - completed
+                      - partial
+                      - error
+                  total_tradelines:
+                    type: integer
+                    description: Number of tradelines on the report
+                    example: 14
+                  total_inquiries:
+                    type: integer
+                    description: Number of inquiries on file
+                    example: 3
+                  oldest_account:
+                    type: string
+                    description: Date of oldest open tradeline
+                    format: date-time
+                    example: "2012-06-01T00:00:00Z"
+                  pulled_at:
+                    type: string
+                    description: When the report was pulled
+                    format: date-time
+                    example: "2025-03-15T10:00:00Z"
+                required:
+                  - report_id
+                  - consumer_id
+                  - bureau
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /reports/{report_id}/tradelines:
+    get:
+      operationId: getReportTradelines
+      summary: Get tradeline details
+      description: >-
+        Retrieve paginated tradeline data from a credit report. Each tradeline includes account type,
+        balance, limit, utilization, payment status, and full 24-month payment history pattern. Tradelines
+        are sorted by impact on credit score by default.
+      tags:
+        - Credit Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Credit report identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tradeline_id:
+                          type: string
+                          description: Tradeline identifier
+                          example: "tl-abc123"
+                        creditor_name:
+                          type: string
+                          description: Name of the creditor or lender
+                          example: "Chase Bank NA"
+                        account_type:
+                          type: string
+                          description: Type of credit account
+                          example: "revolving"
+                          enum:
+                            - revolving
+                            - installment
+                            - mortgage
+                            - open
+                            - collection
+                        account_status:
+                          type: string
+                          description: Current account status
+                          example: "open"
+                          enum:
+                            - open
+                            - closed
+                            - frozen
+                            - charge_off
+                            - collection
+                        current_balance:
+                          type: number
+                          description: Current outstanding balance in USD
+                          example: 4250.0
+                        credit_limit:
+                          type: number
+                          description: Credit limit or original loan amount in USD
+                          example: 15000.0
+                        utilization_pct:
+                          type: number
+                          description: Credit utilization as a percentage
+                          example: 28.3
+                          minimum: 0
+                          maximum: 100
+                        payment_status:
+                          type: string
+                          description: Most recent payment status
+                          example: "current"
+                          enum:
+                            - current
+                            - 30_days_late
+                            - 60_days_late
+                            - 90_days_late
+                            - 120_plus_days_late
+                        opened_date:
+                          type: string
+                          description: Date the account was opened
+                          format: date-time
+                          example: "2019-04-15T00:00:00Z"
+                        months_reviewed:
+                          type: integer
+                          description: Number of months of payment history
+                          example: 71
+                      required:
+                        - tradeline_id
+                        - creditor_name
+                        - account_type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /reports/{report_id}/inquiries:
+    get:
+      operationId: getReportInquiries
+      summary: Get inquiry history
+      description: >-
+        Retrieve all hard and soft inquiries recorded on the consumer's credit file as of this report.
+        Includes the inquiring creditor, date, and whether the inquiry was promotional, account review, or
+        application-related.
+      tags:
+        - Credit Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Credit report identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        inquiry_id:
+                          type: string
+                          description: Inquiry identifier
+                          example: "inq-xyz789"
+                        creditor_name:
+                          type: string
+                          description: Inquiring creditor
+                          example: "Wells Fargo Bank"
+                        inquiry_type:
+                          type: string
+                          description: Inquiry classification
+                          example: "hard"
+                          enum:
+                            - hard
+                            - soft
+                            - promotional
+                        inquiry_date:
+                          type: string
+                          description: Date of inquiry
+                          format: date-time
+                          example: "2025-02-01T00:00:00Z"
+                        purpose:
+                          type: string
+                          description: Stated purpose of inquiry
+                          example: "Credit card application"
+                      required:
+                        - inquiry_id
+                        - creditor_name
+                        - inquiry_type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /reports/{report_id}/disputes:
+    post:
+      operationId: fileDispute
+      summary: File dispute on tradeline
+      description: >-
+        File an FCRA-compliant dispute against a specific tradeline item on this credit report. The bureau
+        has 30 days to investigate and respond per federal regulation. Attach supporting documentation via
+        the evidence upload endpoint.
+      tags:
+        - Disputes
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: File dispute on tradeline request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    tradeline_id:
+                      type: string
+                      description: Tradeline to dispute
+                      example: "tl-abc123"
+                    dispute_reason:
+                      type: string
+                      description: Reason
+                      example: "not_mine"
+                      enum:
+                        - not_mine
+                        - incorrect_balance
+                        - incorrect_status
+                        - incorrect_payment_history
+                        - fraud
+                        - other
+                    explanation:
+                      type: string
+                      description: Detailed explanation of the dispute
+                      example: "This account was opened fraudulently and is not mine"
+              required:
+                - tradeline_id
+                - dispute_reason
+                - explanation
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Dispute identifier
+                    format: uuid
+                    example: "dsp-2b3c4d5e-f6a7-8901-bcde-f23456789012"
+                  report_id:
+                    type: string
+                    description: Associated report
+                    format: uuid
+                    example: "rpt-1a2b3c4d-e5f6-7890-abcd-ef1234567890"
+                  tradeline_id:
+                    type: string
+                    description: Disputed tradeline
+                    example: "tl-abc123"
+                  dispute_reason:
+                    type: string
+                    description: Reason for the dispute
+                    example: "not_mine"
+                    enum:
+                      - not_mine
+                      - incorrect_balance
+                      - incorrect_status
+                      - incorrect_payment_history
+                      - account_closed
+                      - fraud
+                      - other
+                  status:
+                    type: string
+                    description: Dispute resolution status
+                    example: "submitted"
+                    enum:
+                      - submitted
+                      - under_investigation
+                      - resolved_updated
+                      - resolved_no_change
+                      - escalated
+                  filed_at:
+                    type: string
+                    description: When the dispute was filed
+                    format: date-time
+                    example: "2025-03-10T08:00:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: FCRA-mandated resolution deadline
+                    format: date-time
+                    example: "2025-04-09T23:59:59Z"
+                required:
+                  - dispute_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /reports/{report_id}/refresh:
+    post:
+      operationId: refreshCreditReport
+      summary: Refresh credit report
+      description: >-
+        Pull updated data for an existing credit report from the same bureau. This is a soft pull and does
+        not create a new inquiry. Useful for monitoring accounts after a dispute resolution or payment
+        change.
+      tags:
+        - Credit Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: Refreshed report
+                    format: uuid
+                    example: "rpt-1a2b3c4d-e5f6-7890-abcd-ef1234567890"
+                  status:
+                    type: string
+                    description: Refresh status
+                    example: "completed"
+                    enum:
+                      - completed
+                      - pending
+                  changes_detected:
+                    type: boolean
+                    description: Whether any tradeline data changed since last pull
+                    example: true
+                  refreshed_at:
+                    type: string
+                    description: Refresh timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                required:
+                  - report_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /disputes:
+    get:
+      operationId: listDisputes
+      summary: List disputes
+      description: >-
+        Retrieve all disputes filed across consumers and reports. Filter by status to find disputes
+        requiring attention before their FCRA-mandated 30-day resolution deadline.
+      tags:
+        - Disputes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by dispute status
+          schema:
+            type: "string"
+            enum:
+              - submitted
+              - under_investigation
+              - resolved_updated
+              - resolved_no_change
+              - escalated
+        - name: consumer_id
+          in: query
+          required: false
+          description: Filter by consumer
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        dispute_id:
+                          type: string
+                          description: Dispute identifier
+                          format: uuid
+                          example: "dsp-2b3c4d5e-f6a7-8901-bcde-f23456789012"
+                        report_id:
+                          type: string
+                          description: Associated report
+                          format: uuid
+                          example: "rpt-1a2b3c4d-e5f6-7890-abcd-ef1234567890"
+                        tradeline_id:
+                          type: string
+                          description: Disputed tradeline
+                          example: "tl-abc123"
+                        dispute_reason:
+                          type: string
+                          description: Reason for the dispute
+                          example: "not_mine"
+                          enum:
+                            - not_mine
+                            - incorrect_balance
+                            - incorrect_status
+                            - incorrect_payment_history
+                            - account_closed
+                            - fraud
+                            - other
+                        status:
+                          type: string
+                          description: Dispute resolution status
+                          example: "submitted"
+                          enum:
+                            - submitted
+                            - under_investigation
+                            - resolved_updated
+                            - resolved_no_change
+                            - escalated
+                        filed_at:
+                          type: string
+                          description: When the dispute was filed
+                          format: date-time
+                          example: "2025-03-10T08:00:00Z"
+                        resolution_deadline:
+                          type: string
+                          description: FCRA-mandated resolution deadline
+                          format: date-time
+                          example: "2025-04-09T23:59:59Z"
+                      required:
+                        - dispute_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /disputes/{dispute_id}:
+    get:
+      operationId: getDispute
+      summary: Get dispute details
+      description: >-
+        Retrieve full details of a credit dispute including investigation status, bureau response, timeline,
+        and any attached evidence documents.
+      tags:
+        - Disputes
+      parameters:
+        - name: dispute_id
+          in: path
+          required: true
+          description: Unique dispute id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Dispute identifier
+                    format: uuid
+                    example: "dsp-2b3c4d5e-f6a7-8901-bcde-f23456789012"
+                  report_id:
+                    type: string
+                    description: Associated report
+                    format: uuid
+                    example: "rpt-1a2b3c4d-e5f6-7890-abcd-ef1234567890"
+                  tradeline_id:
+                    type: string
+                    description: Disputed tradeline
+                    example: "tl-abc123"
+                  dispute_reason:
+                    type: string
+                    description: Reason for the dispute
+                    example: "not_mine"
+                    enum:
+                      - not_mine
+                      - incorrect_balance
+                      - incorrect_status
+                      - incorrect_payment_history
+                      - account_closed
+                      - fraud
+                      - other
+                  status:
+                    type: string
+                    description: Dispute resolution status
+                    example: "submitted"
+                    enum:
+                      - submitted
+                      - under_investigation
+                      - resolved_updated
+                      - resolved_no_change
+                      - escalated
+                  filed_at:
+                    type: string
+                    description: When the dispute was filed
+                    format: date-time
+                    example: "2025-03-10T08:00:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: FCRA-mandated resolution deadline
+                    format: date-time
+                    example: "2025-04-09T23:59:59Z"
+                required:
+                  - dispute_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /consumers/{consumer_id}/freeze:
+    post:
+      operationId: freezeCreditFile
+      summary: Freeze credit file
+      description: >-
+        Place a security freeze on the consumer's credit file at all three bureaus. While frozen, no new
+        hard inquiries can be processed, preventing unauthorized credit applications. The consumer receives
+        a unique PIN required for thawing.
+      tags:
+        - Consumer Management
+      parameters:
+        - name: consumer_id
+          in: path
+          required: true
+          description: Unique consumer id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Freeze credit file request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    bureaus:
+                      type: array
+                      description: Bureaus to freeze (defaults to all three)
+                      items:
+                        type: string
+                        example: "experian"
+                    reason:
+                      type: string
+                      description: Reason for freeze
+                      example: "consumer_request"
+                      enum:
+                        - consumer_request
+                        - fraud_alert
+                        - identity_theft
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  freeze_id:
+                    type: string
+                    description: Freeze record identifier
+                    format: uuid
+                    example: "frz-3c4d5e6f"
+                  consumer_id:
+                    type: string
+                    description: Consumer
+                    format: uuid
+                    example: "con-8b3c4d5e"
+                  bureaus_frozen:
+                    type: array
+                    description: Bureaus where freeze was applied
+                    items:
+                      type: string
+                      example: "experian"
+                  pin:
+                    type: string
+                    description: PIN required to thaw the credit file
+                    example: "7294"
+                  frozen_at:
+                    type: string
+                    description: Freeze timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                required:
+                  - freeze_id
+                  - pin
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: unfreezeCreditFile
+      summary: Unfreeze credit file
+      description: >-
+        Remove the security freeze from a consumer's credit file. Requires the PIN issued during the freeze.
+        Can unfreeze at all bureaus or selectively.
+      tags:
+        - Consumer Management
+      parameters:
+        - name: consumer_id
+          in: path
+          required: true
+          description: Unique consumer id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /consumers/{consumer_id}/alerts:
+    get:
+      operationId: getConsumerAlerts
+      summary: Get consumer alerts
+      description: >-
+        Retrieve active fraud alerts and credit monitoring notifications for a consumer. Includes initial
+        fraud alerts (90 days), extended fraud alerts (7 years), and active duty alerts for military
+        personnel.
+      tags:
+        - Consumer Management
+      parameters:
+        - name: consumer_id
+          in: path
+          required: true
+          description: Consumer identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alert_id:
+                          type: string
+                          description: Alert identifier
+                          example: "alt-def456"
+                        alert_type:
+                          type: string
+                          description: Alert classification
+                          example: "initial_fraud"
+                          enum:
+                            - initial_fraud
+                            - extended_fraud
+                            - active_duty
+                            - credit_monitoring
+                        message:
+                          type: string
+                          description: Alert message
+                          example: "New hard inquiry detected from Capital One"
+                        bureau:
+                          type: string
+                          description: Originating bureau
+                          example: "experian"
+                          enum:
+                            - experian
+                            - equifax
+                            - transunion
+                        created_at:
+                          type: string
+                          description: When the alert was generated
+                          format: date-time
+                          example: "2025-01-15T09:30:00Z"
+                        expires_at:
+                          type: string
+                          description: Alert expiration date
+                          format: date-time
+                          example: "2025-06-15T00:00:00Z"
+                      required:
+                        - alert_id
+                        - alert_type
+                        - message
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

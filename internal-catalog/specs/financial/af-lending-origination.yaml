@@ -1,0 +1,1277 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Loan Origination API
+  description: >-
+    Unified loan origination platform supporting the complete application-to-funding lifecycle across all loan
+    products. Manages pipeline stages, automated decisioning, counter-offers, documentation, and closing
+    workflows. Supports multi-channel origination (online, branch, dealer, broker) with configurable product rules
+    and credit policies. Compliant with ECOA, HMDA, TILA, and state-specific lending regulations.
+  version: 5.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-lending-origination
+  x-acme-domain: lending
+servers:
+  - url: https://af-lending-origination.api.acmefin.com/v1
+    description: Production
+  - url: https://af-lending-origination.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Applications
+    description: Loan application intake and processing
+  - name: Pipeline
+    description: Origination pipeline management
+  - name: Decisioning
+    description: Credit decisioning and counter-offers
+paths:
+  /applications:
+    get:
+      operationId: listOriginationApps
+      summary: List loan applications
+      description: >-
+        Retrieve loan applications across the origination pipeline with filtering by stage, product,
+        channel, loan officer, or date range. Returns application summaries with current stage, assigned
+        processor, and days-in-stage metrics.
+      tags:
+        - Applications
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: stage
+          in: query
+          required: false
+          description: "Filter by pipeline stage"
+          schema:
+            type: "string"
+        - name: loan_product
+          in: query
+          required: false
+          description: "Filter by loan product"
+          schema:
+            type: "string"
+        - name: channel
+          in: query
+          required: false
+          description: "Filter by origination channel"
+          schema:
+            type: "string"
+        - name: loan_officer_id
+          in: query
+          required: false
+          description: "Filter by loan officer"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        application_id:
+                          type: string
+                          description: "Loan application identifier"
+                          example: "app-550078"
+                        applicant_id:
+                          type: string
+                          description: "Primary applicant"
+                          example: "cust-220019"
+                        loan_product:
+                          type: string
+                          description: "Loan product"
+                          example: "PERSONAL_UNSECURED"
+                          enum:
+                            - PERSONAL_UNSECURED
+                            - PERSONAL_SECURED
+                            - AUTO
+                            - MORTGAGE
+                            - HELOC
+                            - BUSINESS_TERM
+                            - BUSINESS_LOC
+                        requested_amount:
+                          type: number
+                          description: "Requested loan amount"
+                          format: double
+                          example: 15000.0
+                        approved_amount:
+                          type: number
+                          description: "Approved loan amount"
+                          format: double
+                          example: 12000.0
+                        apr:
+                          type: number
+                          description: "Annual percentage rate"
+                          format: double
+                          example: 8.99
+                        term_months:
+                          type: integer
+                          description: "Loan term in months"
+                          example: 36
+                        stage:
+                          type: string
+                          description: "Origination pipeline stage"
+                          example: "UNDERWRITING"
+                          enum:
+                            - APPLICATION
+                            - PROCESSING
+                            - UNDERWRITING
+                            - DECISIONING
+                            - COUNTER_OFFER
+                            - ACCEPTED
+                            - DOCUMENTATION
+                            - CLOSING
+                            - FUNDED
+                            - DECLINED
+                            - WITHDRAWN
+                        channel:
+                          type: string
+                          description: "Origination channel"
+                          example: "ONLINE"
+                          enum:
+                            - ONLINE
+                            - BRANCH
+                            - PHONE
+                            - DEALER
+                            - BROKER
+                            - CORRESPONDENT
+                        created_at:
+                          type: string
+                          description: "Application timestamp"
+                          format: date-time
+                          example: "2026-02-01T10:00:00Z"
+                      required:
+                        - application_id
+                        - applicant_id
+                        - loan_product
+                        - requested_amount
+                        - stage
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: submitApplication
+      summary: Submit loan application
+      description: >-
+        Submit a new loan application with applicant information, requested product, and supporting data.
+        Triggers initial credit pull, fraud screening, and preliminary eligibility check. Returns within
+        seconds for instant-decision products.
+      tags:
+        - Applications
+      requestBody:
+        required: true
+        description: Submit loan application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                applicant_id:
+                  type: string
+                  description: "Primary applicant CIF"
+                  example: "cust-220019"
+                loan_product:
+                  type: string
+                  description: "Requested product"
+                  example: "PERSONAL_UNSECURED"
+                requested_amount:
+                  type: number
+                  description: "Requested amount"
+                  format: double
+                  example: 15000.0
+                requested_term:
+                  type: integer
+                  description: "Requested term months"
+                  example: 36
+                purpose:
+                  type: string
+                  description: "Loan purpose"
+                  example: "DEBT_CONSOLIDATION"
+                channel:
+                  type: string
+                  description: "Origination channel"
+                  example: "ONLINE"
+              required:
+                - applicant_id
+                - loan_product
+                - requested_amount
+                - purpose
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Loan application identifier"
+                    example: "app-550078"
+                  applicant_id:
+                    type: string
+                    description: "Primary applicant"
+                    example: "cust-220019"
+                  loan_product:
+                    type: string
+                    description: "Loan product"
+                    example: "PERSONAL_UNSECURED"
+                    enum:
+                      - PERSONAL_UNSECURED
+                      - PERSONAL_SECURED
+                      - AUTO
+                      - MORTGAGE
+                      - HELOC
+                      - BUSINESS_TERM
+                      - BUSINESS_LOC
+                  requested_amount:
+                    type: number
+                    description: "Requested loan amount"
+                    format: double
+                    example: 15000.0
+                  approved_amount:
+                    type: number
+                    description: "Approved loan amount"
+                    format: double
+                    example: 12000.0
+                  apr:
+                    type: number
+                    description: "Annual percentage rate"
+                    format: double
+                    example: 8.99
+                  term_months:
+                    type: integer
+                    description: "Loan term in months"
+                    example: 36
+                  stage:
+                    type: string
+                    description: "Origination pipeline stage"
+                    example: "UNDERWRITING"
+                    enum:
+                      - APPLICATION
+                      - PROCESSING
+                      - UNDERWRITING
+                      - DECISIONING
+                      - COUNTER_OFFER
+                      - ACCEPTED
+                      - DOCUMENTATION
+                      - CLOSING
+                      - FUNDED
+                      - DECLINED
+                      - WITHDRAWN
+                  channel:
+                    type: string
+                    description: "Origination channel"
+                    example: "ONLINE"
+                    enum:
+                      - ONLINE
+                      - BRANCH
+                      - PHONE
+                      - DEALER
+                      - BROKER
+                      - CORRESPONDENT
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-02-01T10:00:00Z"
+                required:
+                  - application_id
+                  - applicant_id
+                  - loan_product
+                  - requested_amount
+                  - stage
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}:
+    get:
+      operationId: getApplication
+      summary: Get loan application
+      description: >-
+        Retrieve complete application details including applicant data, credit report summary, decisioning
+        results, conditions, and audit trail.
+      tags:
+        - Applications
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Loan application identifier"
+                    example: "app-550078"
+                  applicant_id:
+                    type: string
+                    description: "Primary applicant"
+                    example: "cust-220019"
+                  loan_product:
+                    type: string
+                    description: "Loan product"
+                    example: "PERSONAL_UNSECURED"
+                    enum:
+                      - PERSONAL_UNSECURED
+                      - PERSONAL_SECURED
+                      - AUTO
+                      - MORTGAGE
+                      - HELOC
+                      - BUSINESS_TERM
+                      - BUSINESS_LOC
+                  requested_amount:
+                    type: number
+                    description: "Requested loan amount"
+                    format: double
+                    example: 15000.0
+                  approved_amount:
+                    type: number
+                    description: "Approved loan amount"
+                    format: double
+                    example: 12000.0
+                  apr:
+                    type: number
+                    description: "Annual percentage rate"
+                    format: double
+                    example: 8.99
+                  term_months:
+                    type: integer
+                    description: "Loan term in months"
+                    example: 36
+                  stage:
+                    type: string
+                    description: "Origination pipeline stage"
+                    example: "UNDERWRITING"
+                    enum:
+                      - APPLICATION
+                      - PROCESSING
+                      - UNDERWRITING
+                      - DECISIONING
+                      - COUNTER_OFFER
+                      - ACCEPTED
+                      - DOCUMENTATION
+                      - CLOSING
+                      - FUNDED
+                      - DECLINED
+                      - WITHDRAWN
+                  channel:
+                    type: string
+                    description: "Origination channel"
+                    example: "ONLINE"
+                    enum:
+                      - ONLINE
+                      - BRANCH
+                      - PHONE
+                      - DEALER
+                      - BROKER
+                      - CORRESPONDENT
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-02-01T10:00:00Z"
+                required:
+                  - application_id
+                  - applicant_id
+                  - loan_product
+                  - requested_amount
+                  - stage
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateApplication
+      summary: Update loan application
+      description: >-
+        Update application details prior to final decisioning. Material changes trigger re-evaluation of
+        credit decision.
+      tags:
+        - Applications
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update loan application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                requested_amount:
+                  type: number
+                  description: "Updated amount"
+                  format: double
+                  example: 12000.0
+                requested_term:
+                  type: integer
+                  description: "Updated term"
+                  example: 48
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Loan application identifier"
+                    example: "app-550078"
+                  applicant_id:
+                    type: string
+                    description: "Primary applicant"
+                    example: "cust-220019"
+                  loan_product:
+                    type: string
+                    description: "Loan product"
+                    example: "PERSONAL_UNSECURED"
+                    enum:
+                      - PERSONAL_UNSECURED
+                      - PERSONAL_SECURED
+                      - AUTO
+                      - MORTGAGE
+                      - HELOC
+                      - BUSINESS_TERM
+                      - BUSINESS_LOC
+                  requested_amount:
+                    type: number
+                    description: "Requested loan amount"
+                    format: double
+                    example: 15000.0
+                  approved_amount:
+                    type: number
+                    description: "Approved loan amount"
+                    format: double
+                    example: 12000.0
+                  apr:
+                    type: number
+                    description: "Annual percentage rate"
+                    format: double
+                    example: 8.99
+                  term_months:
+                    type: integer
+                    description: "Loan term in months"
+                    example: 36
+                  stage:
+                    type: string
+                    description: "Origination pipeline stage"
+                    example: "UNDERWRITING"
+                    enum:
+                      - APPLICATION
+                      - PROCESSING
+                      - UNDERWRITING
+                      - DECISIONING
+                      - COUNTER_OFFER
+                      - ACCEPTED
+                      - DOCUMENTATION
+                      - CLOSING
+                      - FUNDED
+                      - DECLINED
+                      - WITHDRAWN
+                  channel:
+                    type: string
+                    description: "Origination channel"
+                    example: "ONLINE"
+                    enum:
+                      - ONLINE
+                      - BRANCH
+                      - PHONE
+                      - DEALER
+                      - BROKER
+                      - CORRESPONDENT
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-02-01T10:00:00Z"
+                required:
+                  - application_id
+                  - applicant_id
+                  - loan_product
+                  - requested_amount
+                  - stage
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/withdraw:
+    post:
+      operationId: withdrawApplication
+      summary: Withdraw application
+      description: >-
+        Withdraw the loan application at the applicant's request. Records the withdrawal reason for HMDA
+        reporting. Cannot be withdrawn after funding.
+      tags:
+        - Applications
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Withdraw application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: "Withdrawal reason"
+                  example: "FOUND_BETTER_OFFER"
+                  enum:
+                    - APPLICANT_REQUEST
+                    - FOUND_BETTER_OFFER
+                    - NO_LONGER_NEEDED
+                    - PROPERTY_ISSUE
+                    - OTHER
+              required:
+                - reason
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/decision:
+    post:
+      operationId: runDecision
+      summary: Run credit decision
+      description: >-
+        Execute the automated credit decision engine against the application. Evaluates credit score, DTI,
+        collateral, and product-specific criteria. Returns approve, decline, or counter-offer with detailed
+        reason codes per ECOA adverse action requirements.
+      tags:
+        - Decisioning
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Run credit decision request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                override_tier:
+                  type: string
+                  description: "Manual pricing tier override (authorized users only)"
+                  example: "TIER_2"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  decision:
+                    type: string
+                    description: "Decision outcome"
+                    example: "APPROVED"
+                    enum:
+                      - APPROVED
+                      - DECLINED
+                      - COUNTER_OFFER
+                      - REFER_TO_UNDERWRITER
+                  approved_amount:
+                    type: number
+                    description: "Approved amount"
+                    format: double
+                    example: 12000.0
+                  approved_rate:
+                    type: number
+                    description: "Approved APR"
+                    format: double
+                    example: 8.99
+                  reason_codes:
+                    type: array
+                    description: "Decision reason codes"
+                    items:
+                      type: string
+                      example: "R01"
+                  conditions:
+                    type: array
+                    description: "Required conditions"
+                    items:
+                      type: string
+                      example: "Income verification required"
+                required:
+                  - decision
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/counter-offer:
+    post:
+      operationId: presentCounterOffer
+      summary: Present counter offer
+      description: >-
+        Present alternative terms to the applicant when the requested terms cannot be approved. Counter-
+        offers may adjust amount, rate, term, or require additional collateral. Applicant has 30 days to
+        accept.
+      tags:
+        - Decisioning
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Present counter offer request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                offered_amount:
+                  type: number
+                  description: "Counter-offered amount"
+                  format: double
+                  example: 10000.0
+                offered_rate:
+                  type: number
+                  description: "Counter-offered APR"
+                  format: double
+                  example: 11.99
+                offered_term:
+                  type: integer
+                  description: "Counter-offered term"
+                  example: 36
+                expiry_days:
+                  type: integer
+                  description: "Days until offer expires"
+                  example: 30
+              required:
+                - offered_amount
+                - offered_rate
+                - offered_term
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  counter_offer_id:
+                    type: string
+                    description: "Counter offer ID"
+                    example: "co-7701"
+                  expires_at:
+                    type: string
+                    description: "Offer expiration"
+                    format: date
+                    example: "2026-04-01"
+                required:
+                  - counter_offer_id
+                  - expires_at
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/accept:
+    post:
+      operationId: acceptTerms
+      summary: Accept loan terms
+      description: >-
+        Accept the approved or counter-offered loan terms. Transitions the application to documentation
+        stage and generates initial loan documents including Truth in Lending disclosures.
+      tags:
+        - Pipeline
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Accept loan terms request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accepted_offer_id:
+                  type: string
+                  description: "Counter offer ID (if applicable)"
+                  example: "co-7701"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Loan application identifier"
+                    example: "app-550078"
+                  applicant_id:
+                    type: string
+                    description: "Primary applicant"
+                    example: "cust-220019"
+                  loan_product:
+                    type: string
+                    description: "Loan product"
+                    example: "PERSONAL_UNSECURED"
+                    enum:
+                      - PERSONAL_UNSECURED
+                      - PERSONAL_SECURED
+                      - AUTO
+                      - MORTGAGE
+                      - HELOC
+                      - BUSINESS_TERM
+                      - BUSINESS_LOC
+                  requested_amount:
+                    type: number
+                    description: "Requested loan amount"
+                    format: double
+                    example: 15000.0
+                  approved_amount:
+                    type: number
+                    description: "Approved loan amount"
+                    format: double
+                    example: 12000.0
+                  apr:
+                    type: number
+                    description: "Annual percentage rate"
+                    format: double
+                    example: 8.99
+                  term_months:
+                    type: integer
+                    description: "Loan term in months"
+                    example: 36
+                  stage:
+                    type: string
+                    description: "Origination pipeline stage"
+                    example: "UNDERWRITING"
+                    enum:
+                      - APPLICATION
+                      - PROCESSING
+                      - UNDERWRITING
+                      - DECISIONING
+                      - COUNTER_OFFER
+                      - ACCEPTED
+                      - DOCUMENTATION
+                      - CLOSING
+                      - FUNDED
+                      - DECLINED
+                      - WITHDRAWN
+                  channel:
+                    type: string
+                    description: "Origination channel"
+                    example: "ONLINE"
+                    enum:
+                      - ONLINE
+                      - BRANCH
+                      - PHONE
+                      - DEALER
+                      - BROKER
+                      - CORRESPONDENT
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-02-01T10:00:00Z"
+                required:
+                  - application_id
+                  - applicant_id
+                  - loan_product
+                  - requested_amount
+                  - stage
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /pipeline/metrics:
+    get:
+      operationId: getPipelineMetrics
+      summary: Get pipeline metrics
+      description: >-
+        Retrieve origination pipeline metrics including application volume, approval rates, average days-to-
+        close, pull-through rates, and funnel conversion by stage. Supports filtering by time period,
+        product, and channel.
+      tags:
+        - Pipeline
+      parameters:
+        - name: period
+          in: query
+          required: false
+          description: "Reporting period"
+          schema:
+            type: "string"
+            enum:
+              - 7d
+              - 30d
+              - 90d
+              - ytd
+              - 12m
+        - name: product
+          in: query
+          required: false
+          description: "Filter by product"
+          schema:
+            type: "string"
+        - name: channel
+          in: query
+          required: false
+          description: "Filter by channel"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_applications:
+                    type: integer
+                    description: "Total applications in period"
+                    example: 1247
+                  approval_rate:
+                    type: number
+                    description: "Approval rate percentage"
+                    format: double
+                    example: 68.5
+                  avg_days_to_fund:
+                    type: number
+                    description: "Average days from application to funding"
+                    format: double
+                    example: 12.3
+                  pull_through_rate:
+                    type: number
+                    description: "Percentage of approvals that fund"
+                    format: double
+                    example: 82.1
+                  volume_by_product:
+                    type: object
+                    description: "Application count by product type"
+                required:
+                  - total_applications
+                  - approval_rate
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,1348 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Collections Management API
+  description: >-
+    Manage delinquent loan collection activities including case assignment, borrower communication, payment
+    arrangements, skip tracing, and legal referrals. Ensures compliance with FDCPA, TCPA, and Regulation F
+    requirements. Supports automated workflow escalation based on delinquency aging and configurable collection
+    strategies.
+  version: 2.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-lending-collections
+  x-acme-domain: lending
+servers:
+  - url: https://af-lending-collections.api.acmefin.com/v1
+    description: Production
+  - url: https://af-lending-collections.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Cases
+    description: Collection case lifecycle management
+  - name: Arrangements
+    description: Payment arrangements and promises to pay
+  - name: Communications
+    description: Borrower contact tracking and compliance
+  - name: Skip Tracing
+    description: Locate and verify borrower contact information
+paths:
+  /cases:
+    get:
+      operationId: listCases
+      summary: List collection cases
+      description: >-
+        Retrieve collection cases with filtering by status, priority, assigned collector, days past due
+        range, or loan type. Results include delinquency details and scheduled next actions.
+      tags:
+        - Cases
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: "Filter by case status"
+          schema:
+            type: "string"
+        - name: priority
+          in: query
+          required: false
+          description: "Filter by priority level"
+          schema:
+            type: "string"
+        - name: assigned_collector
+          in: query
+          required: false
+          description: "Filter by collector ID"
+          schema:
+            type: "string"
+        - name: min_days_past_due
+          in: query
+          required: false
+          description: "Minimum days past due"
+          schema:
+            type: "integer"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        case_id:
+                          type: string
+                          description: "Collection case identifier"
+                          example: "col-550012"
+                        loan_id:
+                          type: string
+                          description: "Delinquent loan identifier"
+                          example: "loan-440028"
+                        customer_id:
+                          type: string
+                          description: "Borrower identifier"
+                          example: "cust-220019"
+                        days_past_due:
+                          type: integer
+                          description: "Number of days past due"
+                          example: 45
+                        amount_due:
+                          type: number
+                          description: "Total amount past due"
+                          format: double
+                          example: 2568.98
+                        assigned_collector:
+                          type: string
+                          description: "Assigned collector ID"
+                          example: "agent-3301"
+                        priority:
+                          type: string
+                          description: "Collection priority"
+                          example: "HIGH"
+                          enum:
+                            - LOW
+                            - MEDIUM
+                            - HIGH
+                            - CRITICAL
+                        status:
+                          type: string
+                          description: "Case status"
+                          example: "ACTIVE"
+                          enum:
+                            - NEW
+                            - ACTIVE
+                            - PROMISE_TO_PAY
+                            - PAYMENT_PLAN
+                            - LEGAL_REFERRAL
+                            - CEASE_COMMUNICATION
+                            - RESOLVED
+                            - CHARGED_OFF
+                        last_contact_date:
+                          type: string
+                          description: "Date of last borrower contact"
+                          format: date
+                          example: "2026-02-20"
+                        next_action_date:
+                          type: string
+                          description: "Scheduled next action"
+                          format: date
+                          example: "2026-03-05"
+                        created_at:
+                          type: string
+                          description: "Case creation timestamp"
+                          format: date-time
+                          example: "2026-01-15T08:00:00Z"
+                      required:
+                        - case_id
+                        - loan_id
+                        - customer_id
+                        - days_past_due
+                        - amount_due
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createCase
+      summary: Create collection case
+      description: >-
+        Create a new collection case for a delinquent loan. Automatically assigns priority based on days
+        past due and loan balance. Triggers initial outreach workflow per the configured collection
+        strategy.
+      tags:
+        - Cases
+      requestBody:
+        required: true
+        description: Create collection case request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                loan_id:
+                  type: string
+                  description: "Delinquent loan ID"
+                  example: "loan-440028"
+                reason:
+                  type: string
+                  description: "Delinquency reason code"
+                  example: "MISSED_PAYMENT"
+              required:
+                - loan_id
+                - reason
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  case_id:
+                    type: string
+                    description: "Collection case identifier"
+                    example: "col-550012"
+                  loan_id:
+                    type: string
+                    description: "Delinquent loan identifier"
+                    example: "loan-440028"
+                  customer_id:
+                    type: string
+                    description: "Borrower identifier"
+                    example: "cust-220019"
+                  days_past_due:
+                    type: integer
+                    description: "Number of days past due"
+                    example: 45
+                  amount_due:
+                    type: number
+                    description: "Total amount past due"
+                    format: double
+                    example: 2568.98
+                  assigned_collector:
+                    type: string
+                    description: "Assigned collector ID"
+                    example: "agent-3301"
+                  priority:
+                    type: string
+                    description: "Collection priority"
+                    example: "HIGH"
+                    enum:
+                      - LOW
+                      - MEDIUM
+                      - HIGH
+                      - CRITICAL
+                  status:
+                    type: string
+                    description: "Case status"
+                    example: "ACTIVE"
+                    enum:
+                      - NEW
+                      - ACTIVE
+                      - PROMISE_TO_PAY
+                      - PAYMENT_PLAN
+                      - LEGAL_REFERRAL
+                      - CEASE_COMMUNICATION
+                      - RESOLVED
+                      - CHARGED_OFF
+                  last_contact_date:
+                    type: string
+                    description: "Date of last borrower contact"
+                    format: date
+                    example: "2026-02-20"
+                  next_action_date:
+                    type: string
+                    description: "Scheduled next action"
+                    format: date
+                    example: "2026-03-05"
+                  created_at:
+                    type: string
+                    description: "Case creation timestamp"
+                    format: date-time
+                    example: "2026-01-15T08:00:00Z"
+                required:
+                  - case_id
+                  - loan_id
+                  - customer_id
+                  - days_past_due
+                  - amount_due
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /cases/{case_id}:
+    get:
+      operationId: getCase
+      summary: Get collection case
+      description: >-
+        Retrieve complete collection case details including delinquency history, contact log, payment
+        arrangements, and regulatory compliance status.
+      tags:
+        - Cases
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          description: "Unique case id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  case_id:
+                    type: string
+                    description: "Collection case identifier"
+                    example: "col-550012"
+                  loan_id:
+                    type: string
+                    description: "Delinquent loan identifier"
+                    example: "loan-440028"
+                  customer_id:
+                    type: string
+                    description: "Borrower identifier"
+                    example: "cust-220019"
+                  days_past_due:
+                    type: integer
+                    description: "Number of days past due"
+                    example: 45
+                  amount_due:
+                    type: number
+                    description: "Total amount past due"
+                    format: double
+                    example: 2568.98
+                  assigned_collector:
+                    type: string
+                    description: "Assigned collector ID"
+                    example: "agent-3301"
+                  priority:
+                    type: string
+                    description: "Collection priority"
+                    example: "HIGH"
+                    enum:
+                      - LOW
+                      - MEDIUM
+                      - HIGH
+                      - CRITICAL
+                  status:
+                    type: string
+                    description: "Case status"
+                    example: "ACTIVE"
+                    enum:
+                      - NEW
+                      - ACTIVE
+                      - PROMISE_TO_PAY
+                      - PAYMENT_PLAN
+                      - LEGAL_REFERRAL
+                      - CEASE_COMMUNICATION
+                      - RESOLVED
+                      - CHARGED_OFF
+                  last_contact_date:
+                    type: string
+                    description: "Date of last borrower contact"
+                    format: date
+                    example: "2026-02-20"
+                  next_action_date:
+                    type: string
+                    description: "Scheduled next action"
+                    format: date
+                    example: "2026-03-05"
+                  created_at:
+                    type: string
+                    description: "Case creation timestamp"
+                    format: date-time
+                    example: "2026-01-15T08:00:00Z"
+                required:
+                  - case_id
+                  - loan_id
+                  - customer_id
+                  - days_past_due
+                  - amount_due
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateCase
+      summary: Update collection case
+      description: >-
+        Update case details such as priority, assigned collector, or next action date. Status transitions
+        are handled via dedicated action endpoints.
+      tags:
+        - Cases
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          description: "Unique case id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update collection case request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                priority:
+                  type: string
+                  description: "Updated priority"
+                  example: "CRITICAL"
+                assigned_collector:
+                  type: string
+                  description: "Reassign to collector"
+                  example: "agent-3305"
+                next_action_date:
+                  type: string
+                  description: "Reschedule next action"
+                  format: date
+                  example: "2026-03-10"
+                notes:
+                  type: string
+                  description: "Case notes"
+                  example: "Borrower requested callback after 5pm"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  case_id:
+                    type: string
+                    description: "Collection case identifier"
+                    example: "col-550012"
+                  loan_id:
+                    type: string
+                    description: "Delinquent loan identifier"
+                    example: "loan-440028"
+                  customer_id:
+                    type: string
+                    description: "Borrower identifier"
+                    example: "cust-220019"
+                  days_past_due:
+                    type: integer
+                    description: "Number of days past due"
+                    example: 45
+                  amount_due:
+                    type: number
+                    description: "Total amount past due"
+                    format: double
+                    example: 2568.98
+                  assigned_collector:
+                    type: string
+                    description: "Assigned collector ID"
+                    example: "agent-3301"
+                  priority:
+                    type: string
+                    description: "Collection priority"
+                    example: "HIGH"
+                    enum:
+                      - LOW
+                      - MEDIUM
+                      - HIGH
+                      - CRITICAL
+                  status:
+                    type: string
+                    description: "Case status"
+                    example: "ACTIVE"
+                    enum:
+                      - NEW
+                      - ACTIVE
+                      - PROMISE_TO_PAY
+                      - PAYMENT_PLAN
+                      - LEGAL_REFERRAL
+                      - CEASE_COMMUNICATION
+                      - RESOLVED
+                      - CHARGED_OFF
+                  last_contact_date:
+                    type: string
+                    description: "Date of last borrower contact"
+                    format: date
+                    example: "2026-02-20"
+                  next_action_date:
+                    type: string
+                    description: "Scheduled next action"
+                    format: date
+                    example: "2026-03-05"
+                  created_at:
+                    type: string
+                    description: "Case creation timestamp"
+                    format: date-time
+                    example: "2026-01-15T08:00:00Z"
+                required:
+                  - case_id
+                  - loan_id
+                  - customer_id
+                  - days_past_due
+                  - amount_due
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /cases/{case_id}/promise-to-pay:
+    post:
+      operationId: recordPromiseToPay
+      summary: Record promise to pay
+      description: >-
+        Record a borrower promise to pay by a specific date. Sets case status to PROMISE_TO_PAY and
+        schedules automatic follow-up if the promise is not fulfilled by the committed date.
+      tags:
+        - Arrangements
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          description: "Unique case id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Record promise to pay request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                promised_amount:
+                  type: number
+                  description: "Amount borrower commits to pay"
+                  format: double
+                  example: 1500.0
+                promised_date:
+                  type: string
+                  description: "Date borrower commits to pay by"
+                  format: date
+                  example: "2026-03-15"
+                payment_method:
+                  type: string
+                  description: "Expected payment method"
+                  example: "ACH"
+                  enum:
+                    - ACH
+                    - CHECK
+                    - WIRE
+                    - MONEY_ORDER
+                    - ONLINE
+              required:
+                - promised_amount
+                - promised_date
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  case_id:
+                    type: string
+                    description: "Collection case identifier"
+                    example: "col-550012"
+                  loan_id:
+                    type: string
+                    description: "Delinquent loan identifier"
+                    example: "loan-440028"
+                  customer_id:
+                    type: string
+                    description: "Borrower identifier"
+                    example: "cust-220019"
+                  days_past_due:
+                    type: integer
+                    description: "Number of days past due"
+                    example: 45
+                  amount_due:
+                    type: number
+                    description: "Total amount past due"
+                    format: double
+                    example: 2568.98
+                  assigned_collector:
+                    type: string
+                    description: "Assigned collector ID"
+                    example: "agent-3301"
+                  priority:
+                    type: string
+                    description: "Collection priority"
+                    example: "HIGH"
+                    enum:
+                      - LOW
+                      - MEDIUM
+                      - HIGH
+                      - CRITICAL
+                  status:
+                    type: string
+                    description: "Case status"
+                    example: "ACTIVE"
+                    enum:
+                      - NEW
+                      - ACTIVE
+                      - PROMISE_TO_PAY
+                      - PAYMENT_PLAN
+                      - LEGAL_REFERRAL
+                      - CEASE_COMMUNICATION
+                      - RESOLVED
+                      - CHARGED_OFF
+                  last_contact_date:
+                    type: string
+                    description: "Date of last borrower contact"
+                    format: date
+                    example: "2026-02-20"
+                  next_action_date:
+                    type: string
+                    description: "Scheduled next action"
+                    format: date
+                    example: "2026-03-05"
+                  created_at:
+                    type: string
+                    description: "Case creation timestamp"
+                    format: date-time
+                    example: "2026-01-15T08:00:00Z"
+                required:
+                  - case_id
+                  - loan_id
+                  - customer_id
+                  - days_past_due
+                  - amount_due
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /cases/{case_id}/payment-plan:
+    post:
+      operationId: createPaymentPlan
+      summary: Create payment plan
+      description: >-
+        Establish a structured payment plan to cure the delinquency over multiple installments. Calculates
+        installment amounts based on total arrearage and borrower-agreed timeline. Automatically monitors
+        for compliance.
+      tags:
+        - Arrangements
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          description: "Unique case id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Create payment plan request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                total_arrearage:
+                  type: number
+                  description: "Total past-due amount to cure"
+                  format: double
+                  example: 5200.0
+                num_installments:
+                  type: integer
+                  description: "Number of catch-up installments"
+                  example: 6
+                first_payment_date:
+                  type: string
+                  description: "First installment date"
+                  format: date
+                  example: "2026-04-01"
+                include_current_payment:
+                  type: boolean
+                  description: "Include regular payment in plan"
+                  example: true
+              required:
+                - total_arrearage
+                - num_installments
+                - first_payment_date
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan_id:
+                    type: string
+                    description: "Payment plan identifier"
+                    example: "plan-8801"
+                  installment_amount:
+                    type: number
+                    description: "Calculated installment amount"
+                    format: double
+                    example: 866.67
+                  status:
+                    type: string
+                    description: "Plan status"
+                    example: "ACTIVE"
+                required:
+                  - plan_id
+                  - installment_amount
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /cases/{case_id}/legal-referral:
+    post:
+      operationId: referToLegal
+      summary: Refer to legal
+      description: >-
+        Escalate the collection case to the legal department for potential litigation. Requires
+        documentation of all prior collection attempts per FDCPA requirements. Generates a referral package
+        with case history and supporting documentation.
+      tags:
+        - Cases
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          description: "Unique case id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Refer to legal request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                referral_reason:
+                  type: string
+                  description: "Reason for legal referral"
+                  example: "EXHAUSTED_COLLECTION_EFFORTS"
+                recommended_action:
+                  type: string
+                  description: "Recommended legal action"
+                  example: "LAWSUIT"
+                  enum:
+                    - LAWSUIT
+                    - REPOSSESSION
+                    - GARNISHMENT
+                    - JUDGMENT
+              required:
+                - referral_reason
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /cases/{case_id}/cease-communication:
+    post:
+      operationId: ceaseCommunication
+      summary: Cease communication
+      description: >-
+        Mark the case for ceased communication per borrower request under FDCPA Section 805(c). All
+        automated outreach is immediately suspended. Only legally required notices will continue to be sent.
+      tags:
+        - Communications
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          description: "Unique case id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Cease communication request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                requested_by:
+                  type: string
+                  description: "Who requested cease (borrower or attorney)"
+                  example: "BORROWER"
+                  enum:
+                    - BORROWER
+                    - ATTORNEY
+                attorney_name:
+                  type: string
+                  description: "Attorney name if applicable"
+                  example: "Smith & Associates"
+                received_date:
+                  type: string
+                  description: "Date cease request received"
+                  format: date
+                  example: "2026-02-28"
+              required:
+                - requested_by
+                - received_date
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /cases/{case_id}/contacts:
+    get:
+      operationId: listContacts
+      summary: List contact attempts
+      description: >-
+        Retrieve the contact log for a collection case showing all borrower communication attempts,
+        outcomes, and compliance flags. Required for FDCPA/TCPA audit documentation.
+      tags:
+        - Communications
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: channel
+          in: query
+          required: false
+          description: "Filter by channel"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        contact_id:
+                          type: string
+                          description: "Contact attempt identifier"
+                          example: "cnt-90001"
+                        channel:
+                          type: string
+                          description: "Communication channel"
+                          example: "PHONE"
+                          enum:
+                            - PHONE
+                            - EMAIL
+                            - LETTER
+                            - SMS
+                            - IN_PERSON
+                        direction:
+                          type: string
+                          description: "Inbound or outbound"
+                          example: "OUTBOUND"
+                        outcome:
+                          type: string
+                          description: "Contact outcome"
+                          example: "SPOKE_WITH_BORROWER"
+                          enum:
+                            - SPOKE_WITH_BORROWER
+                            - LEFT_VOICEMAIL
+                            - NO_ANSWER
+                            - WRONG_NUMBER
+                            - REFUSED_TO_TALK
+                            - THIRD_PARTY_MESSAGE
+                        timestamp:
+                          type: string
+                          description: "Contact timestamp"
+                          format: date-time
+                          example: "2026-02-20T14:30:00Z"
+                        compliant:
+                          type: boolean
+                          description: "TCPA/FDCPA compliant"
+                          example: true
+                      required:
+                        - contact_id
+                        - channel
+                        - outcome
+                        - timestamp
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /skip-trace:
+    post:
+      operationId: skipTrace
+      summary: Run skip trace
+      description: >-
+        Initiate a skip trace to locate or verify borrower contact information using third-party data
+        providers. Returns updated phone numbers, addresses, and employment data. Charges per lookup based
+        on data provider pricing.
+      tags:
+        - Skip Tracing
+      requestBody:
+        required: true
+        description: Run skip trace request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: "Borrower to trace"
+                  example: "cust-220019"
+                search_type:
+                  type: string
+                  description: "Type of information to search"
+                  example: "FULL"
+                  enum:
+                    - PHONE
+                    - ADDRESS
+                    - EMPLOYMENT
+                    - FULL
+              required:
+                - customer_id
+                - search_type
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trace_id:
+                    type: string
+                    description: "Skip trace result ID"
+                    example: "trace-4401"
+                  phones_found:
+                    type: integer
+                    description: "Number of phone numbers found"
+                    example: 3
+                  addresses_found:
+                    type: integer
+                    description: "Number of addresses found"
+                    example: 2
+                  confidence_score:
+                    type: number
+                    description: "Match confidence (0-100)"
+                    format: double
+                    example: 87.5
+                required:
+                  - trace_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

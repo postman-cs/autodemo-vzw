@@ -1,0 +1,169 @@
+name: Kubernetes Discovery Shared Infrastructure Teardown
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: AWS region for kubernetes shared infrastructure
+        required: true
+        default: eu-west-2
+        type: string
+      resource_prefix:
+        description: Prefix for shared kubernetes resources
+        required: true
+        default: vzw-partner-demo
+        type: string
+      airtable_record_id:
+        description: Airtable Infrastructure record id
+        required: true
+        type: string
+      k8s_namespace:
+        description: Kubernetes namespace for discovery daemonset fallback
+        required: false
+        default: vzw-partner-demo
+        type: string
+      team_slug:
+        description: Team slug for daemonset namespace fallback
+        required: false
+        default: default
+        type: string
+      daemonset_namespace:
+        description: Explicit daemonset namespace override
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: k8s-discovery-infra-lifecycle
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      RESOURCE_PREFIX: ${{ inputs.resource_prefix }}
+      AIRTABLE_RECORD_ID: ${{ inputs.airtable_record_id }}
+      AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.0.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure kubeconfig
+        run: |
+          set -euo pipefail
+          if [ -z "${{ secrets.KUBECONFIG_B64 }}" ]; then
+            echo "::error::KUBECONFIG_B64 secret is required"
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          # Remove kubeconfig profile references so aws CLI uses env var credentials
+          sed -i '/^[[:space:]]*- --profile$/ {N;d;}' "$HOME/.kube/config"
+          sed -i '/^[[:space:]]*- --profile=.*/d' "$HOME/.kube/config"
+          sed -i '/^[[:space:]]*- name: AWS_PROFILE$/ {N;d;}' "$HOME/.kube/config"
+          sed -i '/^[[:space:]]*- name: AWS_DEFAULT_PROFILE$/ {N;d;}' "$HOME/.kube/config"
+          if grep -Eq -- '^[[:space:]]*- --profile($|=)|^[[:space:]]*- name: AWS_(DEFAULT_)?PROFILE$' "$HOME/.kube/config"; then
+            echo "::error::kubeconfig still contains AWS profile references after sanitization"
+            exit 1
+          fi
+          echo "Kubeconfig profile references sanitized"
+          if [ -n "${{ vars.K8S_CONTEXT }}" ]; then
+            kubectl config use-context "${{ vars.K8S_CONTEXT }}"
+          fi
+
+      - name: Read Airtable record
+        id: airtable_read
+        run: |
+          set -euo pipefail
+          RESP="$(curl -sS "https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Infrastructure/${AIRTABLE_RECORD_ID}" \
+            -H "Authorization: Bearer ${AIRTABLE_API_KEY}")"
+          if echo "${RESP}" | jq -e '.error' >/dev/null; then
+            echo "${RESP}"
+            echo "Failed to read Airtable Infrastructure record ${AIRTABLE_RECORD_ID}"
+            exit 1
+          fi
+
+          NS="$(echo "${RESP}" | jq -r '.fields.k8s_namespace // empty')"
+          NAME="$(echo "${RESP}" | jq -r '.fields.k8s_daemonset_name // empty')"
+          [ -z "${NS}" ] && NS="${{ inputs.daemonset_namespace }}"
+          [ -z "${NS}" ] && NS="${{ inputs.k8s_namespace }}"
+          if [ -z "${NS}" ]; then
+            SAFE_TEAM_SLUG="$(echo "${{ inputs.team_slug }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/-\+/-/g; s/^-//; s/-$//')"
+            [ -z "${SAFE_TEAM_SLUG}" ] && SAFE_TEAM_SLUG="default"
+            NS="postman-insights-${SAFE_TEAM_SLUG}"
+          fi
+          [ -z "${NAME}" ] && NAME="postman-insights-agent"
+          echo "namespace=${NS}" >> "$GITHUB_OUTPUT"
+          echo "daemonset_name=${NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Mark Airtable tearing_down
+        run: |
+          set -euo pipefail
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          PAYLOAD="$(jq -n --arg status "tearing_down" --arg updated_at "${NOW}" '{fields:{status:$status,updated_at:$updated_at}}')"
+          curl -sS -X PATCH "https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Infrastructure/${AIRTABLE_RECORD_ID}" \
+            -H "Authorization: Bearer ${AIRTABLE_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}" >/dev/null
+
+      - name: Delete discovery daemonset
+        run: |
+          set -euo pipefail
+          NAMESPACE="${{ steps.airtable_read.outputs.namespace }}"
+          DAEMONSET_NAME="${{ steps.airtable_read.outputs.daemonset_name }}"
+          kubectl delete daemonset "${DAEMONSET_NAME}" -n "${NAMESPACE}" --ignore-not-found=true
+          ATTEMPT=0
+          while [ "${ATTEMPT}" -lt 20 ]; do
+            if ! kubectl get daemonset "${DAEMONSET_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+              echo "Discovery daemonset removed: ${NAMESPACE}/${DAEMONSET_NAME}"
+              exit 0
+            fi
+            sleep 3
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          echo "::error::Timed out waiting for discovery daemonset removal"
+          exit 1
+
+      - name: Mark Airtable inactive
+        if: ${{ success() }}
+        run: |
+          set -euo pipefail
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          PAYLOAD="$(jq -n \
+            --arg status "inactive" \
+            --arg updated_at "${NOW}" \
+            --arg last_run_url "${RUN_URL}" \
+            --arg last_error "" \
+            '{fields:{status:$status,updated_at:$updated_at,last_run_url:$last_run_url,last_error:$last_error}}')"
+          curl -sS -X PATCH "https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Infrastructure/${AIRTABLE_RECORD_ID}" \
+            -H "Authorization: Bearer ${AIRTABLE_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}" >/dev/null
+
+      - name: Mark Airtable error
+        if: ${{ failure() }}
+        run: |
+          set -euo pipefail
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          PAYLOAD="$(jq -n \
+            --arg status "error" \
+            --arg updated_at "${NOW}" \
+            --arg last_run_url "${RUN_URL}" \
+            --arg last_error "k8s discovery teardown failed" \
+            '{fields:{status:$status,updated_at:$updated_at,last_run_url:$last_run_url,last_error:$last_error}}')"
+          curl -sS -X PATCH "https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Infrastructure/${AIRTABLE_RECORD_ID}" \
+            -H "Authorization: Bearer ${AIRTABLE_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}" >/dev/null

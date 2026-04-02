@@ -1,0 +1,2082 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Insurance Claims API
+  description: >-
+    End-to-end claims management from First Notice of Loss (FNOL) through investigation, adjudication, reserve
+    management, payment processing, subrogation recovery, and salvage disposition. Supports severity triage, SIU
+    referral for suspicious claims, litigation tracking, and NAIC statistical reporting. Integrates with ISO
+    ClaimSearch for prior-loss and fraud detection.
+  version: 4.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-insurance-claims
+  x-acme-domain: insurance
+servers:
+  - url: https://af-insurance-claims.api.acmefin.com/v1
+    description: Production
+  - url: https://af-insurance-claims.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Claims Intake
+    description: First Notice of Loss (FNOL) registration, triage, and adjuster assignment
+  - name: Investigation
+    description: Claims investigation workflow including SIU referral and fraud scoring
+  - name: Adjudication
+    description: Coverage determination, liability assessment, and claim decision processing
+  - name: Payments
+    description: Indemnity and expense payment processing, check issuance, and payment recovery
+  - name: Reserves
+    description: Loss reserve establishment, monitoring, and staircase reserve adjustments
+  - name: Subrogation
+    description: Subrogation demand, recovery tracking, and arbitration management
+paths:
+  /claims:
+    get:
+      operationId: listClaims
+      summary: List claims
+      description: >-
+        Retrieve a paginated list of insurance claims. Supports filtering by policy, status, loss type,
+        severity, adjuster assignment, and date ranges. Results include incurred totals and reserve
+        summaries.
+      tags:
+        - Claims Intake
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: policy_id
+          in: query
+          required: false
+          description: Filter by policy number
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by claim status
+          schema:
+            type: "string"
+            enum:
+              - REPORTED
+              - UNDER_INVESTIGATION
+              - ADJUDICATED
+              - APPROVED
+              - DENIED
+              - PAID
+              - CLOSED
+              - REOPENED
+              - LITIGATION
+        - name: loss_type
+          in: query
+          required: false
+          description: Filter by type of loss
+          schema:
+            type: "string"
+        - name: severity
+          in: query
+          required: false
+          description: Filter by severity classification
+          schema:
+            type: "string"
+            enum:
+              - LOW
+              - MODERATE
+              - HIGH
+              - CATASTROPHIC
+        - name: adjuster_id
+          in: query
+          required: false
+          description: Filter by assigned adjuster
+          schema:
+            type: "string"
+        - name: loss_date_from
+          in: query
+          required: false
+          description: Loss date range start (ISO 8601)
+          schema:
+            type: "string"
+            format: "date"
+        - name: loss_date_to
+          in: query
+          required: false
+          description: Loss date range end (ISO 8601)
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        claim_id:
+                          type: string
+                          description: Unique claim number
+                          example: "CLM-2024-00048291"
+                        policy_id:
+                          type: string
+                          description: Policy under which the claim is filed
+                          example: "POL-10029384"
+                        claimant_name:
+                          type: string
+                          description: Name of the claimant
+                          example: "Margaret L. Davis"
+                        loss_date:
+                          type: string
+                          description: Date and time of the reported loss
+                          format: date-time
+                          example: "2024-08-15T14:30:00Z"
+                        reported_date:
+                          type: string
+                          description: Date FNOL was received
+                          format: date-time
+                          example: "2024-08-15T16:45:00Z"
+                        loss_type:
+                          type: string
+                          example: "COLLISION"
+                          enum:
+                            - COLLISION
+                            - COMPREHENSIVE
+                            - LIABILITY_BI
+                            - LIABILITY_PD
+                            - PROPERTY_DAMAGE
+                            - THEFT
+                            - WEATHER
+                            - FIRE
+                            - WATER_DAMAGE
+                            - MEDICAL
+                        status:
+                          type: string
+                          example: "UNDER_INVESTIGATION"
+                          enum:
+                            - REPORTED
+                            - UNDER_INVESTIGATION
+                            - ADJUDICATED
+                            - APPROVED
+                            - DENIED
+                            - PAID
+                            - CLOSED
+                            - REOPENED
+                            - LITIGATION
+                        severity:
+                          type: string
+                          description: Claim severity classification
+                          example: "MODERATE"
+                          enum:
+                            - LOW
+                            - MODERATE
+                            - HIGH
+                            - CATASTROPHIC
+                        loss_description:
+                          type: string
+                          description: Narrative description of the loss event
+                          example: "Rear-end collision at intersection of Main St and 5th Ave. Airbags deployed."
+                        adjuster_id:
+                          type: string
+                          description: Assigned claims adjuster
+                          example: "ADJ-00192"
+                        total_incurred:
+                          type: number
+                          description: Total incurred amount (paid + reserves)
+                          format: double
+                          example: 14500.0
+                        total_paid:
+                          type: number
+                          description: Total amount paid to date
+                          format: double
+                          example: 8200.0
+                        deductible_amount:
+                          type: number
+                          description: Applicable deductible
+                          format: double
+                          example: 1000.0
+                        litigation_flag:
+                          type: boolean
+                          description: Whether claim is in litigation
+                          example: false
+                      required:
+                        - claim_id
+                        - policy_id
+                        - status
+                        - loss_type
+                        - loss_date
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /claims/fnol:
+    post:
+      operationId: submitFNOL
+      summary: Submit First Notice of Loss
+      description: >-
+        File a First Notice of Loss to initiate the claims process. The system performs coverage
+        verification against the policy, assigns a severity classification based on loss type and
+        description, and routes the claim to an available adjuster in the appropriate territory.
+      tags:
+        - Claims Intake
+      requestBody:
+        required: true
+        description: Submit First Notice of Loss request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    policy_id:
+                      type: string
+                      description: Policy under which the claim is filed
+                      example: "POL-10029384"
+                    claimant_name:
+                      type: string
+                      description: Name of the claimant
+                      example: "Margaret L. Davis"
+                    loss_date:
+                      type: string
+                      description: Date and time of the reported loss
+                      format: date-time
+                      example: "2024-08-15T14:30:00Z"
+                    loss_type:
+                      type: string
+                      example: "COLLISION"
+                      enum:
+                        - COLLISION
+                        - COMPREHENSIVE
+                        - LIABILITY_BI
+                        - LIABILITY_PD
+                        - PROPERTY_DAMAGE
+                        - THEFT
+                        - WEATHER
+                        - FIRE
+                        - WATER_DAMAGE
+                        - MEDICAL
+                    loss_description:
+                      type: string
+                      description: Narrative description of the loss event
+                      example: "Rear-end collision at intersection of Main St and 5th Ave. Airbags deployed."
+                    loss_location:
+                      type: string
+                      description: Address or location where loss occurred
+                      example: "Intersection of Main St and 5th Ave, Hartford, CT"
+                    police_report_number:
+                      type: string
+                      description: Police report number if applicable
+                      example: "HPD-2024-08291"
+                    injured_parties:
+                      type: integer
+                      description: Number of injured parties
+                      example: 0
+              required:
+                - policy_id
+                - claimant_name
+                - loss_date
+                - loss_type
+                - loss_description
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claim_id:
+                    type: string
+                    description: Unique claim number
+                    example: "CLM-2024-00048291"
+                  policy_id:
+                    type: string
+                    description: Policy under which the claim is filed
+                    example: "POL-10029384"
+                  claimant_name:
+                    type: string
+                    description: Name of the claimant
+                    example: "Margaret L. Davis"
+                  loss_date:
+                    type: string
+                    description: Date and time of the reported loss
+                    format: date-time
+                    example: "2024-08-15T14:30:00Z"
+                  reported_date:
+                    type: string
+                    description: Date FNOL was received
+                    format: date-time
+                    example: "2024-08-15T16:45:00Z"
+                  loss_type:
+                    type: string
+                    example: "COLLISION"
+                    enum:
+                      - COLLISION
+                      - COMPREHENSIVE
+                      - LIABILITY_BI
+                      - LIABILITY_PD
+                      - PROPERTY_DAMAGE
+                      - THEFT
+                      - WEATHER
+                      - FIRE
+                      - WATER_DAMAGE
+                      - MEDICAL
+                  status:
+                    type: string
+                    example: "UNDER_INVESTIGATION"
+                    enum:
+                      - REPORTED
+                      - UNDER_INVESTIGATION
+                      - ADJUDICATED
+                      - APPROVED
+                      - DENIED
+                      - PAID
+                      - CLOSED
+                      - REOPENED
+                      - LITIGATION
+                  severity:
+                    type: string
+                    description: Claim severity classification
+                    example: "MODERATE"
+                    enum:
+                      - LOW
+                      - MODERATE
+                      - HIGH
+                      - CATASTROPHIC
+                  loss_description:
+                    type: string
+                    description: Narrative description of the loss event
+                    example: "Rear-end collision at intersection of Main St and 5th Ave. Airbags deployed."
+                  adjuster_id:
+                    type: string
+                    description: Assigned claims adjuster
+                    example: "ADJ-00192"
+                  total_incurred:
+                    type: number
+                    description: Total incurred amount (paid + reserves)
+                    format: double
+                    example: 14500.0
+                  total_paid:
+                    type: number
+                    description: Total amount paid to date
+                    format: double
+                    example: 8200.0
+                  deductible_amount:
+                    type: number
+                    description: Applicable deductible
+                    format: double
+                    example: 1000.0
+                  litigation_flag:
+                    type: boolean
+                    description: Whether claim is in litigation
+                    example: false
+                required:
+                  - claim_id
+                  - status
+                  - severity
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /claims/{claim_id}:
+    get:
+      operationId: getClaim
+      summary: Retrieve claim details
+      description: >-
+        Fetch complete claim details including loss information, coverage analysis, adjuster assignment,
+        reserve summary, payment history, and current claim status. Includes litigation flags and SIU
+        referral status.
+      tags:
+        - Claims Intake
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Unique claim id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claim_id:
+                    type: string
+                    description: Unique claim number
+                    example: "CLM-2024-00048291"
+                  policy_id:
+                    type: string
+                    description: Policy under which the claim is filed
+                    example: "POL-10029384"
+                  claimant_name:
+                    type: string
+                    description: Name of the claimant
+                    example: "Margaret L. Davis"
+                  loss_date:
+                    type: string
+                    description: Date and time of the reported loss
+                    format: date-time
+                    example: "2024-08-15T14:30:00Z"
+                  reported_date:
+                    type: string
+                    description: Date FNOL was received
+                    format: date-time
+                    example: "2024-08-15T16:45:00Z"
+                  loss_type:
+                    type: string
+                    example: "COLLISION"
+                    enum:
+                      - COLLISION
+                      - COMPREHENSIVE
+                      - LIABILITY_BI
+                      - LIABILITY_PD
+                      - PROPERTY_DAMAGE
+                      - THEFT
+                      - WEATHER
+                      - FIRE
+                      - WATER_DAMAGE
+                      - MEDICAL
+                  status:
+                    type: string
+                    example: "UNDER_INVESTIGATION"
+                    enum:
+                      - REPORTED
+                      - UNDER_INVESTIGATION
+                      - ADJUDICATED
+                      - APPROVED
+                      - DENIED
+                      - PAID
+                      - CLOSED
+                      - REOPENED
+                      - LITIGATION
+                  severity:
+                    type: string
+                    description: Claim severity classification
+                    example: "MODERATE"
+                    enum:
+                      - LOW
+                      - MODERATE
+                      - HIGH
+                      - CATASTROPHIC
+                  loss_description:
+                    type: string
+                    description: Narrative description of the loss event
+                    example: "Rear-end collision at intersection of Main St and 5th Ave. Airbags deployed."
+                  adjuster_id:
+                    type: string
+                    description: Assigned claims adjuster
+                    example: "ADJ-00192"
+                  total_incurred:
+                    type: number
+                    description: Total incurred amount (paid + reserves)
+                    format: double
+                    example: 14500.0
+                  total_paid:
+                    type: number
+                    description: Total amount paid to date
+                    format: double
+                    example: 8200.0
+                  deductible_amount:
+                    type: number
+                    description: Applicable deductible
+                    format: double
+                    example: 1000.0
+                  litigation_flag:
+                    type: boolean
+                    description: Whether claim is in litigation
+                    example: false
+                required:
+                  - claim_id
+                  - policy_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateClaim
+      summary: Update claim details
+      description: >-
+        Modify claim information such as loss description, severity reclassification, adjuster reassignment,
+        or litigation status. Status transitions follow the claims workflow state machine.
+      tags:
+        - Claims Intake
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Unique claim id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update claim details request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    loss_description:
+                      type: string
+                      description: Narrative description of the loss event
+                      example: "Rear-end collision at intersection of Main St and 5th Ave. Airbags deployed."
+                    severity:
+                      type: string
+                      description: Claim severity classification
+                      example: "MODERATE"
+                      enum:
+                        - LOW
+                        - MODERATE
+                        - HIGH
+                        - CATASTROPHIC
+                    adjuster_id:
+                      type: string
+                      description: Assigned claims adjuster
+                      example: "ADJ-00192"
+                    litigation_flag:
+                      type: boolean
+                      description: Whether claim is in litigation
+                      example: false
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claim_id:
+                    type: string
+                    description: Unique claim number
+                    example: "CLM-2024-00048291"
+                  policy_id:
+                    type: string
+                    description: Policy under which the claim is filed
+                    example: "POL-10029384"
+                  claimant_name:
+                    type: string
+                    description: Name of the claimant
+                    example: "Margaret L. Davis"
+                  loss_date:
+                    type: string
+                    description: Date and time of the reported loss
+                    format: date-time
+                    example: "2024-08-15T14:30:00Z"
+                  reported_date:
+                    type: string
+                    description: Date FNOL was received
+                    format: date-time
+                    example: "2024-08-15T16:45:00Z"
+                  loss_type:
+                    type: string
+                    example: "COLLISION"
+                    enum:
+                      - COLLISION
+                      - COMPREHENSIVE
+                      - LIABILITY_BI
+                      - LIABILITY_PD
+                      - PROPERTY_DAMAGE
+                      - THEFT
+                      - WEATHER
+                      - FIRE
+                      - WATER_DAMAGE
+                      - MEDICAL
+                  status:
+                    type: string
+                    example: "UNDER_INVESTIGATION"
+                    enum:
+                      - REPORTED
+                      - UNDER_INVESTIGATION
+                      - ADJUDICATED
+                      - APPROVED
+                      - DENIED
+                      - PAID
+                      - CLOSED
+                      - REOPENED
+                      - LITIGATION
+                  severity:
+                    type: string
+                    description: Claim severity classification
+                    example: "MODERATE"
+                    enum:
+                      - LOW
+                      - MODERATE
+                      - HIGH
+                      - CATASTROPHIC
+                  loss_description:
+                    type: string
+                    description: Narrative description of the loss event
+                    example: "Rear-end collision at intersection of Main St and 5th Ave. Airbags deployed."
+                  adjuster_id:
+                    type: string
+                    description: Assigned claims adjuster
+                    example: "ADJ-00192"
+                  total_incurred:
+                    type: number
+                    description: Total incurred amount (paid + reserves)
+                    format: double
+                    example: 14500.0
+                  total_paid:
+                    type: number
+                    description: Total amount paid to date
+                    format: double
+                    example: 8200.0
+                  deductible_amount:
+                    type: number
+                    description: Applicable deductible
+                    format: double
+                    example: 1000.0
+                  litigation_flag:
+                    type: boolean
+                    description: Whether claim is in litigation
+                    example: false
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /claims/{claim_id}/investigation:
+    post:
+      operationId: initiateInvestigation
+      summary: Initiate claims investigation
+      description: >-
+        Open a formal investigation on a claim. Assigns an investigator, sets investigation scope, and
+        optionally refers the claim to the Special Investigations Unit (SIU) for suspected fraud. Triggers
+        ISO ClaimSearch query for prior-loss history.
+      tags:
+        - Investigation
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Unique claim id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Initiate claims investigation request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    investigation_type:
+                      type: string
+                      example: "STANDARD"
+                      enum:
+                        - STANDARD
+                        - SIU_REFERRAL
+                        - LITIGATION_SUPPORT
+                    scope:
+                      type: string
+                      description: Investigation scope and objectives
+                      example: "Verify loss circumstances, obtain recorded statement, inspect damaged property"
+                    priority:
+                      type: string
+                      example: "NORMAL"
+                      enum:
+                        - NORMAL
+                        - URGENT
+                        - EXPEDITED
+              required:
+                - investigation_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  investigation_id:
+                    type: string
+                    example: "INV-00482917"
+                  investigator_id:
+                    type: string
+                    example: "INV-ADJ-0091"
+                  status:
+                    type: string
+                    example: "OPEN"
+                    enum:
+                      - OPEN
+                      - IN_PROGRESS
+                  iso_claimsearch_hit:
+                    type: boolean
+                    description: Whether ISO ClaimSearch returned prior-loss matches
+                    example: false
+                required:
+                  - investigation_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /claims/{claim_id}/investigation/status:
+    get:
+      operationId: getInvestigationStatus
+      summary: Get investigation status
+      description: >-
+        Retrieve the current status and findings of the claims investigation, including investigator notes,
+        witness statements collected, and SIU determination if applicable.
+      tags:
+        - Investigation
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Claim identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  investigation_id:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - OPEN
+                      - IN_PROGRESS
+                      - COMPLETED
+                      - CLOSED
+                  findings_summary:
+                    type: string
+                  siu_determination:
+                    type: string
+                    enum:
+                      - NO_FRAUD
+                      - SUSPICIOUS
+                      - CONFIRMED_FRAUD
+                      - NOT_APPLICABLE
+                    nullable: true
+                  completion_date:
+                    type: string
+                    format: date
+                    nullable: true
+                required:
+                  - investigation_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /claims/{claim_id}/adjudication:
+    post:
+      operationId: adjudicateClaim
+      summary: Adjudicate claim
+      description: >-
+        Submit a coverage determination and liability assessment for the claim. The adjudication decision
+        sets the approved amount, applies the deductible, and establishes the payment authorization. Claims
+        exceeding authority limits are escalated to a senior examiner.
+      tags:
+        - Adjudication
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Unique claim id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Adjudicate claim request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    decision:
+                      type: string
+                      example: "APPROVE_FULL"
+                      enum:
+                        - APPROVE_FULL
+                        - APPROVE_PARTIAL
+                        - DENY
+                        - REFER_TO_SENIOR
+                    approved_amount:
+                      type: number
+                      description: Total approved claim amount before deductible
+                      format: double
+                      example: 14500.0
+                    denial_reason:
+                      type: string
+                      description: Required if decision is DENY
+                      nullable: true
+                    coverage_analysis:
+                      type: string
+                      description: Coverage determination narrative
+                      example: "Loss is covered under comprehensive coverage. No exclusions apply."
+                    liability_assessment:
+                      type: string
+                      description: Liability determination
+                      example: "Insured 0% at fault. Third party 100% liable."
+              required:
+                - decision
+                - coverage_analysis
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  adjudication_id:
+                    type: string
+                    example: "ADJ-00918274"
+                  net_payable:
+                    type: number
+                    description: Amount payable after deductible
+                    format: double
+                    example: 13500.0
+                  status:
+                    type: string
+                    example: "APPROVED"
+                    enum:
+                      - APPROVED
+                      - DENIED
+                      - PENDING_SENIOR_REVIEW
+                required:
+                  - adjudication_id
+                  - net_payable
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /claims/{claim_id}/payments:
+    get:
+      operationId: listClaimPayments
+      summary: List claim payments
+      description: >-
+        Retrieve all payments issued against a claim, including indemnity payments to the insured, expense
+        payments to vendors, and medical payments to providers.
+      tags:
+        - Payments
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: payment_type
+          in: query
+          required: false
+          description: Filter by payment category
+          schema:
+            type: "string"
+            enum:
+              - INDEMNITY
+              - EXPENSE
+              - MEDICAL
+              - LEGAL
+              - SALVAGE_RECOVERY
+        - name: status
+          in: query
+          required: false
+          description: Filter by payment status
+          schema:
+            type: "string"
+            enum:
+              - PENDING
+              - ISSUED
+              - CLEARED
+              - VOIDED
+              - STOP_PAY
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        payment_id:
+                          type: string
+                          example: "PAY-CLM-00928374"
+                        claim_id:
+                          type: string
+                          example: "CLM-2024-00048291"
+                        payee_name:
+                          type: string
+                          description: Payment recipient
+                          example: "Davis Auto Body & Repair"
+                        payment_type:
+                          type: string
+                          example: "INDEMNITY"
+                          enum:
+                            - INDEMNITY
+                            - EXPENSE
+                            - MEDICAL
+                            - LEGAL
+                            - SALVAGE_RECOVERY
+                        amount:
+                          type: number
+                          format: double
+                          example: 4200.0
+                        check_number:
+                          type: string
+                          description: Check or EFT reference number
+                          example: "CHK-000482917"
+                        status:
+                          type: string
+                          example: "ISSUED"
+                          enum:
+                            - PENDING
+                            - ISSUED
+                            - CLEARED
+                            - VOIDED
+                            - STOP_PAY
+                        issued_date:
+                          type: string
+                          format: date
+                          example: "2024-09-10"
+                      required:
+                        - payment_id
+                        - amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: issueClaimPayment
+      summary: Issue claim payment
+      description: >-
+        Create and issue a payment against an adjudicated claim. Payments are validated against the approved
+        amount and available reserves. Two-party checks require both payee names. Payments exceeding $25,000
+        require supervisory approval.
+      tags:
+        - Payments
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Unique claim id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Issue claim payment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    payee_name:
+                      type: string
+                      description: Payment recipient
+                      example: "Davis Auto Body & Repair"
+                    payment_type:
+                      type: string
+                      example: "INDEMNITY"
+                      enum:
+                        - INDEMNITY
+                        - EXPENSE
+                        - MEDICAL
+                        - LEGAL
+                        - SALVAGE_RECOVERY
+                    amount:
+                      type: number
+                      description: Payment amount
+                      format: double
+                      example: 4200.0
+                    payment_method:
+                      type: string
+                      example: "CHECK"
+                      enum:
+                        - CHECK
+                        - EFT
+                        - WIRE
+                    memo:
+                      type: string
+                      description: Payment memo/description
+                      example: "Collision repair - Davis Auto Body estimate #E-2948"
+              required:
+                - payee_name
+                - payment_type
+                - amount
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_id:
+                    type: string
+                    example: "PAY-CLM-00928374"
+                  claim_id:
+                    type: string
+                    example: "CLM-2024-00048291"
+                  payee_name:
+                    type: string
+                    description: Payment recipient
+                    example: "Davis Auto Body & Repair"
+                  payment_type:
+                    type: string
+                    example: "INDEMNITY"
+                    enum:
+                      - INDEMNITY
+                      - EXPENSE
+                      - MEDICAL
+                      - LEGAL
+                      - SALVAGE_RECOVERY
+                  amount:
+                    type: number
+                    format: double
+                    example: 4200.0
+                  check_number:
+                    type: string
+                    description: Check or EFT reference number
+                    example: "CHK-000482917"
+                  status:
+                    type: string
+                    example: "ISSUED"
+                    enum:
+                      - PENDING
+                      - ISSUED
+                      - CLEARED
+                      - VOIDED
+                      - STOP_PAY
+                  issued_date:
+                    type: string
+                    format: date
+                    example: "2024-09-10"
+                required:
+                  - payment_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /claims/{claim_id}/reserves:
+    get:
+      operationId: getClaimReserves
+      summary: Retrieve claim reserves
+      description: >-
+        Get the current reserve position for a claim broken down by reserve category (indemnity, expense,
+        medical, legal). Shows initial reserves set at FNOL, current reserves after adjustments, amounts
+        paid, and outstanding balances.
+      tags:
+        - Reserves
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Claim identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reserves:
+                    type: array
+                    description: Reserve breakdown by category
+                    items:
+                      type: object
+                  total_initial:
+                    type: number
+                    format: double
+                  total_current:
+                    type: number
+                    format: double
+                  total_paid:
+                    type: number
+                    format: double
+                  total_outstanding:
+                    type: number
+                    format: double
+                required:
+                  - total_current
+                  - total_outstanding
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: adjustClaimReserves
+      summary: Adjust claim reserves
+      description: >-
+        Adjust reserve amounts for a claim. Reserve changes must include a justification narrative.
+        Increases above 50% of initial reserve require supervisory approval. All reserve changes are audited
+        for actuarial analysis and IBNR calculations.
+      tags:
+        - Reserves
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Claim identifier
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Adjust claim reserves request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reserve_type:
+                      type: string
+                      description: Category of reserve
+                      example: "INDEMNITY"
+                      enum:
+                        - INDEMNITY
+                        - EXPENSE
+                        - MEDICAL
+                        - LEGAL
+                    new_amount:
+                      type: number
+                      description: New reserve amount
+                      format: double
+                      example: 18000.0
+                    reason:
+                      type: string
+                      description: Justification for reserve change
+                      example: "Supplement estimate received; additional structural damage found during tear-down"
+              required:
+                - reserve_type
+                - new_amount
+                - reason
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reserve_id:
+                    type: string
+                    example: "RSV-00482913"
+                  claim_id:
+                    type: string
+                    example: "CLM-2024-00048291"
+                  reserve_type:
+                    type: string
+                    description: Category of reserve
+                    example: "INDEMNITY"
+                    enum:
+                      - INDEMNITY
+                      - EXPENSE
+                      - MEDICAL
+                      - LEGAL
+                  initial_amount:
+                    type: number
+                    description: Initial reserve set at FNOL
+                    format: double
+                    example: 10000.0
+                  current_amount:
+                    type: number
+                    description: Current reserve after adjustments
+                    format: double
+                    example: 14500.0
+                  paid_to_date:
+                    type: number
+                    description: Amount paid against this reserve
+                    format: double
+                    example: 8200.0
+                  remaining:
+                    type: number
+                    description: Outstanding reserve balance
+                    format: double
+                    example: 6300.0
+                  last_adjusted_date:
+                    type: string
+                    format: date
+                    example: "2024-09-05"
+                  adjuster_notes:
+                    type: string
+                    description: Reserve adjustment rationale
+                    example: "Increased reserve after supplement estimate received from body shop."
+                required:
+                  - reserve_id
+                  - current_amount
+                  - remaining
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /claims/{claim_id}/subrogation:
+    post:
+      operationId: initiateSubrogation
+      summary: Initiate subrogation
+      description: >-
+        Open a subrogation file to pursue recovery from a third party or their insurer. Generates a demand
+        letter and initiates inter-company arbitration through Arbitration Forums if applicable.
+      tags:
+        - Subrogation
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Unique claim id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Initiate subrogation request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    adverse_party_name:
+                      type: string
+                      description: Name of the at-fault party
+                      example: "John K. Williams"
+                    adverse_carrier:
+                      type: string
+                      description: At-fault party's insurance carrier
+                      example: "National Mutual Insurance Co."
+                    adverse_policy_number:
+                      type: string
+                      description: Adverse party's policy number
+                      example: "NMI-PAP-2847291"
+                    recovery_amount_sought:
+                      type: number
+                      description: Total recovery amount demanded
+                      format: double
+                      example: 14500.0
+                    liability_pct:
+                      type: number
+                      description: Adverse party liability percentage
+                      format: double
+                      example: 100.0
+              required:
+                - adverse_party_name
+                - recovery_amount_sought
+                - liability_pct
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subrogation_id:
+                    type: string
+                    example: "SUB-00482918"
+                  demand_letter_id:
+                    type: string
+                  status:
+                    type: string
+                    example: "DEMAND_SENT"
+                    enum:
+                      - OPEN
+                      - DEMAND_SENT
+                      - IN_ARBITRATION
+                      - SETTLED
+                      - CLOSED
+                required:
+                  - subrogation_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /claims/{claim_id}/subrogation/status:
+    get:
+      operationId: getSubrogationStatus
+      summary: Get subrogation status
+      description: >-
+        Retrieve subrogation recovery status including demand amount, amounts recovered, arbitration status,
+        and recovery timeline.
+      tags:
+        - Subrogation
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Claim identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subrogation_id:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - OPEN
+                      - DEMAND_SENT
+                      - IN_ARBITRATION
+                      - SETTLED
+                      - CLOSED
+                  amount_demanded:
+                    type: number
+                    format: double
+                  amount_recovered:
+                    type: number
+                    format: double
+                  recovery_pct:
+                    type: number
+                    format: double
+                  arbitration_forum_case_id:
+                    type: string
+                    nullable: true
+                required:
+                  - subrogation_id
+                  - status
+                  - amount_demanded
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /claims/{claim_id}/salvage:
+    post:
+      operationId: processSalvage
+      summary: Process salvage disposition
+      description: >-
+        Record salvage disposition for total-loss claims. Captures salvage sale amount, buyer information,
+        and title transfer details. Salvage proceeds offset the total claim cost and are reflected in loss-
+        ratio reporting.
+      tags:
+        - Payments
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Unique claim id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Process salvage disposition request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    salvage_type:
+                      type: string
+                      example: "AUCTION"
+                      enum:
+                        - AUCTION
+                        - DIRECT_SALE
+                        - RETAINED_BY_INSURED
+                        - DONATED
+                    salvage_value:
+                      type: number
+                      description: Realized salvage amount
+                      format: double
+                      example: 3200.0
+                    buyer_name:
+                      type: string
+                      description: Salvage buyer (if sold)
+                      example: "Copart Auto Auction"
+                    title_transferred:
+                      type: boolean
+                      description: Whether salvage title has been transferred
+                      example: true
+              required:
+                - salvage_type
+                - salvage_value
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  salvage_id:
+                    type: string
+                    example: "SLV-00291847"
+                  net_claim_cost:
+                    type: number
+                    description: Net claim cost after salvage offset
+                    format: double
+                    example: 11300.0
+                  status:
+                    type: string
+                    example: "RECORDED"
+                    enum:
+                      - RECORDED
+                      - PENDING_TITLE
+                required:
+                  - salvage_id
+                  - net_claim_cost
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /claims/{claim_id}/documents:
+    get:
+      operationId: listClaimDocuments
+      summary: List claim documents
+      description: >-
+        Retrieve documents attached to a claim, including photos, police reports, medical records, repair
+        estimates, and recorded statements.
+      tags:
+        - Claims Intake
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                        document_type:
+                          type: string
+                          enum:
+                            - PHOTO
+                            - POLICE_REPORT
+                            - MEDICAL_RECORD
+                            - REPAIR_ESTIMATE
+                            - RECORDED_STATEMENT
+                            - CORRESPONDENCE
+                        filename:
+                          type: string
+                        uploaded_at:
+                          type: string
+                          format: date-time
+                        uploaded_by:
+                          type: string
+                      required:
+                        - document_id
+                        - document_type
+                        - filename
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /claims/{claim_id}/timeline:
+    get:
+      operationId: getClaimTimeline
+      summary: Get claim timeline
+      description: >-
+        Retrieve a chronological timeline of all activities on a claim, including status changes, reserve
+        adjustments, payments, investigation milestones, and correspondence. Used for audit trails and
+        claims diary management.
+      tags:
+        - Claims Intake
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Claim identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    description: Chronological list of claim events
+                    items:
+                      type: object
+                  total_events:
+                    type: integer
+                  claim_age_days:
+                    type: integer
+                    description: Number of days since FNOL
+                required:
+                  - events
+                  - claim_age_days
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /claims/{claim_id}/close:
+    post:
+      operationId: closeClaim
+      summary: Close claim
+      description: >-
+        Close a fully resolved claim. All reserves must be zeroed out (paid or released) and all subrogation
+        must be settled or waived before closure. Closed claims can be reopened if additional information
+        surfaces.
+      tags:
+        - Adjudication
+      parameters:
+        - name: claim_id
+          in: path
+          required: true
+          description: Unique claim id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Close claim request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    closure_reason:
+                      type: string
+                      example: "FULLY_PAID"
+                      enum:
+                        - FULLY_PAID
+                        - DENIED_FINAL
+                        - WITHDRAWN
+                        - NO_COVERAGE
+                        - STATUTE_EXPIRED
+                    final_notes:
+                      type: string
+                      description: Closing adjuster notes
+                      example: "All repairs completed, final payment issued, salvage processed. No outstanding reserves."
+              required:
+                - closure_reason
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

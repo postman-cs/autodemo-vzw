@@ -1,0 +1,1129 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Credit Reporting API
+  description: >-
+    Generate, schedule, and retrieve credit risk reports for portfolio analysis and regulatory compliance.
+    Supports standard portfolio summaries, delinquency analysis, vintage analysis, and concentration reports, as
+    well as regulatory submissions for CCAR (Comprehensive Capital Analysis and Review) and DFAST (Dodd-Frank Act
+    Stress Testing). Reports can be generated on-demand or via configurable schedules with automated distribution.
+  version: 2.7.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-credit-reporting
+  x-acme-domain: credit
+servers:
+  - url: https://af-credit-reporting.api.acmefin.com/v1
+    description: Production
+  - url: https://af-credit-reporting.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Reports
+    description: Generate, retrieve, and download credit risk and portfolio analysis reports
+  - name: Schedules
+    description: Configure automated report generation schedules with email distribution
+  - name: Regulatory
+    description: Prepare and submit regulatory reports for CCAR and DFAST compliance
+paths:
+  /reports:
+    get:
+      operationId: listReports
+      summary: List reports
+      description: >-
+        Retrieve generated credit reports with filtering by type, status, date range, and format. Completed
+        reports include download URLs valid for 24 hours.
+      tags:
+        - Reports
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: report_type
+          in: query
+          required: false
+          description: Filter by report type
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by generation status
+          schema:
+            type: "string"
+            enum:
+              - queued
+              - generating
+              - completed
+              - failed
+        - name: generated_after
+          in: query
+          required: false
+          description: Reports generated after this date
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        report_id:
+                          type: string
+                          description: Report identifier
+                          format: uuid
+                          example: "crr-0d1e2f3a-b4c5-6789-defb-012345678901"
+                        report_name:
+                          type: string
+                          description: Report display name
+                          example: "Q1 2025 Portfolio Credit Risk Summary"
+                        report_type:
+                          type: string
+                          description: Report category
+                          example: "portfolio_summary"
+                          enum:
+                            - portfolio_summary
+                            - delinquency_analysis
+                            - vintage_analysis
+                            - concentration_report
+                            - regulatory_ccar
+                            - regulatory_dfast
+                            - custom
+                        format:
+                          type: string
+                          description: Output format
+                          example: "pdf"
+                          enum:
+                            - pdf
+                            - xlsx
+                            - csv
+                            - json
+                        status:
+                          type: string
+                          description: Generation status
+                          example: "queued"
+                          enum:
+                            - queued
+                            - generating
+                            - completed
+                            - failed
+                        parameters:
+                          type: string
+                          description: Report parameters as JSON
+                          example: '{"quarter": "Q1-2025", "portfolio": "consumer"}'
+                        file_size_bytes:
+                          type: integer
+                          description: Generated file size in bytes
+                          example: 2458624
+                        generated_at:
+                          type: string
+                          description: When the report was generated
+                          format: date-time
+                          example: "2025-03-31T23:59:00Z"
+                        generated_by:
+                          type: string
+                          description: User or schedule that triggered generation
+                          example: "schedule:monthly-portfolio"
+                      required:
+                        - report_id
+                        - report_type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: generateReport
+      summary: Generate report
+      description: >-
+        Trigger on-demand generation of a credit risk report. Report generation is asynchronous; poll the
+        report status endpoint or configure a webhook for completion notification. Large portfolio reports
+        may take several minutes to generate.
+      tags:
+        - Reports
+      requestBody:
+        required: true
+        description: Generate report request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    report_name:
+                      type: string
+                      description: Report name
+                      example: "Ad-hoc Delinquency Analysis"
+                    report_type:
+                      type: string
+                      description: Report type
+                      example: "portfolio_summary"
+                      enum:
+                        - portfolio_summary
+                        - delinquency_analysis
+                        - vintage_analysis
+                        - concentration_report
+                        - custom
+                    format:
+                      type: string
+                      description: Output format
+                      example: "pdf"
+                      enum:
+                        - pdf
+                        - xlsx
+                        - csv
+                    parameters:
+                      type: string
+                      description: Report-specific parameters as JSON
+                      example: '{"date_range": "2025-01-01/2025-03-31"}'
+                    portfolio_filter:
+                      type: string
+                      description: Portfolio segment filter expression
+                      example: "product_type IN ('credit_card', 'personal_loan')"
+              required:
+                - report_type
+                - format
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: Report identifier
+                    format: uuid
+                    example: "crr-0d1e2f3a-b4c5-6789-defb-012345678901"
+                  report_name:
+                    type: string
+                    description: Report display name
+                    example: "Q1 2025 Portfolio Credit Risk Summary"
+                  report_type:
+                    type: string
+                    description: Report category
+                    example: "portfolio_summary"
+                    enum:
+                      - portfolio_summary
+                      - delinquency_analysis
+                      - vintage_analysis
+                      - concentration_report
+                      - regulatory_ccar
+                      - regulatory_dfast
+                      - custom
+                  format:
+                    type: string
+                    description: Output format
+                    example: "pdf"
+                    enum:
+                      - pdf
+                      - xlsx
+                      - csv
+                      - json
+                  status:
+                    type: string
+                    description: Generation status
+                    example: "queued"
+                    enum:
+                      - queued
+                      - generating
+                      - completed
+                      - failed
+                  parameters:
+                    type: string
+                    description: Report parameters as JSON
+                    example: '{"quarter": "Q1-2025", "portfolio": "consumer"}'
+                  file_size_bytes:
+                    type: integer
+                    description: Generated file size in bytes
+                    example: 2458624
+                  generated_at:
+                    type: string
+                    description: When the report was generated
+                    format: date-time
+                    example: "2025-03-31T23:59:00Z"
+                  generated_by:
+                    type: string
+                    description: User or schedule that triggered generation
+                    example: "schedule:monthly-portfolio"
+                required:
+                  - report_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /reports/{report_id}:
+    get:
+      operationId: getReport
+      summary: Get report details
+      description: >-
+        Retrieve metadata and status for a specific report. Completed reports include a time-limited
+        download URL.
+      tags:
+        - Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: Report identifier
+                    format: uuid
+                    example: "crr-0d1e2f3a-b4c5-6789-defb-012345678901"
+                  report_name:
+                    type: string
+                    description: Report display name
+                    example: "Q1 2025 Portfolio Credit Risk Summary"
+                  report_type:
+                    type: string
+                    description: Report category
+                    example: "portfolio_summary"
+                    enum:
+                      - portfolio_summary
+                      - delinquency_analysis
+                      - vintage_analysis
+                      - concentration_report
+                      - regulatory_ccar
+                      - regulatory_dfast
+                      - custom
+                  format:
+                    type: string
+                    description: Output format
+                    example: "pdf"
+                    enum:
+                      - pdf
+                      - xlsx
+                      - csv
+                      - json
+                  status:
+                    type: string
+                    description: Generation status
+                    example: "queued"
+                    enum:
+                      - queued
+                      - generating
+                      - completed
+                      - failed
+                  parameters:
+                    type: string
+                    description: Report parameters as JSON
+                    example: '{"quarter": "Q1-2025", "portfolio": "consumer"}'
+                  file_size_bytes:
+                    type: integer
+                    description: Generated file size in bytes
+                    example: 2458624
+                  generated_at:
+                    type: string
+                    description: When the report was generated
+                    format: date-time
+                    example: "2025-03-31T23:59:00Z"
+                  generated_by:
+                    type: string
+                    description: User or schedule that triggered generation
+                    example: "schedule:monthly-portfolio"
+                required:
+                  - report_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteReport
+      summary: Delete report
+      description: >-
+        Delete a generated report and its associated file. Reports referenced by regulatory submissions
+        cannot be deleted.
+      tags:
+        - Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /reports/{report_id}/download:
+    get:
+      operationId: downloadReport
+      summary: Download report file
+      description: >-
+        Retrieve the generated report file content. Returns the file in the format specified during
+        generation (PDF, XLSX, or CSV). Download URLs expire after 24 hours; re-request if expired.
+      tags:
+        - Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  download_url:
+                    type: string
+                    description: Pre-signed download URL
+                    example: "https://reports.acmefin.com/dl/crr-0d1e2f3a?token=abc123"
+                  expires_at:
+                    type: string
+                    description: URL expiration time
+                    format: date-time
+                    example: "2025-04-01T14:00:00Z"
+                  format:
+                    type: string
+                    description: File format
+                    example: "pdf"
+                  file_size_bytes:
+                    type: integer
+                    description: File size
+                    example: 2458624
+                required:
+                  - download_url
+                  - expires_at
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /schedules:
+    get:
+      operationId: listSchedules
+      summary: List report schedules
+      description: >-
+        Retrieve configured report generation schedules. Each schedule defines a report type, frequency,
+        parameters, and distribution recipients.
+      tags:
+        - Schedules
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        schedule_id:
+                          type: string
+                          description: Schedule identifier
+                          format: uuid
+                          example: "sch-1e2f3a4b-c5d6-7890-efac-123456789012"
+                        schedule_name:
+                          type: string
+                          description: Schedule display name
+                          example: "Monthly Portfolio Risk Report"
+                        report_type:
+                          type: string
+                          description: Report type to generate
+                          example: "portfolio_summary"
+                          enum:
+                            - portfolio_summary
+                            - delinquency_analysis
+                            - vintage_analysis
+                            - regulatory_ccar
+                            - regulatory_dfast
+                        frequency:
+                          type: string
+                          description: Generation frequency
+                          example: "daily"
+                          enum:
+                            - daily
+                            - weekly
+                            - monthly
+                            - quarterly
+                            - annually
+                        next_run_at:
+                          type: string
+                          description: Next scheduled generation time
+                          format: date-time
+                          example: "2025-04-01T00:00:00Z"
+                        recipients:
+                          type: array
+                          description: Email recipients for generated reports
+                          items:
+                            type: string
+                            example: "risk-team@acmefin.com"
+                        is_active:
+                          type: boolean
+                          description: Whether the schedule is active
+                          example: true
+                      required:
+                        - schedule_id
+                        - schedule_name
+                        - frequency
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSchedule
+      summary: Create report schedule
+      description: >-
+        Create an automated report generation schedule. Reports are generated at the specified frequency and
+        distributed to the configured recipients via email.
+      tags:
+        - Schedules
+      requestBody:
+        required: true
+        description: Create report schedule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    schedule_name:
+                      type: string
+                      description: Schedule name
+                      example: "Weekly Delinquency Report"
+                    report_type:
+                      type: string
+                      description: Report type
+                      example: "portfolio_summary"
+                      enum:
+                        - portfolio_summary
+                        - delinquency_analysis
+                        - vintage_analysis
+                        - regulatory_ccar
+                        - regulatory_dfast
+                    frequency:
+                      type: string
+                      description: Frequency
+                      example: "daily"
+                      enum:
+                        - daily
+                        - weekly
+                        - monthly
+                        - quarterly
+                    format:
+                      type: string
+                      description: Output format
+                      example: "pdf"
+                      enum:
+                        - pdf
+                        - xlsx
+                        - csv
+                    parameters:
+                      type: string
+                      description: Report parameters
+                      example: '{"portfolio": "all"}'
+                    recipients:
+                      type: array
+                      description: Distribution list
+                      items:
+                        type: string
+                        example: "risk@acmefin.com"
+              required:
+                - schedule_name
+                - report_type
+                - frequency
+                - recipients
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule_id:
+                    type: string
+                    description: Schedule identifier
+                    format: uuid
+                    example: "sch-1e2f3a4b-c5d6-7890-efac-123456789012"
+                  schedule_name:
+                    type: string
+                    description: Schedule display name
+                    example: "Monthly Portfolio Risk Report"
+                  report_type:
+                    type: string
+                    description: Report type to generate
+                    example: "portfolio_summary"
+                    enum:
+                      - portfolio_summary
+                      - delinquency_analysis
+                      - vintage_analysis
+                      - regulatory_ccar
+                      - regulatory_dfast
+                  frequency:
+                    type: string
+                    description: Generation frequency
+                    example: "daily"
+                    enum:
+                      - daily
+                      - weekly
+                      - monthly
+                      - quarterly
+                      - annually
+                  next_run_at:
+                    type: string
+                    description: Next scheduled generation time
+                    format: date-time
+                    example: "2025-04-01T00:00:00Z"
+                  recipients:
+                    type: array
+                    description: Email recipients for generated reports
+                    items:
+                      type: string
+                      example: "risk-team@acmefin.com"
+                  is_active:
+                    type: boolean
+                    description: Whether the schedule is active
+                    example: true
+                required:
+                  - schedule_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /schedules/{schedule_id}:
+    delete:
+      operationId: deleteSchedule
+      summary: Delete report schedule
+      description: >-
+        Delete an automated report generation schedule. Pending reports already queued for generation are
+        not affected.
+      tags:
+        - Schedules
+      parameters:
+        - name: schedule_id
+          in: path
+          required: true
+          description: Unique schedule id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /regulatory/submissions:
+    post:
+      operationId: submitRegulatoryReport
+      summary: Submit regulatory report
+      description: >-
+        Submit a completed report to regulatory authorities for CCAR or DFAST compliance. The submission is
+        validated against the applicable regulatory schema before transmission. A submission receipt is
+        returned with a tracking identifier for follow-up with the regulator.
+      tags:
+        - Regulatory
+      requestBody:
+        required: true
+        description: Submit regulatory report request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    report_id:
+                      type: string
+                      description: Report to submit
+                      format: uuid
+                      example: "crr-0d1e2f3a"
+                    submission_type:
+                      type: string
+                      description: Regulatory framework
+                      example: "CCAR"
+                      enum:
+                        - CCAR
+                        - DFAST
+                        - FR_Y14
+                    reporting_period:
+                      type: string
+                      description: Regulatory reporting period
+                      example: "2025-Q1"
+                    certifying_officer:
+                      type: string
+                      description: Name of certifying officer
+                      example: "Jane Smith, Chief Risk Officer"
+                    certifying_officer_title:
+                      type: string
+                      description: Title of certifying officer
+                      example: "Chief Risk Officer"
+              required:
+                - report_id
+                - submission_type
+                - reporting_period
+                - certifying_officer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submission_id:
+                    type: string
+                    description: Regulatory submission ID
+                    format: uuid
+                    example: "sub-2f3a4b5c"
+                  status:
+                    type: string
+                    description: Submission status
+                    example: "validated"
+                    enum:
+                      - validated
+                      - submitted
+                      - rejected
+                  tracking_number:
+                    type: string
+                    description: Regulator tracking number
+                    example: "FRB-2025-Q1-CCAR-0042"
+                  submitted_at:
+                    type: string
+                    description: Submission timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                  validation_warnings:
+                    type: array
+                    description: Non-blocking validation warnings
+                    items:
+                      type: string
+                      example: "Portfolio segment X has fewer than minimum required observations"
+                required:
+                  - submission_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,976 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Customer Lifecycle Management API
+  description: Tracks customer journey stages from prospect through acquisition, growth, maturity, and potential attrition.
+    Provides churn prediction, dormancy detection, win-back campaign triggers, and milestone tracking. Powers the customer
+    retention analytics dashboard and automated lifecycle marketing orchestration.
+  version: 2.3.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-customer-lifecycle
+  x-acme-domain: customer
+servers:
+- url: https://af-customer-lifecycle.api.acmefin.com/v1
+  description: Production
+- url: https://af-customer-lifecycle.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Lifecycle Stages
+  description: Customer lifecycle stage tracking and transitions
+- name: Retention
+  description: Churn prediction, dormancy detection, and win-back campaigns
+- name: Milestones
+  description: Customer milestone tracking and celebration triggers
+paths:
+  /customers/{customer_id}/lifecycle:
+    get:
+      operationId: getCustomerLifecycleStage
+      summary: Get customer lifecycle stage
+      description: 'Returns the customer''s current lifecycle stage, time in stage, and transition history. Lifecycle stages
+        are: prospect, onboarding, active_growth, mature, at_risk, dormant, and churned.'
+      tags:
+      - Lifecycle Stages
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  current_stage:
+                    type: string
+                    description: Current lifecycle stage
+                    enum:
+                    - prospect
+                    - onboarding
+                    - active_growth
+                    - mature
+                    - at_risk
+                    - dormant
+                    - churned
+                  entered_stage_at:
+                    type: string
+                    description: When customer entered current stage
+                    format: date-time
+                  days_in_stage:
+                    type: integer
+                    description: Days in current stage
+                    example: 142
+                  previous_stage:
+                    type: string
+                    description: Previous lifecycle stage
+                    nullable: true
+                  lifetime_value:
+                    type: number
+                    description: Estimated customer lifetime value
+                    format: double
+                    example: 28500.0
+                  engagement_level:
+                    type: string
+                    description: Current engagement level
+                    enum:
+                    - high
+                    - medium
+                    - low
+                    - inactive
+                required:
+                - customer_id
+                - current_stage
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /customers/{customer_id}/lifecycle/transitions:
+    post:
+      operationId: transitionLifecycleStage
+      summary: Transition lifecycle stage
+      description: Manually triggers a lifecycle stage transition for the customer. Transitions are validated against allowed
+        transition paths. Automated transitions occur based on activity rules, but manual overrides are supported for relationship
+        managers.
+      tags:
+      - Lifecycle Stages
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Transition lifecycle stage request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target_stage:
+                  type: string
+                  description: Target lifecycle stage
+                  enum:
+                  - prospect
+                  - onboarding
+                  - active_growth
+                  - mature
+                  - at_risk
+                  - dormant
+                  - churned
+                reason:
+                  type: string
+                  description: Reason for transition
+                  example: Customer completed first 90 days with high engagement
+                override_validation:
+                  type: boolean
+                  description: Override transition path validation (requires admin)
+                  default: false
+              required:
+              - target_stage
+              - reason
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  previous_stage:
+                    type: string
+                    description: Stage before transition
+                  new_stage:
+                    type: string
+                    description: Stage after transition
+                  transitioned_at:
+                    type: string
+                    description: Transition timestamp
+                    format: date-time
+                required:
+                - customer_id
+                - previous_stage
+                - new_stage
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}/milestones:
+    get:
+      operationId: listCustomerMilestones
+      summary: List customer milestones
+      description: Returns milestones achieved by the customer such as account anniversaries, product adoption thresholds,
+        loyalty tier upgrades, and savings goals. Used to trigger celebration communications and reward offers.
+      tags:
+      - Milestones
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        milestone_id:
+                          type: string
+                          description: Milestone ID
+                          example: MS-20250301-5521
+                        type:
+                          type: string
+                          description: Milestone type
+                          enum:
+                          - anniversary
+                          - product_adoption
+                          - loyalty_upgrade
+                          - savings_goal
+                          - referral
+                          - digital_adoption
+                        title:
+                          type: string
+                          description: Milestone display name
+                          example: 5-Year Banking Anniversary
+                        achieved_at:
+                          type: string
+                          description: When milestone was achieved
+                          format: date-time
+                        celebrated:
+                          type: boolean
+                          description: Whether celebration was triggered
+                          example: true
+                      required:
+                      - milestone_id
+                      - type
+                      - achieved_at
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: recordMilestone
+      summary: Record customer milestone
+      description: Manually records a customer milestone. Most milestones are system-generated, but relationship managers
+        can create custom milestones for significant events.
+      tags:
+      - Milestones
+      requestBody:
+        required: true
+        description: Record customer milestone request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF
+                type:
+                  type: string
+                  description: Milestone type
+                  enum:
+                  - anniversary
+                  - product_adoption
+                  - loyalty_upgrade
+                  - savings_goal
+                  - referral
+                  - digital_adoption
+                  - custom
+                title:
+                  type: string
+                  description: Milestone title
+                  example: First home purchase funded
+                trigger_celebration:
+                  type: boolean
+                  description: Trigger celebration communication
+                  default: true
+              required:
+              - customer_id
+              - type
+              - title
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  milestone_id:
+                    type: string
+                    description: Generated milestone ID
+                  achieved_at:
+                    type: string
+                    description: Recording timestamp
+                    format: date-time
+                  celebration_sent:
+                    type: boolean
+                    description: Whether celebration was sent
+                required:
+                - milestone_id
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}/churn-prediction:
+    get:
+      operationId: getChurnPrediction
+      summary: Get churn prediction
+      description: Returns the customer's churn risk assessment including probability score, contributing risk factors, recommended
+        retention actions, and comparison to segment benchmarks. Updated weekly by the ML churn model.
+      tags:
+      - Retention
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  churn_probability:
+                    type: number
+                    description: Churn probability 0.0-1.0
+                    format: double
+                    example: 0.23
+                    minimum: 0
+                    maximum: 1
+                  risk_level:
+                    type: string
+                    description: Churn risk tier
+                    enum:
+                    - low
+                    - moderate
+                    - high
+                    - critical
+                  risk_factors:
+                    type: array
+                    description: Contributing risk factors
+                    items:
+                      type: object
+                  recommended_actions:
+                    type: array
+                    description: Suggested retention actions
+                    items:
+                      type: object
+                  segment_average_churn:
+                    type: number
+                    description: Average churn rate for customer segment
+                    format: double
+                    example: 0.08
+                  model_version:
+                    type: string
+                    description: Churn model version
+                    example: churn-v3.1
+                  predicted_at:
+                    type: string
+                    description: Last prediction run
+                    format: date-time
+                required:
+                - customer_id
+                - churn_probability
+                - risk_level
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /customers/{customer_id}/win-back:
+    post:
+      operationId: initiateWinBack
+      summary: Initiate win-back campaign
+      description: Enrolls a dormant or churned customer in a win-back campaign. Selects the optimal offer based on the customer's
+        historical behavior and reason for attrition. Tracks campaign engagement through resolution.
+      tags:
+      - Retention
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Initiate win-back campaign request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                campaign_type:
+                  type: string
+                  description: Win-back campaign strategy
+                  enum:
+                  - rate_offer
+                  - fee_waiver
+                  - product_upgrade
+                  - loyalty_bonus
+                  - personal_outreach
+                offer_details:
+                  type: string
+                  description: Specific offer terms
+                  example: 6 months of waived monthly fees
+                channel:
+                  type: string
+                  description: Outreach channel
+                  enum:
+                  - email
+                  - phone
+                  - mail
+                  - in_app
+              required:
+              - campaign_type
+              - channel
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaign_id:
+                    type: string
+                    description: Win-back campaign ID
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  status:
+                    type: string
+                    description: Campaign status
+                    example: enrolled
+                  offer_expires_at:
+                    type: string
+                    description: Offer expiration date
+                    format: date-time
+                required:
+                - campaign_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}/dormancy:
+    get:
+      operationId: checkDormancy
+      summary: Check dormancy status
+      description: Evaluates whether the customer meets dormancy criteria based on transaction activity, login frequency,
+        and product usage. Returns dormancy status, last activity date, and days until regulatory dormancy classification.
+      tags:
+      - Retention
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        description: Unique customer id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  is_dormant:
+                    type: boolean
+                    description: Whether customer is classified as dormant
+                    example: false
+                  last_transaction_date:
+                    type: string
+                    description: Date of last financial transaction
+                    format: date
+                    example: '2025-05-28'
+                  last_login_date:
+                    type: string
+                    description: Last digital banking login
+                    format: date
+                    example: '2025-06-08'
+                  days_inactive:
+                    type: integer
+                    description: Days since last qualifying activity
+                    example: 12
+                  dormancy_threshold_days:
+                    type: integer
+                    description: Days until dormancy classification
+                    example: 365
+                  regulatory_escheatment_date:
+                    type: string
+                    description: Projected escheatment date if dormant
+                    format: date
+                    nullable: true
+                required:
+                - customer_id
+                - is_dormant
+                - days_inactive
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /lifecycle/stages:
+    get:
+      operationId: listLifecycleStages
+      summary: List all lifecycle stages
+      description: Returns the configured lifecycle stages with transition rules, duration thresholds, and automated trigger
+        criteria.
+      tags:
+      - Lifecycle Stages
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stages:
+                    type: array
+                    description: All configured lifecycle stages
+                    items:
+                      type: object
+                  total_stages:
+                    type: integer
+                    description: Number of stages
+                    example: 7
+                required:
+                - stages
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /lifecycle/metrics:
+    get:
+      operationId: getLifecycleMetrics
+      summary: Get lifecycle metrics dashboard
+      description: Returns aggregate metrics across the customer base including stage distribution, average time in each stage,
+        churn rate by segment, and retention trends.
+      tags:
+      - Lifecycle Stages
+      parameters:
+      - name: period
+        in: query
+        required: false
+        description: Reporting period
+        schema:
+          type: string
+          enum:
+          - 30d
+          - 90d
+          - 1y
+          - all
+          default: 90d
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_customers:
+                    type: integer
+                    description: Total customer count
+                    example: 142500
+                  stage_distribution:
+                    type: object
+                    description: Customer count by lifecycle stage
+                    properties:
+                      prospect:
+                        type: integer
+                        example: 8200
+                      onboarding:
+                        type: integer
+                        example: 3100
+                      active_growth:
+                        type: integer
+                        example: 45800
+                      mature:
+                        type: integer
+                        example: 62400
+                      at_risk:
+                        type: integer
+                        example: 12300
+                      dormant:
+                        type: integer
+                        example: 8900
+                      churned:
+                        type: integer
+                        example: 1800
+                  overall_churn_rate:
+                    type: number
+                    description: 30-day churn rate
+                    format: double
+                    example: 0.013
+                  avg_customer_lifetime_months:
+                    type: integer
+                    description: Average customer lifetime in months
+                    example: 84
+                required:
+                - total_customers
+                - stage_distribution
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,1736 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Event Bus API
+  description: >-
+    Enterprise event bus for asynchronous inter-service communication with guaranteed at-least-once delivery,
+    topic-based routing, dead-letter queues, event replay, and a schema registry for payload validation. Built on
+    Apache Kafka with a REST gateway for language-agnostic integration. Supports partitioned topics for ordered
+    processing and consumer group management.
+  version: 3.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-platform-events
+  x-acme-domain: platform
+servers:
+  - url: https://af-platform-events.api.acmefin.com/v1
+    description: Production
+  - url: https://af-platform-events.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Event Publishing
+    description: Publish events and manage event lifecycle
+  - name: Topic Management
+    description: Create and configure event topics with partitioning and retention
+  - name: Schema Registry
+    description: Register and validate event schemas for type-safe messaging
+paths:
+  /events:
+    post:
+      operationId: publishEvent
+      summary: Publish event
+      description: >-
+        Publish an event to a topic. The event payload is validated against the registered schema (if any).
+        Events are durably stored and delivered to all active subscriptions with at-least-once semantics.
+      tags:
+        - Event Publishing
+      requestBody:
+        required: true
+        description: Publish event request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    topic:
+                      type: string
+                      description: "Target topic name"
+                      example: "payments.completed"
+                    key:
+                      type: string
+                      description: "Partition key for ordering"
+                      example: "acct-12345"
+                    payload:
+                      type: object
+                      description: "Event payload (validated against schema)"
+                    headers:
+                      type: object
+                      description: "Custom event headers"
+                    idempotency_key:
+                      type: string
+                      description: "Client-provided dedup key"
+                      example: "idem-7a8b9c0d"
+              required:
+                - topic
+                - payload
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+                    description: "Assigned event ID"
+                    format: uuid
+                    example: "evt-3a4b5c6d-7e8f-9a0b-1c2d"
+                  topic:
+                    type: string
+                    description: "Topic"
+                    example: "payments.completed"
+                  partition:
+                    type: integer
+                    description: "Assigned partition"
+                    example: 3
+                  offset:
+                    type: integer
+                    description: "Partition offset"
+                    example: 145230
+                  published_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - event_id
+                  - topic
+                  - partition
+                  - offset
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /events/{event_id}:
+    get:
+      operationId: getEvent
+      summary: Get event details
+      description: >-
+        Retrieve a specific event by ID including its payload, metadata, delivery status, and consumer
+        acknowledgment state.
+      tags:
+        - Event Publishing
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          description: "Unique event id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+                    description: "Event ID"
+                    format: uuid
+                    example: "evt-3a4b5c6d"
+                  topic:
+                    type: string
+                    description: "Topic"
+                    example: "payments.completed"
+                  key:
+                    type: string
+                    description: "Partition key"
+                    example: "acct-12345"
+                  payload:
+                    type: object
+                    description: "Event payload"
+                  partition:
+                    type: integer
+                    description: "Partition"
+                    example: 3
+                  offset:
+                    type: integer
+                    description: "Offset"
+                    example: 145230
+                  published_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  delivery_count:
+                    type: integer
+                    description: "Number of delivery attempts"
+                    example: 1
+                required:
+                  - event_id
+                  - topic
+                  - payload
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /topics:
+    get:
+      operationId: listTopics
+      summary: List topics
+      description: >-
+        List all event topics with their partition count, retention policy, and message throughput
+        statistics.
+      tags:
+        - Topic Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        topic_id:
+                          type: string
+                          description: "Topic ID"
+                          format: uuid
+                          example: "top-8a9b0c1d"
+                        name:
+                          type: string
+                          description: "Topic name"
+                          example: "payments.completed"
+                        partitions:
+                          type: integer
+                          description: "Number of partitions"
+                          example: 12
+                        replication_factor:
+                          type: integer
+                          description: "Replication factor"
+                          example: 3
+                        retention_hours:
+                          type: integer
+                          description: "Message retention in hours"
+                          example: 168
+                        messages_per_second:
+                          type: number
+                          description: "Current throughput"
+                          format: double
+                          example: 245.8
+                        total_subscriptions:
+                          type: integer
+                          description: "Active subscriptions"
+                          example: 5
+                      required:
+                        - topic_id
+                        - name
+                        - partitions
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTopic
+      summary: Create topic
+      description: >-
+        Create a new event topic with configurable partitions, retention, and replication. Topic names
+        follow dot-notation convention (domain.event_type).
+      tags:
+        - Topic Management
+      requestBody:
+        required: true
+        description: Create topic request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Topic name"
+                      example: "accounts.updated"
+                    partitions:
+                      type: integer
+                      description: "Partition count"
+                      example: 6
+                    replication_factor:
+                      type: integer
+                      description: "Replication"
+                      example: 3
+                    retention_hours:
+                      type: integer
+                      description: "Retention"
+                      example: 168
+                    schema_id:
+                      type: string
+                      description: "Schema ID for validation (optional)"
+                      example: "sch-1a2b3c4d"
+              required:
+                - name
+                - partitions
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topic_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "top-8a9b0c1d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "accounts.updated"
+                  partitions:
+                    type: integer
+                    description: "Partitions"
+                    example: 6
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - topic_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /topics/{topic_id}:
+    get:
+      operationId: getTopic
+      summary: Get topic
+      description: >-
+        Retrieve topic configuration, partition details, consumer lag, and throughput metrics.
+      tags:
+        - Topic Management
+      parameters:
+        - name: topic_id
+          in: path
+          required: true
+          description: "Unique topic id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topic_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "top-8a9b0c1d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "payments.completed"
+                  partitions:
+                    type: integer
+                    description: "Partitions"
+                    example: 12
+                  retention_hours:
+                    type: integer
+                    description: "Retention"
+                    example: 168
+                required:
+                  - topic_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateTopic
+      summary: Update topic
+      description: >-
+        Update topic configuration. Partition count can only be increased. Retention changes apply to new
+        messages.
+      tags:
+        - Topic Management
+      parameters:
+        - name: topic_id
+          in: path
+          required: true
+          description: "Unique topic id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update topic request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    partitions:
+                      type: integer
+                      description: "New partition count (can only increase)"
+                      example: 24
+                    retention_hours:
+                      type: integer
+                      description: "Updated retention"
+                      example: 336
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topic_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "top-8a9b0c1d"
+                  partitions:
+                    type: integer
+                    description: "Partitions"
+                    example: 24
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - topic_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteTopic
+      summary: Delete topic
+      description: Delete a topic and all its messages. Active subscriptions must be removed first.
+      tags:
+        - Topic Management
+      parameters:
+        - name: topic_id
+          in: path
+          required: true
+          description: "Unique topic id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /subscriptions:
+    get:
+      operationId: listSubscriptions
+      summary: List subscriptions
+      description: >-
+        List all event subscriptions with their consumer group, topic binding, and delivery status.
+      tags:
+        - Event Publishing
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        subscription_id:
+                          type: string
+                          description: "Subscription ID"
+                          format: uuid
+                          example: "sub-5a6b7c8d"
+                        topic:
+                          type: string
+                          description: "Subscribed topic"
+                          example: "payments.completed"
+                        consumer_group:
+                          type: string
+                          description: "Consumer group"
+                          example: "payment-processor"
+                        endpoint:
+                          type: string
+                          description: "Delivery endpoint"
+                          example: "https://payments.internal/events"
+                        status:
+                          type: string
+                          description: "Subscription status"
+                          example: "active"
+                          enum:
+                            - active
+                            - paused
+                            - failing
+                        lag:
+                          type: integer
+                          description: "Consumer lag (messages behind)"
+                          example: 12
+                      required:
+                        - subscription_id
+                        - topic
+                        - consumer_group
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSubscription
+      summary: Create subscription
+      description: >-
+        Subscribe to a topic with a consumer group and delivery endpoint. Events are delivered via HTTP POST
+        with retry on failure.
+      tags:
+        - Event Publishing
+      requestBody:
+        required: true
+        description: Create subscription request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    topic:
+                      type: string
+                      description: "Topic to subscribe"
+                      example: "payments.completed"
+                    consumer_group:
+                      type: string
+                      description: "Consumer group name"
+                      example: "reconciliation-service"
+                    endpoint:
+                      type: string
+                      description: "HTTP delivery endpoint"
+                      example: "https://recon.internal/events"
+                    filter:
+                      type: string
+                      description: "JMESPath filter expression (optional)"
+                      example: "payload.amount > 10000"
+                    max_retries:
+                      type: integer
+                      description: "Max delivery retries"
+                      example: 5
+                    batch_size:
+                      type: integer
+                      description: "Max events per delivery"
+                      example: 10
+              required:
+                - topic
+                - consumer_group
+                - endpoint
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "sub-5a6b7c8d"
+                  topic:
+                    type: string
+                    description: "Topic"
+                    example: "payments.completed"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - subscription_id
+                  - topic
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /subscriptions/{subscription_id}:
+    get:
+      operationId: getSubscription
+      summary: Get subscription
+      description: Retrieve subscription details including consumer lag and delivery health.
+      tags:
+        - Event Publishing
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          description: "Unique subscription id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "sub-5a6b7c8d"
+                  topic:
+                    type: string
+                    description: "Topic"
+                    example: "payments.completed"
+                  consumer_group:
+                    type: string
+                    description: "Group"
+                    example: "payment-processor"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                  lag:
+                    type: integer
+                    description: "Lag"
+                    example: 12
+                required:
+                  - subscription_id
+                  - topic
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateSubscription
+      summary: Update subscription
+      description: Update subscription configuration.
+      tags:
+        - Event Publishing
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          description: "Unique subscription id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update subscription request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    endpoint:
+                      type: string
+                      description: "Updated endpoint"
+                      example: "https://recon-v2.internal/events"
+                    filter:
+                      type: string
+                      description: "Updated filter"
+                      example: "payload.amount > 5000"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "sub-5a6b7c8d"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - subscription_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteSubscription
+      summary: Delete subscription
+      description: Remove an event subscription. Pending deliveries are cancelled.
+      tags:
+        - Event Publishing
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          description: "Unique subscription id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /dlq:
+    get:
+      operationId: listDlqEvents
+      summary: List DLQ events
+      description: >-
+        List events in the dead-letter queue that failed delivery to all subscribers after exhausting
+        retries.
+      tags:
+        - Event Publishing
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        dlq_entry_id:
+                          type: string
+                          description: "DLQ entry ID"
+                          format: uuid
+                          example: "dlq-2a3b4c5d"
+                        event_id:
+                          type: string
+                          description: "Original event ID"
+                          format: uuid
+                          example: "evt-3a4b5c6d"
+                        topic:
+                          type: string
+                          description: "Original topic"
+                          example: "payments.completed"
+                        subscription_id:
+                          type: string
+                          description: "Failed subscription"
+                          format: uuid
+                          example: "sub-5a6b7c8d"
+                        failure_reason:
+                          type: string
+                          description: "Last failure message"
+                          example: "HTTP 503 Service Unavailable"
+                        attempts:
+                          type: integer
+                          description: "Total delivery attempts"
+                          example: 5
+                        failed_at:
+                          type: string
+                          description: "Last failure timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - dlq_entry_id
+                        - event_id
+                        - failure_reason
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /dlq/{entry_id}/replay:
+    post:
+      operationId: replayDlqEvent
+      summary: Replay DLQ event
+      description: >-
+        Move a DLQ entry back to the delivery pipeline for re-processing. Optionally override the target
+        subscription.
+      tags:
+        - Event Publishing
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          description: "Unique entry id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Replay DLQ event request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    subscription_override:
+                      type: string
+                      description: "Override target subscription ID"
+                      example: "sub-new-5a6b"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event_id:
+                    type: string
+                    description: "Replayed event"
+                    format: uuid
+                    example: "evt-3a4b5c6d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "requeued"
+                required:
+                  - event_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /schemas:
+    get:
+      operationId: listSchemas
+      summary: List event schemas
+      description: >-
+        List all registered event schemas in the schema registry. Schemas define the expected structure of
+        event payloads and are used for validation on publish.
+      tags:
+        - Schema Registry
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        schema_id:
+                          type: string
+                          description: "Schema ID"
+                          format: uuid
+                          example: "sch-1a2b3c4d"
+                        name:
+                          type: string
+                          description: "Schema name"
+                          example: "PaymentCompletedEvent"
+                        format:
+                          type: string
+                          description: "Schema format"
+                          example: "json_schema"
+                          enum:
+                            - json_schema
+                            - avro
+                            - protobuf
+                        version:
+                          type: integer
+                          description: "Current version"
+                          example: 3
+                        compatibility:
+                          type: string
+                          description: "Compatibility mode"
+                          example: "backward"
+                          enum:
+                            - backward
+                            - forward
+                            - full
+                            - none
+                      required:
+                        - schema_id
+                        - name
+                        - format
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSchema
+      summary: Register schema
+      description: >-
+        Register a new event payload schema. All subsequent events published to topics referencing this
+        schema will be validated against it.
+      tags:
+        - Schema Registry
+      requestBody:
+        required: true
+        description: Register schema request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Schema name"
+                      example: "AccountUpdatedEvent"
+                    format:
+                      type: string
+                      description: "Schema format"
+                      example: "json_schema"
+                      enum:
+                        - json_schema
+                        - avro
+                        - protobuf
+                    definition:
+                      type: string
+                      description: "Schema definition"
+                      example: '{"type":"object","properties":{...}}'
+                    compatibility:
+                      type: string
+                      description: "Compatibility mode"
+                      example: "backward"
+                      enum:
+                        - backward
+                        - forward
+                        - full
+                        - none
+              required:
+                - name
+                - format
+                - definition
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schema_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "sch-1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "AccountUpdatedEvent"
+                  version:
+                    type: integer
+                    description: "Version"
+                    example: 1
+                required:
+                  - schema_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /schemas/{schema_id}:
+    get:
+      operationId: getSchema
+      summary: Get schema
+      description: >-
+        Retrieve a schema definition with its version history and compatibility settings.
+      tags:
+        - Schema Registry
+      parameters:
+        - name: schema_id
+          in: path
+          required: true
+          description: "Unique schema id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schema_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "sch-1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "PaymentCompletedEvent"
+                  format:
+                    type: string
+                    description: "Format"
+                    example: "json_schema"
+                  definition:
+                    type: string
+                    description: "Schema definition"
+                    example: '{"type":"object",...}'
+                  version:
+                    type: integer
+                    description: "Version"
+                    example: 3
+                required:
+                  - schema_id
+                  - name
+                  - definition
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: updateSchema
+      summary: Update schema
+      description: >-
+        Evolve a schema by registering a new version. The new version is validated against the compatibility
+        mode. Incompatible changes are rejected.
+      tags:
+        - Schema Registry
+      parameters:
+        - name: schema_id
+          in: path
+          required: true
+          description: "Schema ID"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update schema request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    definition:
+                      type: string
+                      description: "Updated schema"
+                      example: '{"type":"object",...}'
+                    change_note:
+                      type: string
+                      description: "Version notes"
+                      example: "Added optional metadata field"
+              required:
+                - definition
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schema_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "sch-1a2b3c4d"
+                  version:
+                    type: integer
+                    description: "New version"
+                    example: 4
+                  compatible:
+                    type: boolean
+                    description: "Passed compatibility check"
+                    example: true
+                required:
+                  - schema_id
+                  - version
+                  - compatible
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /topics/{topic_id}/partitions:
+    get:
+      operationId: getTopicPartitions
+      summary: Get topic partitions
+      description: >-
+        Retrieve partition details for a topic including per-partition offset, leader assignment, and
+        consumer lag.
+      tags:
+        - Topic Management
+      parameters:
+        - name: topic_id
+          in: path
+          required: true
+          description: "Topic ID"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        partition:
+                          type: integer
+                          description: "Partition number"
+                          example: 0
+                        leader:
+                          type: string
+                          description: "Leader broker"
+                          example: "broker-1"
+                        offset:
+                          type: integer
+                          description: "Latest offset"
+                          example: 145230
+                        consumer_lag:
+                          type: integer
+                          description: "Lag across consumers"
+                          example: 5
+                      required:
+                        - partition
+                        - offset
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /events/replay:
+    post:
+      operationId: replayEvents
+      summary: Replay events
+      description: >-
+        Replay historical events from a topic to a subscription. Useful for reprocessing after bug fixes or
+        backfilling new consumers. Events are replayed in order.
+      tags:
+        - Event Publishing
+      requestBody:
+        required: true
+        description: Replay events request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    topic:
+                      type: string
+                      description: "Source topic"
+                      example: "payments.completed"
+                    subscription_id:
+                      type: string
+                      description: "Target subscription"
+                      format: uuid
+                      example: "sub-5a6b7c8d"
+                    from_offset:
+                      type: integer
+                      description: "Start offset"
+                      example: 100000
+                    to_offset:
+                      type: integer
+                      description: "End offset (optional)"
+                      example: 145000
+                    from_timestamp:
+                      type: string
+                      description: "Alternative: start from timestamp"
+                      format: date-time
+                      example: "2025-06-15T14:30:00Z"
+              required:
+                - topic
+                - subscription_id
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  replay_id:
+                    type: string
+                    description: "Replay job ID"
+                    format: uuid
+                    example: "rpl-9a0b1c2d"
+                  events_to_replay:
+                    type: integer
+                    description: "Total events"
+                    example: 45000
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "in_progress"
+                required:
+                  - replay_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

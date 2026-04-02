@@ -1,0 +1,1387 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Email Notification API
+  description: >-
+    Enterprise email delivery service supporting transactional and marketing emails with DKIM/SPF authentication,
+    open and click tracking, bounce management, suppression lists, and domain verification. Supports both single
+    and bulk sending with template rendering, inline attachments, and comprehensive delivery analytics.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-notify-email
+  x-acme-domain: notify
+servers:
+  - url: https://af-notify-email.api.acmefin.com/v1
+    description: Production
+  - url: https://af-notify-email.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Email Sending
+    description: Send individual and bulk transactional or marketing emails
+  - name: Tracking & Bounces
+    description: Email open/click tracking, bounce handling, and suppression management
+  - name: Domain Management
+    description: Verified sending domain configuration and DNS validation
+paths:
+  /emails:
+    post:
+      operationId: sendEmail
+      summary: Send an email
+      description: >-
+        Send a single transactional or marketing email. Supports HTML and plain-text bodies, template
+        rendering with variable substitution, inline and attached files, and custom headers. Returns
+        immediately with a queued status; delivery is asynchronous.
+      tags:
+        - Email Sending
+      requestBody:
+        required: true
+        description: Send an email request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    to:
+                      type: array
+                      description: "Recipient addresses"
+                      items:
+                        type: string
+                    cc:
+                      type: array
+                      description: "CC addresses"
+                      items:
+                        type: string
+                    bcc:
+                      type: array
+                      description: "BCC addresses"
+                      items:
+                        type: string
+                    from_address:
+                      type: string
+                      description: "Sender address (must be verified domain)"
+                      example: "billing@acmefin.com"
+                    subject:
+                      type: string
+                      description: "Email subject"
+                      example: "Payment Confirmation"
+                    html_body:
+                      type: string
+                      description: "HTML email body"
+                      example: "<h1>Payment received</h1>"
+                    text_body:
+                      type: string
+                      description: "Plain text fallback body"
+                      example: "Payment received"
+                    template_id:
+                      type: string
+                      description: "Template ID for rendering"
+                      example: "tpl-payment-confirm"
+                    template_vars:
+                      type: object
+                      description: "Variables for template rendering"
+                    attachments:
+                      type: array
+                      description: "Base64-encoded file attachments"
+                      items:
+                        type: object
+                    track_opens:
+                      type: boolean
+                      description: "Enable open pixel tracking"
+                      example: true
+                    track_clicks:
+                      type: boolean
+                      description: "Enable click tracking"
+                      example: true
+              required:
+                - to
+                - subject
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email_id:
+                    type: string
+                    description: "Assigned email ID"
+                    format: uuid
+                    example: "eml-4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d"
+                  status:
+                    type: string
+                    description: "Initial status"
+                    example: "queued"
+                  queued_at:
+                    type: string
+                    description: "Queue timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - email_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /emails/bulk:
+    post:
+      operationId: sendBulkEmails
+      summary: Send bulk emails
+      description: >-
+        Send up to 10,000 emails in a single batch. Each recipient can have personalized template variables.
+        Returns a batch ID for tracking overall progress. Rate-limited to 5 bulk requests per minute.
+      tags:
+        - Email Sending
+      requestBody:
+        required: true
+        description: Send bulk emails request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    recipients:
+                      type: array
+                      description: "List of recipient objects with personalization"
+                      items:
+                        type: object
+                    from_address:
+                      type: string
+                      description: "Sender address"
+                      example: "campaigns@acmefin.com"
+                    subject:
+                      type: string
+                      description: "Subject line (supports {{variables}})"
+                      example: "Hello {{first_name}}"
+                    template_id:
+                      type: string
+                      description: "Template ID"
+                      example: "tpl-monthly-digest"
+                    track_opens:
+                      type: boolean
+                      description: "Enable open tracking"
+                      example: true
+                    track_clicks:
+                      type: boolean
+                      description: "Enable click tracking"
+                      example: true
+                    send_at:
+                      type: string
+                      description: "Schedule delivery time (future)"
+                      format: date-time
+                      example: "2025-06-15T14:30:00Z"
+              required:
+                - recipients
+                - template_id
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: "Batch identifier"
+                    format: uuid
+                    example: "bat-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  total_recipients:
+                    type: integer
+                    description: "Number of recipients queued"
+                    example: 2500
+                  estimated_completion:
+                    type: string
+                    description: "Estimated batch completion time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  status:
+                    type: string
+                    description: "Batch status"
+                    example: "processing"
+                required:
+                  - batch_id
+                  - total_recipients
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /emails/{email_id}:
+    get:
+      operationId: getEmail
+      summary: Get email details
+      description: >-
+        Retrieve full details for a sent email including delivery status, tracking events, and provider-
+        level metadata.
+      tags:
+        - Email Sending
+      parameters:
+        - name: email_id
+          in: path
+          required: true
+          description: "Unique email id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email_id:
+                    type: string
+                    description: "Unique email ID"
+                    format: uuid
+                    example: "eml-4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d"
+                  from_address:
+                    type: string
+                    description: "Sender email address"
+                    example: "noreply@acmefin.com"
+                  to:
+                    type: array
+                    description: "Recipient email addresses"
+                    items:
+                      type: string
+                  subject:
+                    type: string
+                    description: "Email subject line"
+                    example: "Your Monthly Statement"
+                  status:
+                    type: string
+                    description: "Email delivery status"
+                    example: "queued"
+                    enum:
+                      - queued
+                      - sending
+                      - sent
+                      - delivered
+                      - bounced
+                      - failed
+                  template_id:
+                    type: string
+                    description: "Template ID if using a template"
+                    example: "tpl-welcome-001"
+                  sent_at:
+                    type: string
+                    description: "When the email was dispatched"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  opened:
+                    type: boolean
+                    description: "Whether the email has been opened"
+                    example: false
+                  clicked:
+                    type: boolean
+                    description: "Whether any link was clicked"
+                    example: false
+                required:
+                  - email_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /emails/{email_id}/tracking:
+    get:
+      operationId: getEmailTracking
+      summary: Get email tracking events
+      description: >-
+        Retrieve open and click tracking events for a specific email. Returns a chronological list of all
+        recipient interactions with the email content.
+      tags:
+        - Tracking & Bounces
+      parameters:
+        - name: email_id
+          in: path
+          required: true
+          description: "Unique email id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email_id:
+                    type: string
+                    description: "Email ID"
+                    format: uuid
+                    example: "eml-4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d"
+                  opens:
+                    type: integer
+                    description: "Total open count (includes re-opens)"
+                    example: 3
+                  unique_opens:
+                    type: integer
+                    description: "Unique opens"
+                    example: 1
+                  clicks:
+                    type: integer
+                    description: "Total click count"
+                    example: 5
+                  unique_clicks:
+                    type: integer
+                    description: "Unique link clicks"
+                    example: 2
+                  first_opened_at:
+                    type: string
+                    description: "First open timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  events:
+                    type: array
+                    description: "Chronological tracking events"
+                    items:
+                      type: object
+                required:
+                  - email_id
+                  - opens
+                  - clicks
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /emails/bounces:
+    get:
+      operationId: listBounces
+      summary: List email bounces
+      description: >-
+        Retrieve a paginated list of email bounces with classification (hard/soft), diagnostic codes, and
+        bounce timestamps. Hard bounces automatically add recipients to the suppression list.
+      tags:
+        - Tracking & Bounces
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: type
+          in: query
+          required: false
+          description: "Filter by bounce type"
+          schema:
+            type: "string"
+            enum:
+              - hard
+              - soft
+              - complaint
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        bounce_id:
+                          type: string
+                          description: "Bounce record ID"
+                          format: uuid
+                          example: "bnc-5a6b7c8d-9e0f-1a2b-3c4d-5e6f7a8b9c0d"
+                        email_id:
+                          type: string
+                          description: "Original email ID"
+                          format: uuid
+                          example: "eml-4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d"
+                        recipient:
+                          type: string
+                          description: "Bounced recipient address"
+                          example: "invalid@example.com"
+                        bounce_type:
+                          type: string
+                          description: "Bounce classification"
+                          example: "hard"
+                          enum:
+                            - hard
+                            - soft
+                            - complaint
+                        diagnostic_code:
+                          type: string
+                          description: "SMTP diagnostic code"
+                          example: "550 5.1.1 User unknown"
+                        bounced_at:
+                          type: string
+                          description: "Bounce timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - bounce_id
+                        - recipient
+                        - bounce_type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /emails/bounces/{bounce_id}:
+    get:
+      operationId: getBounce
+      summary: Get bounce details
+      description: >-
+        Retrieve detailed bounce information including full SMTP conversation, MTA response headers, and
+        automatic suppression status.
+      tags:
+        - Tracking & Bounces
+      parameters:
+        - name: bounce_id
+          in: path
+          required: true
+          description: "Unique bounce id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bounce_id:
+                    type: string
+                    description: "Bounce ID"
+                    format: uuid
+                    example: "bnc-5a6b7c8d-9e0f-1a2b-3c4d-5e6f7a8b9c0d"
+                  recipient:
+                    type: string
+                    description: "Bounced address"
+                    example: "invalid@example.com"
+                  bounce_type:
+                    type: string
+                    description: "Bounce type"
+                    example: "hard"
+                    enum:
+                      - hard
+                      - soft
+                      - complaint
+                  diagnostic_code:
+                    type: string
+                    description: "SMTP diagnostic"
+                    example: "550 5.1.1 User unknown"
+                  mta_response:
+                    type: string
+                    description: "Full MTA response"
+                    example: "host mx.example.com said: 550 User unknown"
+                  suppressed:
+                    type: boolean
+                    description: "Whether recipient was auto-suppressed"
+                    example: true
+                required:
+                  - bounce_id
+                  - recipient
+                  - bounce_type
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /emails/unsubscribes:
+    get:
+      operationId: listUnsubscribes
+      summary: List unsubscribed recipients
+      description: >-
+        Retrieve the list of recipients who have unsubscribed from email communications. Supports filtering
+        by unsubscribe reason and date range.
+      tags:
+        - Tracking & Bounces
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email:
+                          type: string
+                          description: "Unsubscribed email address"
+                          example: "user@example.com"
+                        reason:
+                          type: string
+                          description: "Unsubscribe reason"
+                          example: "link_click"
+                          enum:
+                            - link_click
+                            - reply
+                            - manual
+                            - complaint
+                        category:
+                          type: string
+                          description: "Email category unsubscribed from"
+                          example: "marketing"
+                        unsubscribed_at:
+                          type: string
+                          description: "Unsubscribe timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - email
+                        - reason
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: addUnsubscribe
+      summary: Add unsubscribe entry
+      description: >-
+        Manually add an email address to the unsubscribe list. This immediately prevents future sends to the
+        address for the specified category.
+      tags:
+        - Tracking & Bounces
+      requestBody:
+        required: true
+        description: Add unsubscribe entry request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    email:
+                      type: string
+                      description: "Email address to unsubscribe"
+                      example: "user@example.com"
+                    reason:
+                      type: string
+                      description: "Reason for unsubscribe"
+                      example: "manual"
+                    category:
+                      type: string
+                      description: "Category to unsubscribe from (omit for global)"
+                      example: "marketing"
+              required:
+                - email
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+                    description: "Unsubscribed address"
+                    example: "user@example.com"
+                  status:
+                    type: string
+                    description: "Result"
+                    example: "unsubscribed"
+                required:
+                  - email
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /emails/suppressions:
+    get:
+      operationId: listSuppressions
+      summary: List suppressed addresses
+      description: >-
+        List all email addresses on the suppression list. Suppressed addresses will not receive any emails
+        regardless of send requests. Addresses are added automatically on hard bounce or complaint, or
+        manually.
+      tags:
+        - Tracking & Bounces
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email:
+                          type: string
+                          description: "Suppressed email address"
+                          example: "bounced@example.com"
+                        reason:
+                          type: string
+                          description: "Suppression reason"
+                          example: "hard_bounce"
+                          enum:
+                            - hard_bounce
+                            - complaint
+                            - manual
+                        source:
+                          type: string
+                          description: "Source that triggered suppression"
+                          example: "auto-bounce-handler"
+                        suppressed_at:
+                          type: string
+                          description: "When the address was suppressed"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - email
+                        - reason
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /emails/domains:
+    get:
+      operationId: listEmailDomains
+      summary: List verified sending domains
+      description: >-
+        List all sending domains registered with the email service, including DNS verification status for
+        SPF, DKIM, and DMARC records.
+      tags:
+        - Domain Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        domain_id:
+                          type: string
+                          description: "Domain ID"
+                          format: uuid
+                          example: "dom-2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d"
+                        domain:
+                          type: string
+                          description: "Domain name"
+                          example: "acmefin.com"
+                        verified:
+                          type: boolean
+                          description: "Whether DNS records are verified"
+                          example: true
+                        spf_status:
+                          type: string
+                          description: "SPF record verification status"
+                          example: "verified"
+                          enum:
+                            - verified
+                            - pending
+                            - failed
+                        dkim_status:
+                          type: string
+                          description: "DKIM record verification status"
+                          example: "verified"
+                          enum:
+                            - verified
+                            - pending
+                            - failed
+                        dmarc_status:
+                          type: string
+                          description: "DMARC policy status"
+                          example: "verified"
+                          enum:
+                            - verified
+                            - pending
+                            - failed
+                        created_at:
+                          type: string
+                          description: "Domain registration timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - domain_id
+                        - domain
+                        - verified
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: addEmailDomain
+      summary: Register a sending domain
+      description: >-
+        Register a new sending domain for email delivery. Returns the required DNS records (SPF, DKIM,
+        DMARC) that must be added to the domain's DNS configuration before verification.
+      tags:
+        - Domain Management
+      requestBody:
+        required: true
+        description: Register a sending domain request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    domain:
+                      type: string
+                      description: "Domain name to register"
+                      example: "notifications.acmefin.com"
+              required:
+                - domain
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain_id:
+                    type: string
+                    description: "Assigned domain ID"
+                    format: uuid
+                    example: "dom-2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d"
+                  domain:
+                    type: string
+                    description: "Registered domain"
+                    example: "notifications.acmefin.com"
+                  dns_records:
+                    type: array
+                    description: "DNS records to add for verification"
+                    items:
+                      type: object
+                required:
+                  - domain_id
+                  - domain
+                  - dns_records
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /emails/domains/{domain_id}/verify:
+    post:
+      operationId: verifyEmailDomain
+      summary: Verify sending domain
+      description: >-
+        Trigger DNS verification for a registered sending domain. Checks SPF, DKIM, and DMARC records
+        against the expected configuration. Verification may take up to 72 hours for DNS propagation.
+      tags:
+        - Domain Management
+      parameters:
+        - name: domain_id
+          in: path
+          required: true
+          description: "Unique domain id"
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain_id:
+                    type: string
+                    description: "Domain ID"
+                    format: uuid
+                    example: "dom-2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d"
+                  domain:
+                    type: string
+                    description: "Domain name"
+                    example: "notifications.acmefin.com"
+                  spf_status:
+                    type: string
+                    description: "SPF result"
+                    example: "verified"
+                  dkim_status:
+                    type: string
+                    description: "DKIM result"
+                    example: "pending"
+                  dmarc_status:
+                    type: string
+                    description: "DMARC result"
+                    example: "verified"
+                required:
+                  - domain_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /emails/{email_id}/attachments:
+    get:
+      operationId: getEmailAttachments
+      summary: List email attachments
+      description: >-
+        Retrieve metadata for all attachments on a sent email, including file names, MIME types, sizes, and
+        download URLs with time-limited presigned tokens.
+      tags:
+        - Email Sending
+      parameters:
+        - name: email_id
+          in: path
+          required: true
+          description: "Unique email identifier"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        attachment_id:
+                          type: string
+                          description: "Attachment ID"
+                          format: uuid
+                          example: "att-6a7b8c9d-0e1f-2a3b-4c5d-6e7f8a9b0c1d"
+                        filename:
+                          type: string
+                          description: "Original filename"
+                          example: "statement-2025-06.pdf"
+                        content_type:
+                          type: string
+                          description: "MIME type"
+                          example: "application/pdf"
+                        size_bytes:
+                          type: integer
+                          description: "File size in bytes"
+                          example: 245760
+                        download_url:
+                          type: string
+                          description: "Presigned download URL (valid 1 hour)"
+                          example: "https://files.acmefin.com/att/...?token=..."
+                      required:
+                        - attachment_id
+                        - filename
+                        - content_type
+                        - size_bytes
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

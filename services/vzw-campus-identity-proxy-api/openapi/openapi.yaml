@@ -1,0 +1,1325 @@
+openapi: 3.0.3
+info:
+  title: VZW Campus Identity Proxy API
+  description: >-
+    Edge identity broker for campus service trust, token mediation, and device certificate validation.
+    This API exchanges external identity provider tokens for campus-scoped bearer tokens,
+    validates security artifacts for downstream campus services, manages trust anchors,
+    and brokers authenticated sessions for zero-trust campus workloads.
+  version: 1.0.0
+  contact:
+    name: VZW Campus Identity Platform
+    email: campus-identity-api@verizon.example
+    url: https://developer.verizon.example/campus-identity
+  license:
+    name: Proprietary
+    url: https://verizon.example/legal/api-terms
+  x-catalog-id: vzw-campus-identity-proxy-api
+  x-domain: campus-identity
+servers:
+  - url: https://{host}/v1
+    description: Production
+  - url: https://{host}/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Tokens
+    description: Token exchange and validation for campus trust domains
+  - name: Certificates
+    description: Device certificate status and lifecycle controls
+  - name: Trust Anchors
+    description: Trusted certificate authorities and identity providers
+  - name: Sessions
+    description: Campus API session creation and revocation
+paths:
+  /v1/tokens/exchange:
+    post:
+      operationId: exchangeToken
+      summary: Exchange external token for campus bearer token
+      description: >-
+        Exchanges an external IdP access token or JWT assertion for a campus-scoped bearer token.
+        The proxy validates token audience, issuer trust, signature chain, and tenant policy before
+        minting a short-lived campus token suitable for edge services.
+      tags:
+        - Tokens
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/XCorrelationId"
+      requestBody:
+        required: true
+        description: External token exchange request
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenExchangeRequest"
+            examples:
+              oauth_token_exchange:
+                summary: OAuth token exchange request
+                value:
+                  grant_type: urn:ietf:params:oauth:grant-type:token-exchange
+                  subject_token_type: urn:ietf:params:oauth:token-type:access_token
+                  subject_token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+                  requested_token_type: urn:ietf:params:oauth:token-type:access_token
+                  audience: campus-api-gateway
+                  tenant_id: campus-east
+                  scope:
+                    - campus.read
+                    - campus.device:attest
+                  device_context:
+                    device_id: device-4472-nyc-01
+                    certificate_serial: 19A84C7722A1
+                    ip_address: 203.0.113.41
+                    user_agent: campus-edge-proxy/1.23.7
+      responses:
+        "200":
+          description: Token exchanged successfully
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenExchangeResponse"
+              examples:
+                success:
+                  value:
+                    access_token: eyJraWQiOiJjYW1wdXMta2V5LTIwMjYtMDQiLCJhbGciOiJSUzI1NiJ9...
+                    token_type: Bearer
+                    expires_in: 900
+                    scope:
+                      - campus.read
+                      - campus.device:attest
+                    issued_token_type: urn:ietf:params:oauth:token-type:access_token
+                    subject:
+                      subject_id: usr-88f4a3
+                      subject_type: user
+                      tenant_id: campus-east
+                    trust_context:
+                      issuer: https://idp.example.invalid/oauth2
+                      assurance_level: aal2
+                      policy_version: 2026-03-01
+                      exchanged_at: "2026-03-27T09:12:50Z"
+                    trace_id: 9f13b287-6077-46d1-b20a-9b6770a905b4
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/tokens/validate:
+    post:
+      operationId: validateToken
+      summary: Validate token and return normalized claims
+      description: >-
+        Validates a bearer token or assertion against configured trust anchors,
+        token status, and campus service policy. Returns normalized claims, token status,
+        and policy evaluation details that can be used by edge gateways and service meshes.
+      tags:
+        - Tokens
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/XCorrelationId"
+      requestBody:
+        required: true
+        description: Token validation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenValidationRequest"
+            examples:
+              jwt_validation:
+                summary: Validate JWT for campus API usage
+                value:
+                  token: eyJhbGciOiJSUzI1NiIsImtpZCI6ImNhbXB1cy1rZXktMjAyNi0wNCJ9...
+                  token_type_hint: access_token
+                  expected_audience: campus-api-gateway
+                  required_scopes:
+                    - campus.read
+                  include_claims: true
+                  include_policy_evaluation: true
+      responses:
+        "200":
+          description: Token validation completed
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenValidationResponse"
+              examples:
+                valid_token:
+                  value:
+                    active: true
+                    status: valid
+                    token_type: access_token
+                    issuer: https://{host}/v1
+                    audience:
+                      - campus-api-gateway
+                    subject: usr-88f4a3
+                    issued_at: "2026-03-27T09:12:50Z"
+                    expires_at: "2026-03-27T09:27:50Z"
+                    scopes:
+                      - campus.read
+                      - campus.device:attest
+                    claims:
+                      tenant_id: campus-east
+                      role: campus_operator
+                      device_id: device-4472-nyc-01
+                      auth_time: "2026-03-27T09:11:55Z"
+                    policy_evaluation:
+                      policy_id: cp-token-guard-v4
+                      result: allow
+                      reasons:
+                        - Signature verified against trusted key set
+                        - Required scope campus.read present
+                    trace_id: 0f2e8dfa-6d2f-4ed0-a68b-a7f014938f11
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/certificates/{deviceId}:
+    get:
+      operationId: getDeviceCertificateStatus
+      summary: Get device certificate status
+      description: >-
+        Retrieves the current mTLS certificate status for a managed campus device,
+        including serial number, validity windows, revocation state, and last attestation result.
+      tags:
+        - Certificates
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Device certificate status retrieved
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCertificateStatus"
+              examples:
+                active_cert:
+                  value:
+                    device_id: device-4472-nyc-01
+                    certificate_serial: 19A84C7722A1
+                    certificate_fingerprint_sha256: 76b35ecdc6dd2ff4e77f6a69ef5f50ef2ca8bd7f79deed0be182ae9950a8fb57
+                    issued_by:
+                      authority_id: ca-campus-east-01
+                      authority_name: Campus East Intermediate CA
+                    issued_at: "2026-02-15T04:00:00Z"
+                    not_before: "2026-02-15T04:00:00Z"
+                    not_after: "2026-05-15T04:00:00Z"
+                    status: active
+                    revocation:
+                      revoked: false
+                      revocation_reason: none
+                    attestation:
+                      last_checked_at: "2026-03-27T08:58:11Z"
+                      result: pass
+                      evidence_id: att-44c7821b
+                    trace_id: 784f0fd4-83ec-4f21-89e4-3af63a98080a
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/certificates/{deviceId}:rotate:
+    post:
+      operationId: rotateDeviceCertificate
+      summary: Trigger device certificate rotation
+      description: >-
+        Triggers immediate certificate rotation for a campus device.
+        Rotation can be asynchronous depending on device reachability and issuance pipeline status.
+        Returns a rotation request identifier for polling and audit correlation.
+      tags:
+        - Certificates
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        description: Rotation trigger payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateRotationRequest"
+            examples:
+              manual_rotation:
+                value:
+                  reason: suspected_key_exposure
+                  requested_by: secops-user-118
+                  rotate_immediately: true
+                  invalidate_previous: true
+                  key_algorithm: ECDSA_P256
+                  key_size: 256
+      responses:
+        "202":
+          description: Certificate rotation accepted
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateRotationResponse"
+              examples:
+                accepted:
+                  value:
+                    rotation_id: rot-20260327-0012
+                    device_id: device-4472-nyc-01
+                    status: queued
+                    requested_at: "2026-03-27T09:16:03Z"
+                    estimated_completion_at: "2026-03-27T09:20:03Z"
+                    trace_id: 50af96bd-19fd-4d0d-8473-c66d49efbe0f
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/trust-anchors:
+    get:
+      operationId: listTrustAnchors
+      summary: List trusted CAs and identity providers
+      description: >-
+        Returns trusted certificate authorities and external identity provider metadata
+        currently configured for campus identity mediation.
+      tags:
+        - Trust Anchors
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: type
+          in: query
+          required: false
+          description: Filter trust anchors by type
+          schema:
+            type: string
+            enum:
+              - certificate_authority
+              - identity_provider
+        - name: status
+          in: query
+          required: false
+          description: Filter trust anchors by lifecycle status
+          schema:
+            type: string
+            enum:
+              - active
+              - deprecated
+              - disabled
+      responses:
+        "200":
+          description: Trust anchors listed
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrustAnchorsResponse"
+              examples:
+                list_result:
+                  value:
+                    data:
+                      - anchor_id: ta-ca-campus-east-01
+                        name: Campus East Intermediate CA
+                        type: certificate_authority
+                        status: active
+                        thumbprint_sha256: 9f5fdfba27188fbb7f6fd56fdb48d8fb526a0787968b61a9675f412725846e56
+                        valid_from: "2025-01-01T00:00:00Z"
+                        valid_to: "2030-01-01T00:00:00Z"
+                        metadata:
+                          path_len_constraint: 0
+                          crl_distribution_points:
+                            - https://pki.example.invalid/crl/campus-east-int.crl
+                      - anchor_id: ta-idp-partner-01
+                        name: Partner Workforce IdP
+                        type: identity_provider
+                        status: active
+                        issuer_uri: https://idp.example.invalid/oauth2
+                        jwks_uri: https://idp.example.invalid/.well-known/jwks.json
+                        allowed_audiences:
+                          - campus-api-gateway
+                          - campus-control-plane
+                        metadata:
+                          token_endpoint_auth_method: private_key_jwt
+                          max_token_lifetime_seconds: 3600
+                    total_count: 2
+                    trace_id: 2f04a27b-91a0-4c55-b804-1f70d15aaf56
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/sessions:
+    post:
+      operationId: createSession
+      summary: Create authenticated campus session
+      description: >-
+        Creates a short-lived authenticated session bound to principal identity,
+        tenant policy, and optional device trust evidence for campus API access.
+      tags:
+        - Sessions
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/XCorrelationId"
+      requestBody:
+        required: true
+        description: Session creation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+            examples:
+              session_request:
+                value:
+                  principal:
+                    principal_id: usr-88f4a3
+                    principal_type: user
+                    tenant_id: campus-east
+                  token:
+                    access_token: eyJhbGciOiJSUzI1NiIsImtpZCI6ImNhbXB1cy1rZXktMjAyNi0wNCJ9...
+                    token_type: Bearer
+                  requested_ttl_seconds: 1800
+                  audience: campus-api-gateway
+                  device:
+                    device_id: device-4472-nyc-01
+                    certificate_serial: 19A84C7722A1
+                  attributes:
+                    source_network: wired-campus-core
+                    session_purpose: maintenance-window
+      responses:
+        "201":
+          description: Session created
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateSessionResponse"
+              examples:
+                created:
+                  value:
+                    session_id: ses-e92188de
+                    status: active
+                    principal:
+                      principal_id: usr-88f4a3
+                      principal_type: user
+                      tenant_id: campus-east
+                    issued_at: "2026-03-27T09:20:11Z"
+                    expires_at: "2026-03-27T09:50:11Z"
+                    audience: campus-api-gateway
+                    scopes:
+                      - campus.read
+                      - campus.device:attest
+                    trace_id: 3f1b3df8-0be2-40c7-89e3-d79f6c5d4464
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/sessions/{sessionId}:
+    delete:
+      operationId: revokeSession
+      summary: Revoke authenticated campus session
+      description: >-
+        Revokes an active session and invalidates further use across campus APIs.
+        Revocation is idempotent and returns successful completion for already-revoked sessions.
+      tags:
+        - Sessions
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: false
+        description: Optional revocation metadata
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeSessionRequest"
+            examples:
+              revoke_for_security:
+                value:
+                  reason: security_incident
+                  revoked_by: secops-user-118
+                  propagate_to_mesh: true
+      responses:
+        "200":
+          description: Session revoked
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeSessionResponse"
+              examples:
+                revoked:
+                  value:
+                    session_id: ses-e92188de
+                    status: revoked
+                    revoked_at: "2026-03-27T09:42:05Z"
+                    revoked_by: secops-user-118
+                    trace_id: 6982ca95-dab0-4c59-a813-f4a4f1e0f661
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  headers:
+    XRequestId:
+      description: Unique request correlation identifier
+      schema:
+        type: string
+        format: uuid
+      example: 0a10ac93-80ad-444a-94c4-79f8f4c11d18
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Client-supplied request identifier for end-to-end tracing
+      schema:
+        type: string
+        format: uuid
+    XCorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: Correlation identifier propagated across campus services
+      schema:
+        type: string
+        maxLength: 128
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      description: Managed campus device identifier
+      schema:
+        type: string
+        pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,127}$
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Authenticated session identifier
+      schema:
+        type: string
+        pattern: ^ses-[a-zA-Z0-9]{6,64}$
+  schemas:
+    TokenExchangeRequest:
+      type: object
+      description: Request payload for exchanging an external identity token
+      properties:
+        grant_type:
+          type: string
+          description: OAuth grant type used for token exchange
+          enum:
+            - urn:ietf:params:oauth:grant-type:token-exchange
+        subject_token_type:
+          type: string
+          description: External token semantic type
+          enum:
+            - urn:ietf:params:oauth:token-type:access_token
+            - urn:ietf:params:oauth:token-type:jwt
+            - urn:ietf:params:oauth:token-type:id_token
+        subject_token:
+          type: string
+          description: External IdP token presented for exchange
+          minLength: 20
+        requested_token_type:
+          type: string
+          description: Requested type for issued token
+          enum:
+            - urn:ietf:params:oauth:token-type:access_token
+        audience:
+          type: string
+          description: Intended audience for campus-issued token
+          example: campus-api-gateway
+        tenant_id:
+          type: string
+          description: Campus tenant identifier
+          example: campus-east
+        scope:
+          type: array
+          description: Requested campus scopes
+          items:
+            type: string
+          minItems: 1
+        device_context:
+          $ref: "#/components/schemas/DeviceContext"
+      required:
+        - grant_type
+        - subject_token_type
+        - subject_token
+        - requested_token_type
+        - audience
+        - tenant_id
+        - scope
+    DeviceContext:
+      type: object
+      description: Device metadata used in policy and trust evaluation
+      properties:
+        device_id:
+          type: string
+          example: device-4472-nyc-01
+        certificate_serial:
+          type: string
+          example: 19A84C7722A1
+        ip_address:
+          type: string
+          format: ipv4
+          example: 203.0.113.41
+        user_agent:
+          type: string
+          example: campus-edge-proxy/1.23.7
+      required:
+        - device_id
+    TokenExchangeResponse:
+      type: object
+      description: Issued campus token and associated trust context
+      properties:
+        access_token:
+          type: string
+          description: Campus-scoped bearer token
+        token_type:
+          type: string
+          enum:
+            - Bearer
+        expires_in:
+          type: integer
+          format: int32
+          description: Token lifetime in seconds
+          minimum: 60
+          maximum: 3600
+        scope:
+          type: array
+          items:
+            type: string
+        issued_token_type:
+          type: string
+          enum:
+            - urn:ietf:params:oauth:token-type:access_token
+        subject:
+          $ref: "#/components/schemas/TokenSubject"
+        trust_context:
+          $ref: "#/components/schemas/TrustContext"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - scope
+        - issued_token_type
+        - subject
+        - trust_context
+        - trace_id
+    TokenSubject:
+      type: object
+      description: Identity subject for the issued token
+      properties:
+        subject_id:
+          type: string
+        subject_type:
+          type: string
+          enum:
+            - user
+            - service
+            - device
+        tenant_id:
+          type: string
+      required:
+        - subject_id
+        - subject_type
+        - tenant_id
+    TrustContext:
+      type: object
+      description: Trust and policy context used during token issuance
+      properties:
+        issuer:
+          type: string
+          format: uri
+        assurance_level:
+          type: string
+          enum:
+            - aal1
+            - aal2
+            - aal3
+        policy_version:
+          type: string
+        exchanged_at:
+          type: string
+          format: date-time
+      required:
+        - issuer
+        - assurance_level
+        - policy_version
+        - exchanged_at
+    TokenValidationRequest:
+      type: object
+      description: Input for token validation and claim extraction
+      properties:
+        token:
+          type: string
+          description: Access token or assertion to validate
+          minLength: 20
+        token_type_hint:
+          type: string
+          enum:
+            - access_token
+            - id_token
+            - jwt
+        expected_audience:
+          type: string
+          description: Expected audience claim for validation
+        required_scopes:
+          type: array
+          items:
+            type: string
+        include_claims:
+          type: boolean
+          default: true
+        include_policy_evaluation:
+          type: boolean
+          default: false
+      required:
+        - token
+    TokenValidationResponse:
+      type: object
+      description: Normalized validation result and optional claims
+      properties:
+        active:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - valid
+            - expired
+            - revoked
+            - invalid
+        token_type:
+          type: string
+          enum:
+            - access_token
+            - id_token
+            - jwt
+        issuer:
+          type: string
+          format: uri
+        audience:
+          type: array
+          items:
+            type: string
+        subject:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        scopes:
+          type: array
+          items:
+            type: string
+        claims:
+          type: object
+          additionalProperties: true
+        policy_evaluation:
+          $ref: "#/components/schemas/PolicyEvaluation"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - active
+        - status
+        - trace_id
+    PolicyEvaluation:
+      type: object
+      description: Policy decision details returned during validation
+      properties:
+        policy_id:
+          type: string
+        result:
+          type: string
+          enum:
+            - allow
+            - deny
+            - challenge
+        reasons:
+          type: array
+          items:
+            type: string
+      required:
+        - policy_id
+        - result
+        - reasons
+    DeviceCertificateStatus:
+      type: object
+      description: Device certificate state and attestation summary
+      properties:
+        device_id:
+          type: string
+        certificate_serial:
+          type: string
+        certificate_fingerprint_sha256:
+          type: string
+          minLength: 64
+          maxLength: 64
+        issued_by:
+          $ref: "#/components/schemas/CertificateAuthorityRef"
+        issued_at:
+          type: string
+          format: date-time
+        not_before:
+          type: string
+          format: date-time
+        not_after:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - active
+            - expiring
+            - expired
+            - revoked
+            - unknown
+        revocation:
+          $ref: "#/components/schemas/RevocationInfo"
+        attestation:
+          $ref: "#/components/schemas/AttestationInfo"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - device_id
+        - certificate_serial
+        - issued_by
+        - status
+        - trace_id
+    CertificateAuthorityRef:
+      type: object
+      properties:
+        authority_id:
+          type: string
+        authority_name:
+          type: string
+      required:
+        - authority_id
+        - authority_name
+    RevocationInfo:
+      type: object
+      properties:
+        revoked:
+          type: boolean
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        revocation_reason:
+          type: string
+          enum:
+            - none
+            - key_compromise
+            - cessation_of_operation
+            - superseded
+            - privilege_withdrawn
+            - affiliation_changed
+            - unspecified
+      required:
+        - revoked
+        - revocation_reason
+    AttestationInfo:
+      type: object
+      properties:
+        last_checked_at:
+          type: string
+          format: date-time
+        result:
+          type: string
+          enum:
+            - pass
+            - fail
+            - unknown
+        evidence_id:
+          type: string
+      required:
+        - last_checked_at
+        - result
+    CertificateRotationRequest:
+      type: object
+      description: Request parameters for immediate certificate rotation
+      properties:
+        reason:
+          type: string
+          enum:
+            - scheduled_renewal
+            - suspected_key_exposure
+            - policy_update
+            - compromise_response
+        requested_by:
+          type: string
+        rotate_immediately:
+          type: boolean
+          default: true
+        invalidate_previous:
+          type: boolean
+          default: true
+        key_algorithm:
+          type: string
+          enum:
+            - RSA_2048
+            - RSA_3072
+            - ECDSA_P256
+            - ECDSA_P384
+        key_size:
+          type: integer
+          minimum: 256
+      required:
+        - reason
+        - requested_by
+    CertificateRotationResponse:
+      type: object
+      description: Acknowledgement of accepted rotation request
+      properties:
+        rotation_id:
+          type: string
+        device_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - in_progress
+            - completed
+            - failed
+        requested_at:
+          type: string
+          format: date-time
+        estimated_completion_at:
+          type: string
+          format: date-time
+          nullable: true
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - rotation_id
+        - device_id
+        - status
+        - requested_at
+        - trace_id
+    TrustAnchorsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrustAnchor"
+        total_count:
+          type: integer
+          minimum: 0
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - data
+        - total_count
+        - trace_id
+    TrustAnchor:
+      type: object
+      description: Trusted external identity or certificate authority metadata
+      properties:
+        anchor_id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - certificate_authority
+            - identity_provider
+        status:
+          type: string
+          enum:
+            - active
+            - deprecated
+            - disabled
+        thumbprint_sha256:
+          type: string
+          minLength: 64
+          maxLength: 64
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+        issuer_uri:
+          type: string
+          format: uri
+        jwks_uri:
+          type: string
+          format: uri
+        allowed_audiences:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - anchor_id
+        - name
+        - type
+        - status
+    CreateSessionRequest:
+      type: object
+      description: Request to create a policy-bound campus session
+      properties:
+        principal:
+          $ref: "#/components/schemas/SessionPrincipal"
+        token:
+          $ref: "#/components/schemas/SessionToken"
+        requested_ttl_seconds:
+          type: integer
+          minimum: 300
+          maximum: 43200
+        audience:
+          type: string
+        device:
+          $ref: "#/components/schemas/SessionDevice"
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - principal
+        - token
+        - requested_ttl_seconds
+        - audience
+    SessionPrincipal:
+      type: object
+      properties:
+        principal_id:
+          type: string
+        principal_type:
+          type: string
+          enum:
+            - user
+            - service
+            - device
+        tenant_id:
+          type: string
+      required:
+        - principal_id
+        - principal_type
+        - tenant_id
+    SessionToken:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum:
+            - Bearer
+      required:
+        - access_token
+        - token_type
+    SessionDevice:
+      type: object
+      properties:
+        device_id:
+          type: string
+        certificate_serial:
+          type: string
+      required:
+        - device_id
+    CreateSessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - expired
+            - revoked
+        principal:
+          $ref: "#/components/schemas/SessionPrincipal"
+        issued_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        audience:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - session_id
+        - status
+        - principal
+        - issued_at
+        - expires_at
+        - audience
+        - scopes
+        - trace_id
+    RevokeSessionRequest:
+      type: object
+      description: Optional metadata for revocation workflows
+      properties:
+        reason:
+          type: string
+          enum:
+            - user_logout
+            - timeout
+            - security_incident
+            - admin_action
+        revoked_by:
+          type: string
+        propagate_to_mesh:
+          type: boolean
+          default: true
+    RevokeSessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - revoked
+        revoked_at:
+          type: string
+          format: date-time
+        revoked_by:
+          type: string
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - session_id
+        - status
+        - revoked_at
+        - trace_id
+    Error:
+      type: object
+      description: Standardized API error envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable error code
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: array
+              description: Additional contextual details
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  reason:
+                    type: string
+            request_id:
+              type: string
+              description: Request identifier for audit and support correlation
+            trace_id:
+              type: string
+              format: uuid
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Campus identity access token
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Service-to-service API key for edge platform clients
+  responses:
+    "400":
+      description: Bad Request — The request is malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Request body validation failed.
+              details:
+                - field: tenant_id
+                  reason: tenant_id is required
+              request_id: req-1f09d047-9f88-4ca6-87e8-12ca0f90c4e8
+              trace_id: 74b20c0d-fc4e-4469-9d30-01ae1f0f0a8d
+    "401":
+      description: Unauthorized — Authentication credentials are missing, invalid, or expired.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired bearer token.
+              request_id: req-0fb05576-cfd6-4b4d-93de-4d56373ed138
+              trace_id: 05e36e57-7f83-43c5-8d91-26995ce2fd0e
+    "403":
+      description: Forbidden — The caller is authenticated but not allowed to perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: Caller lacks required permission campus.identity:admin.
+              request_id: req-a96e64fc-ff02-4425-86ea-49ec1ac8bc8f
+              trace_id: fc2039d3-67f0-4ee6-99ea-9d2db75d9b78
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: Device or session resource was not found.
+              request_id: req-618b31d5-2f38-45d9-a2b4-a8ec1be5e7ce
+              trace_id: 7f1e7db8-5f53-4fd4-9ec8-d4fd7629f298
+    "409":
+      description: Conflict — The requested operation conflicts with current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: Device certificate rotation already in progress.
+              request_id: req-7218ea0a-23a1-44f1-aa40-5f5dc80f96a5
+              trace_id: 58df4d3d-fd0f-4cf0-8af5-c1fcb7efc2c8
+    "422":
+      description: Unprocessable Entity — The request is syntactically valid but violates policy or business rules.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: POLICY_VIOLATION
+              message: Token audience is not allowed for requested tenant.
+              details:
+                - field: audience
+                  reason: audience campus-admin-console is blocked for tenant campus-east
+              request_id: req-a9f5ec17-f25f-4ec1-9140-9fe8107f9c14
+              trace_id: 2119ec03-204f-42d3-8d31-9198274e4ee2
+    "429":
+      description: Too Many Requests — Request rate exceeded configured limit.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Rate limit exceeded. Retry after 60 seconds.
+              request_id: req-d5adf645-e982-48bf-bf91-c561379b9ec6
+              trace_id: 6ec1a353-dd84-4473-95f8-6f89d0cc77e4
+    "500":
+      description: Internal Server Error — An unexpected service error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Retry or contact platform support.
+              request_id: req-4ea5f216-797d-4903-9aa3-9e7994314473
+              trace_id: 31ca13cf-caa3-484f-a1ac-a00891a95fa5

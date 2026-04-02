@@ -1,0 +1,1289 @@
+openapi: 3.0.3
+info:
+  title: VZW Network Operations API
+  description: >-
+    Provides network policy controls for incident-critical mobile endpoints operating on
+    Verizon infrastructure. The API supports OAuth2 token issuance scoped to a specific
+    incident, near-real-time location resolution, Quality on Demand reservation management,
+    radio coverage visibility, and policy class discovery for field-deployed response devices.
+    Integrators use this API to prioritize emergency communications, monitor service posture,
+    and enforce approved policy profiles during active incidents.
+  version: 1.0.0
+  contact:
+    name: Verizon Network API Team
+    email: network-api-team@verizon.com
+    url: https://developer.verizon.com/network-apis
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/network-api-license
+  x-verizon-catalog-id: vzw-network-operations-api
+  x-verizon-domain: network
+servers:
+  - url: https://{host}/v1
+    description: Production
+  - url: https://{host}/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Authentication
+    description: OAuth2 token issuance and access bootstrap operations
+  - name: Device Location
+    description: Device geolocation resolution, radio context, and confidence scoring
+  - name: Quality on Demand
+    description: QoD session lifecycle operations for incident-priority bandwidth reservations
+  - name: Network Coverage
+    description: Radio access network coverage visibility for an incident area of interest
+  - name: Policy
+    description: Policy class catalogs for approved endpoint behavior and provisioning
+paths:
+  /v1/oauth/token:
+    post:
+      operationId: issueIncidentScopedToken
+      summary: Issue OAuth2 client-credentials token
+      description: >-
+        Issues an OAuth2 access token by using the client credentials grant.
+        Tokens are scoped by incident id so each integration flow can be limited
+        to operations for a single active incident. The token includes granted
+        scopes, expiry metadata, and an associated trace id for audit pipelines.
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        description: OAuth2 token request payload scoped to an incident
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthTokenRequest'
+      responses:
+        '201':
+          description: OAuth2 access token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/devices/location:resolve:
+    post:
+      operationId: resolveDeviceLocation
+      summary: Resolve latest incident device location
+      description: >-
+        Resolves the latest known device position for one or more endpoint ids.
+        The response returns GPS coordinates, confidence score, serving cell sector,
+        and radio metrics such as RSRP and RSRQ. Location is optimized for rapid
+        situational awareness rather than legal-grade forensic precision.
+      tags:
+        - Device Location
+      requestBody:
+        required: true
+        description: Device location resolution request
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceLocationResolveRequest'
+      responses:
+        '200':
+          description: Device locations resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceLocationResolveResponse'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/qod/sessions:
+    post:
+      operationId: createQodSession
+      summary: Create Quality on Demand session
+      description: >-
+        Creates a QoD reservation for incident-critical endpoints by requesting
+        an explicit downlink floor and traffic priority tier. The session remains
+        active for the configured ttl in seconds and can be adjusted or terminated
+        while the incident is in progress.
+      tags:
+        - Quality on Demand
+      requestBody:
+        required: true
+        description: QoD session creation payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QodSessionCreateRequest'
+      responses:
+        '201':
+          description: QoD session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QodSessionResponse'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '409':
+          $ref: '#/components/responses/409'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/qod/sessions/{sessionId}:
+    patch:
+      operationId: updateQodSession
+      summary: Adjust active Quality on Demand profile
+      description: >-
+        Adjusts an active QoD session during an ongoing incident. Callers can
+        modify downlink floor, priority tier, and expiration strategy to match
+        changing field conditions. Only active sessions are mutable.
+      tags:
+        - Quality on Demand
+      parameters:
+        - $ref: '#/components/parameters/SessionIdPathParam'
+      requestBody:
+        required: true
+        description: QoD session adjustment payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QodSessionPatchRequest'
+      responses:
+        '200':
+          description: QoD session updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QodSessionResponse'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '500':
+          $ref: '#/components/responses/500'
+    delete:
+      operationId: terminateQodSession
+      summary: Terminate Quality on Demand reservation
+      description: >-
+        Terminates an active QoD reservation immediately and releases network
+        resources back to baseline scheduling. A completed termination response
+        returns final session accounting metadata and trace context.
+      tags:
+        - Quality on Demand
+      parameters:
+        - $ref: '#/components/parameters/SessionIdPathParam'
+      responses:
+        '200':
+          description: QoD session terminated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QodSessionTerminateResponse'
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/network/incidents/{incidentId}/coverage:
+    get:
+      operationId: getIncidentCoverageTiles
+      summary: Get incident RAN coverage heat tiles
+      description: >-
+        Returns radio coverage tiles for an incident area of interest so command
+        teams can detect weak sectors and route resources. Tiles include aggregate
+        quality bands, radio layer details, and confidence metadata based on
+        network telemetry observed in the last sampling interval.
+      tags:
+        - Network Coverage
+      parameters:
+        - $ref: '#/components/parameters/IncidentIdPathParam'
+        - $ref: '#/components/parameters/LatMinQueryParam'
+        - $ref: '#/components/parameters/LonMinQueryParam'
+        - $ref: '#/components/parameters/LatMaxQueryParam'
+        - $ref: '#/components/parameters/LonMaxQueryParam'
+        - $ref: '#/components/parameters/TileZoomQueryParam'
+      responses:
+        '200':
+          description: Incident coverage tiles returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentCoverageResponse'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '500':
+          $ref: '#/components/responses/500'
+  /v1/policies/device-classes:
+    get:
+      operationId: listDevicePolicyClasses
+      summary: List allowed policy classes for field devices
+      description: >-
+        Enumerates approved policy classes that can be assigned to devices in
+        Verizon network operations workflows. Supports cursor-style pagination
+        and filtering by whether classes are currently enabled for provisioning.
+      tags:
+        - Policy
+      parameters:
+        - $ref: '#/components/parameters/PageQueryParam'
+        - $ref: '#/components/parameters/PageSizeQueryParam'
+        - $ref: '#/components/parameters/EnabledQueryParam'
+      responses:
+        '200':
+          description: Device policy classes returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceClassListResponse'
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer token returned by the OAuth token endpoint
+  parameters:
+    SessionIdPathParam:
+      name: sessionId
+      in: path
+      required: true
+      description: Unique QoD session identifier
+      schema:
+        type: string
+        description: Unique QoD session identifier
+        example: qod_sess_9f31e9ba
+    IncidentIdPathParam:
+      name: incidentId
+      in: path
+      required: true
+      description: Incident identifier used to scope network operations
+      schema:
+        type: string
+        description: Incident identifier used to scope network operations
+        example: inc_sf_wildfire_20260327_01
+    PageQueryParam:
+      name: page
+      in: query
+      required: false
+      description: Page number to fetch from the policy class list
+      schema:
+        type: integer
+        minimum: 1
+        description: Page number to fetch from the policy class list
+        example: 1
+    PageSizeQueryParam:
+      name: page_size
+      in: query
+      required: false
+      description: Number of policy classes to return per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        description: Number of policy classes to return per page
+        example: 25
+    EnabledQueryParam:
+      name: enabled
+      in: query
+      required: false
+      description: Filter to include only enabled or disabled policy classes
+      schema:
+        type: boolean
+        description: Filter to include only enabled or disabled policy classes
+        example: true
+    LatMinQueryParam:
+      name: lat_min
+      in: query
+      required: true
+      description: Minimum latitude bound for the area of interest
+      schema:
+        type: number
+        format: double
+        description: Minimum latitude bound for the area of interest
+        example: 37.7034
+    LonMinQueryParam:
+      name: lon_min
+      in: query
+      required: true
+      description: Minimum longitude bound for the area of interest
+      schema:
+        type: number
+        format: double
+        description: Minimum longitude bound for the area of interest
+        example: -122.5270
+    LatMaxQueryParam:
+      name: lat_max
+      in: query
+      required: true
+      description: Maximum latitude bound for the area of interest
+      schema:
+        type: number
+        format: double
+        description: Maximum latitude bound for the area of interest
+        example: 37.8120
+    LonMaxQueryParam:
+      name: lon_max
+      in: query
+      required: true
+      description: Maximum longitude bound for the area of interest
+      schema:
+        type: number
+        format: double
+        description: Maximum longitude bound for the area of interest
+        example: -122.3482
+    TileZoomQueryParam:
+      name: zoom
+      in: query
+      required: false
+      description: Tile zoom level for returned coverage heat map
+      schema:
+        type: integer
+        minimum: 8
+        maximum: 18
+        description: Tile zoom level for returned coverage heat map
+        example: 12
+  responses:
+    '400':
+      description: Invalid request payload or query parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidRequest:
+              summary: Malformed request
+              value:
+                error:
+                  code: invalid_request
+                  message: Request payload did not pass validation checks
+                  details: Field incident_id must be a non-empty string
+                  status: 400
+                  trace_id: 4f2f2ccf-1d66-4e47-9e48-b0c687b03610
+    '401':
+      description: Missing, expired, or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              summary: Authentication required
+              value:
+                error:
+                  code: unauthorized
+                  message: Bearer token is missing or invalid
+                  details: Provide a valid access token from /v1/oauth/token
+                  status: 401
+                  trace_id: e9a95387-825d-4fb8-8420-35b7051ef40e
+    '404':
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            notFound:
+              summary: Resource does not exist
+              value:
+                error:
+                  code: not_found
+                  message: Requested resource could not be located
+                  details: Session qod_sess_9f31e9ba was not found
+                  status: 404
+                  trace_id: 0ab46462-42fa-4bce-8da0-b5bbf4b3a59e
+    '409':
+      description: Request conflicts with current resource state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            conflict:
+              summary: Conflicting request state
+              value:
+                error:
+                  code: conflict
+                  message: Requested operation conflicts with active reservation state
+                  details: Session is already terminated and cannot be modified
+                  status: 409
+                  trace_id: 86d1ac7f-ddd8-4f47-a8f7-e801ec96c7e4
+    '429':
+      description: Too many requests received for the caller identity
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            rateLimited:
+              summary: Rate limit exceeded
+              value:
+                error:
+                  code: rate_limited
+                  message: Request quota exceeded for client credentials
+                  details: Retry after 30 seconds
+                  status: 429
+                  trace_id: 9f54c5f1-1450-4de6-9cb8-fc6a2d8ff948
+    '500':
+      description: Internal processing error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            serverError:
+              summary: Internal server failure
+              value:
+                error:
+                  code: internal_error
+                  message: Unexpected failure while processing request
+                  details: An upstream service timeout interrupted execution
+                  status: 500
+                  trace_id: 8819df67-f3f7-4d44-a955-57f09ca018e8
+  schemas:
+    OAuthTokenRequest:
+      type: object
+      description: Request body for OAuth2 client credentials token issuance
+      properties:
+        grant_type:
+          type: string
+          description: OAuth2 grant type for this token request
+          example: client_credentials
+          enum:
+            - client_credentials
+        client_id:
+          type: string
+          description: Registered integration client identifier
+          example: vzw_ops_partner_01
+        client_secret:
+          type: string
+          description: Integration client secret issued during onboarding
+          example: Z2hwXzJxY0hlYzlqTlEyVmM2V3M3dFBy
+        incident_id:
+          type: string
+          description: Incident scope identifier used to constrain token access
+          example: inc_sf_wildfire_20260327_01
+        scope:
+          type: string
+          description: Space-delimited permissions requested for this token
+          example: qod:write location:read coverage:read policy:read
+      required:
+        - grant_type
+        - client_id
+        - client_secret
+        - incident_id
+        - scope
+    OAuthTokenResponse:
+      type: object
+      description: OAuth2 token issuance response
+      properties:
+        access_token:
+          type: string
+          description: Signed bearer token for API authorization
+          example: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ2ZXJpem9uIiwic3ViIjoidmVyaXpvbl9vcHMiLCJhdWQiOiJ2enctbmV0b3BzIiwiaW5jaWRlbnRfaWQiOiJpbmNfc2Zfd2lsZGZpcmVfMjAyNjAzMjdfMDEiLCJzY29wZSI6InFvZDp3cml0ZSBsb2NhdGlvbjpyZWFkIGNvdmVyYWdlOnJlYWQgcG9saWN5OnJlYWQiLCJleHAiOjE3NTEyNjQ4MDAsImlhdCI6MTc1MTI2MTIwMH0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+        token_type:
+          type: string
+          description: Token type returned by the authorization server
+          example: Bearer
+        expires_in:
+          type: integer
+          description: Token validity period in seconds
+          example: 3600
+        scope:
+          type: string
+          description: Space-delimited scopes granted to this token
+          example: qod:write location:read coverage:read policy:read
+        incident_id:
+          type: string
+          description: Incident identifier encoded into token scope
+          example: inc_sf_wildfire_20260327_01
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier for token issuance request
+          example: 3f8836a8-9169-4ea6-a5b0-6851e4cb6adf
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - scope
+        - incident_id
+        - trace_id
+    DeviceLocationResolveRequest:
+      type: object
+      description: Payload for resolving latest location and radio quality for incident devices
+      properties:
+        incident_id:
+          type: string
+          description: Incident identifier used for policy and data scoping
+          example: inc_sf_wildfire_20260327_01
+        requested_at:
+          type: string
+          format: date-time
+          description: Client timestamp when location resolution was requested
+          example: 2026-03-27T15:02:11Z
+        devices:
+          type: array
+          description: Device identifiers to resolve within this incident
+          items:
+            $ref: '#/components/schemas/DeviceResolutionInput'
+          example:
+            - device_id: vzw_imei_356938035643809
+              endpoint_type: body-cam
+            - device_id: vzw_imei_356938035643776
+              endpoint_type: ems-tablet
+      required:
+        - incident_id
+        - requested_at
+        - devices
+    DeviceResolutionInput:
+      type: object
+      description: Device descriptor for location resolution request
+      properties:
+        device_id:
+          type: string
+          description: Verizon-managed device identity, typically IMEI-derived
+          example: vzw_imei_356938035643809
+        endpoint_type:
+          type: string
+          description: Device class of the requesting endpoint
+          example: body-cam
+          enum:
+            - ems-tablet
+            - body-cam
+            - drone-uav
+            - command-vehicle-router
+      required:
+        - device_id
+        - endpoint_type
+    DeviceLocationResolveResponse:
+      type: object
+      description: Batch response containing resolved positions and radio context per device
+      properties:
+        incident_id:
+          type: string
+          description: Incident identifier tied to all returned results
+          example: inc_sf_wildfire_20260327_01
+        resolved_at:
+          type: string
+          format: date-time
+          description: Server timestamp when location computation completed
+          example: 2026-03-27T15:02:12Z
+        results:
+          type: array
+          description: Per-device location and radio metrics
+          items:
+            $ref: '#/components/schemas/DeviceLocationResult'
+          example:
+            - device_id: vzw_imei_356938035643809
+              location:
+                latitude: 37.7749
+                longitude: -122.4194
+                horizontal_accuracy_m: 14.2
+                confidence_score: 0.93
+                source: network_assisted_gnss
+                observed_at: 2026-03-27T15:01:58Z
+              radio:
+                cell_id: 31001288931
+                cell_sector: SF-Market-17B
+                tac: 6501
+                earfcn: 66436
+                rsrp_dbm: -92
+                rsrq_db: -10
+                sinr_db: 18.4
+                rat: LTE
+                band: B66
+              trace_id: 4b8a785e-5cd3-4d94-acb2-7d80b9318cc4
+        unresolved:
+          type: array
+          description: Devices that could not be resolved in this request window
+          items:
+            $ref: '#/components/schemas/UnresolvedDevice'
+          example:
+            - device_id: vzw_imei_356938035643776
+              reason_code: stale_telemetry
+              reason_message: Latest telemetry is older than allowed staleness threshold
+      required:
+        - incident_id
+        - resolved_at
+        - results
+        - unresolved
+    DeviceLocationResult:
+      type: object
+      description: Resolved location and radio profile for a single device
+      properties:
+        device_id:
+          type: string
+          description: Verizon-managed device identifier
+          example: vzw_imei_356938035643809
+        location:
+          $ref: '#/components/schemas/GeoPointConfidence'
+        radio:
+          $ref: '#/components/schemas/RadioMetrics'
+        trace_id:
+          type: string
+          format: uuid
+          description: Request trace id specific to this result record
+          example: 4b8a785e-5cd3-4d94-acb2-7d80b9318cc4
+      required:
+        - device_id
+        - location
+        - radio
+        - trace_id
+    UnresolvedDevice:
+      type: object
+      description: Device that could not return a current location estimate
+      properties:
+        device_id:
+          type: string
+          description: Verizon-managed device identifier
+          example: vzw_imei_356938035643776
+        reason_code:
+          type: string
+          description: Stable machine-readable reason for unresolved status
+          example: stale_telemetry
+        reason_message:
+          type: string
+          description: Human-readable explanation for unresolved status
+          example: Latest telemetry is older than allowed staleness threshold
+      required:
+        - device_id
+        - reason_code
+        - reason_message
+    GeoPointConfidence:
+      type: object
+      description: Geospatial position with confidence and source metadata
+      properties:
+        latitude:
+          type: number
+          format: double
+          description: Estimated latitude in decimal degrees
+          example: 37.7749
+        longitude:
+          type: number
+          format: double
+          description: Estimated longitude in decimal degrees
+          example: -122.4194
+        horizontal_accuracy_m:
+          type: number
+          format: float
+          description: Estimated horizontal accuracy radius in meters
+          example: 14.2
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Model confidence score for the resolved location
+          example: 0.93
+        source:
+          type: string
+          description: Primary positioning source used for the estimate
+          example: network_assisted_gnss
+          enum:
+            - network_assisted_gnss
+            - otdoa
+            - timing_advance
+            - wifi_fusion
+        observed_at:
+          type: string
+          format: date-time
+          description: Timestamp when the position observation was recorded
+          example: 2026-03-27T15:01:58Z
+      required:
+        - latitude
+        - longitude
+        - horizontal_accuracy_m
+        - confidence_score
+        - source
+        - observed_at
+    RadioMetrics:
+      type: object
+      description: Serving cell and signal quality metrics for a resolved endpoint
+      properties:
+        cell_id:
+          type: integer
+          format: int64
+          description: E-UTRAN/NR serving cell identity
+          example: 31001288931
+        cell_sector:
+          type: string
+          description: Human-readable sector identifier for field operations
+          example: SF-Market-17B
+        tac:
+          type: integer
+          description: Tracking area code associated with the serving cell
+          example: 6501
+        earfcn:
+          type: integer
+          description: E-UTRA absolute radio-frequency channel number
+          example: 66436
+        rsrp_dbm:
+          type: integer
+          description: Reference signal received power in dBm
+          example: -92
+        rsrq_db:
+          type: integer
+          description: Reference signal received quality in dB
+          example: -10
+        sinr_db:
+          type: number
+          format: float
+          description: Signal-to-interference-plus-noise ratio in dB
+          example: 18.4
+        rat:
+          type: string
+          description: Radio access technology used by the endpoint
+          example: LTE
+          enum:
+            - LTE
+            - NR
+        band:
+          type: string
+          description: Operating band of the serving cell
+          example: B66
+      required:
+        - cell_id
+        - cell_sector
+        - tac
+        - earfcn
+        - rsrp_dbm
+        - rsrq_db
+        - sinr_db
+        - rat
+        - band
+    QodSessionCreateRequest:
+      type: object
+      description: Request payload for creating a QoD reservation session
+      properties:
+        incident_id:
+          type: string
+          description: Incident identifier that owns the reservation
+          example: inc_sf_wildfire_20260327_01
+        device_id:
+          type: string
+          description: Device identifier receiving prioritized QoD handling
+          example: vzw_imei_356938035643809
+        min_downlink_mbps:
+          type: number
+          format: float
+          description: Requested guaranteed minimum downlink throughput in Mbps
+          example: 12.5
+        priority_tier:
+          type: string
+          description: Network scheduling priority tier for this session
+          example: incident_critical
+          enum:
+            - routine
+            - elevated
+            - incident_critical
+        ttl_seconds:
+          type: integer
+          minimum: 60
+          maximum: 14400
+          description: Requested session time-to-live in seconds
+          example: 1800
+        reason:
+          type: string
+          description: Operational reason for QoD reservation request
+          example: Live body camera uplink for evacuation corridor support
+      required:
+        - incident_id
+        - device_id
+        - min_downlink_mbps
+        - priority_tier
+        - ttl_seconds
+        - reason
+    QodSessionPatchRequest:
+      type: object
+      description: Request payload for updating a live QoD reservation
+      properties:
+        min_downlink_mbps:
+          type: number
+          format: float
+          description: Revised downlink floor in Mbps for active reservation
+          example: 15.0
+        priority_tier:
+          type: string
+          description: Revised scheduling priority tier for active reservation
+          example: incident_critical
+          enum:
+            - routine
+            - elevated
+            - incident_critical
+        ttl_seconds:
+          type: integer
+          minimum: 60
+          maximum: 14400
+          description: Remaining session duration requested in seconds
+          example: 2400
+        reason:
+          type: string
+          description: Context explaining why session settings are being changed
+          example: Increased traffic load due to additional camera streams
+      required:
+        - min_downlink_mbps
+        - priority_tier
+        - ttl_seconds
+        - reason
+    QodSessionResponse:
+      type: object
+      description: QoD reservation session state and lifecycle metadata
+      properties:
+        session_id:
+          type: string
+          description: Unique QoD session identifier
+          example: qod_sess_9f31e9ba
+        incident_id:
+          type: string
+          description: Incident identifier that owns this session
+          example: inc_sf_wildfire_20260327_01
+        device_id:
+          type: string
+          description: Device identifier assigned to this reservation
+          example: vzw_imei_356938035643809
+        status:
+          type: string
+          description: Lifecycle state of this QoD reservation
+          example: active
+          enum:
+            - provisioning
+            - active
+            - terminating
+            - terminated
+            - failed
+        min_downlink_mbps:
+          type: number
+          format: float
+          description: Guaranteed downlink floor configured for this session
+          example: 12.5
+        priority_tier:
+          type: string
+          description: Active scheduling tier applied to this session
+          example: incident_critical
+        ttl_seconds:
+          type: integer
+          description: Time-to-live currently configured for this session in seconds
+          example: 1800
+        started_at:
+          type: string
+          format: date-time
+          description: Timestamp when reservation entered provisioning workflow
+          example: 2026-03-27T15:04:21Z
+        expires_at:
+          type: string
+          format: date-time
+          description: Timestamp when reservation is expected to expire
+          example: 2026-03-27T15:34:21Z
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp of the latest update to this session
+          example: 2026-03-27T15:09:58Z
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace id associated with the reservation request
+          example: a393f4a7-1d5f-41b0-978d-909f7723b774
+      required:
+        - session_id
+        - incident_id
+        - device_id
+        - status
+        - min_downlink_mbps
+        - priority_tier
+        - ttl_seconds
+        - started_at
+        - expires_at
+        - updated_at
+        - trace_id
+    QodSessionTerminateResponse:
+      type: object
+      description: Response returned after terminating a QoD session
+      properties:
+        session_id:
+          type: string
+          description: Unique QoD session identifier
+          example: qod_sess_9f31e9ba
+        status:
+          type: string
+          description: Final lifecycle state after termination request
+          example: terminated
+          enum:
+            - terminated
+        terminated_at:
+          type: string
+          format: date-time
+          description: Timestamp when reservation termination completed
+          example: 2026-03-27T15:18:05Z
+        released_capacity_mbps:
+          type: number
+          format: float
+          description: Amount of reserved downlink capacity released in Mbps
+          example: 12.5
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace id for the termination operation
+          example: 287d53d8-6272-4895-9785-5b7f5cb217f0
+      required:
+        - session_id
+        - status
+        - terminated_at
+        - released_capacity_mbps
+        - trace_id
+    IncidentCoverageResponse:
+      type: object
+      description: Coverage tile response for an incident area of interest
+      properties:
+        incident_id:
+          type: string
+          description: Incident identifier for this coverage response
+          example: inc_sf_wildfire_20260327_01
+        generated_at:
+          type: string
+          format: date-time
+          description: Timestamp when coverage tiles were generated
+          example: 2026-03-27T15:12:00Z
+        bounds:
+          $ref: '#/components/schemas/BoundingBox'
+        zoom:
+          type: integer
+          description: Tile zoom level represented by this response
+          example: 12
+        tiles:
+          type: array
+          description: Coverage heat tiles inside requested area
+          items:
+            $ref: '#/components/schemas/CoverageTile'
+          example:
+            - tile_id: 12/654/1583
+              center_latitude: 37.7802
+              center_longitude: -122.4174
+              dominant_rat: LTE
+              quality_band: strong
+              confidence_score: 0.91
+              avg_rsrp_dbm: -89
+              avg_rsrq_db: -9
+              sectors:
+                - cell_sector: SF-SOMA-05A
+                  utilization_percent: 68.2
+                - cell_sector: SF-SOMA-05B
+                  utilization_percent: 61.7
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace id for coverage generation request
+          example: 7cd2df89-c13f-4da3-8448-37a1947e2477
+      required:
+        - incident_id
+        - generated_at
+        - bounds
+        - zoom
+        - tiles
+        - trace_id
+    BoundingBox:
+      type: object
+      description: Geographic bounding box for area of interest selection
+      properties:
+        lat_min:
+          type: number
+          format: double
+          description: Southern latitude bound in decimal degrees
+          example: 37.7034
+        lon_min:
+          type: number
+          format: double
+          description: Western longitude bound in decimal degrees
+          example: -122.5270
+        lat_max:
+          type: number
+          format: double
+          description: Northern latitude bound in decimal degrees
+          example: 37.8120
+        lon_max:
+          type: number
+          format: double
+          description: Eastern longitude bound in decimal degrees
+          example: -122.3482
+      required:
+        - lat_min
+        - lon_min
+        - lat_max
+        - lon_max
+    CoverageTile:
+      type: object
+      description: Aggregated coverage telemetry for one map tile
+      properties:
+        tile_id:
+          type: string
+          description: XYZ tile identifier represented as z/x/y
+          example: 12/654/1583
+        center_latitude:
+          type: number
+          format: double
+          description: Latitude of tile center coordinate
+          example: 37.7802
+        center_longitude:
+          type: number
+          format: double
+          description: Longitude of tile center coordinate
+          example: -122.4174
+        dominant_rat:
+          type: string
+          description: Dominant radio access technology for this tile
+          example: LTE
+          enum:
+            - LTE
+            - NR
+        quality_band:
+          type: string
+          description: Categorical signal quality grade for this tile
+          example: strong
+          enum:
+            - weak
+            - moderate
+            - strong
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Confidence in aggregate telemetry quality for this tile
+          example: 0.91
+        avg_rsrp_dbm:
+          type: integer
+          description: Average RSRP across measurements in this tile
+          example: -89
+        avg_rsrq_db:
+          type: integer
+          description: Average RSRQ across measurements in this tile
+          example: -9
+        sectors:
+          type: array
+          description: Sector-level utilization highlights inside this tile
+          items:
+            $ref: '#/components/schemas/TileSectorStat'
+          example:
+            - cell_sector: SF-SOMA-05A
+              utilization_percent: 68.2
+            - cell_sector: SF-SOMA-05B
+              utilization_percent: 61.7
+      required:
+        - tile_id
+        - center_latitude
+        - center_longitude
+        - dominant_rat
+        - quality_band
+        - confidence_score
+        - avg_rsrp_dbm
+        - avg_rsrq_db
+        - sectors
+    TileSectorStat:
+      type: object
+      description: Sector utilization summary attached to a coverage tile
+      properties:
+        cell_sector:
+          type: string
+          description: Sector identifier contributing to this tile metric
+          example: SF-SOMA-05A
+        utilization_percent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          description: Estimated downlink utilization percentage for sector traffic
+          example: 68.2
+      required:
+        - cell_sector
+        - utilization_percent
+    DeviceClassListResponse:
+      type: object
+      description: Paginated list of approved policy classes for Verizon endpoints
+      properties:
+        data:
+          type: array
+          description: Device policy class records for current page
+          items:
+            $ref: '#/components/schemas/DeviceClass'
+          example:
+            - class_id: ems-tablet
+              display_name: EMS Tablet
+              description: LTE tablet profile with prioritized telemedicine routing
+              enabled: true
+              supported_qod_tiers:
+                - elevated
+                - incident_critical
+              max_devices_per_incident: 120
+              updated_at: 2026-03-01T20:11:05Z
+            - class_id: body-cam
+              display_name: Body Camera
+              description: Wearable uplink profile for live responder video
+              enabled: true
+              supported_qod_tiers:
+                - incident_critical
+              max_devices_per_incident: 400
+              updated_at: 2026-03-04T09:48:33Z
+            - class_id: drone-uav
+              display_name: Drone UAV
+              description: Unmanned aerial video and telemetry policy profile
+              enabled: true
+              supported_qod_tiers:
+                - elevated
+                - incident_critical
+              max_devices_per_incident: 40
+              updated_at: 2026-03-06T13:22:10Z
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace id for policy listing request
+          example: e5f414f7-4fbc-4d7f-9649-4dd524eaf116
+      required:
+        - data
+        - pagination
+        - trace_id
+    DeviceClass:
+      type: object
+      description: Allowed policy class and provisioning constraints for a device cohort
+      properties:
+        class_id:
+          type: string
+          description: Stable policy class identifier used in provisioning workflows
+          example: ems-tablet
+        display_name:
+          type: string
+          description: Human-readable name for the policy class
+          example: EMS Tablet
+        description:
+          type: string
+          description: Detailed intent and network behavior for this policy class
+          example: LTE tablet profile with prioritized telemedicine routing
+        enabled:
+          type: boolean
+          description: Indicates whether this class can be assigned to new devices
+          example: true
+        supported_qod_tiers:
+          type: array
+          description: QoD tiers this policy class is permitted to request
+          items:
+            type: string
+            description: Allowed QoD priority tier for this class
+            example: incident_critical
+            enum:
+              - routine
+              - elevated
+              - incident_critical
+          example:
+            - elevated
+            - incident_critical
+        max_devices_per_incident:
+          type: integer
+          description: Maximum active devices of this class allowed per incident
+          example: 120
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp of latest policy class update
+          example: 2026-03-01T20:11:05Z
+      required:
+        - class_id
+        - display_name
+        - description
+        - enabled
+        - supported_qod_tiers
+        - max_devices_per_incident
+        - updated_at
+    PaginationMeta:
+      type: object
+      description: Cursor and size metadata for paginated list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number represented in this response
+          example: 1
+        page_size:
+          type: integer
+          description: Number of records returned per page request
+          example: 25
+        total_items:
+          type: integer
+          description: Total number of records across all pages
+          example: 3
+        total_pages:
+          type: integer
+          description: Total number of pages for current query shape
+          example: 1
+        has_next_page:
+          type: boolean
+          description: Indicates whether another page is available
+          example: false
+      required:
+        - page
+        - page_size
+        - total_items
+        - total_pages
+        - has_next_page
+    ErrorResponse:
+      type: object
+      description: Standardized error envelope for failed API requests
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required:
+        - error
+    ErrorDetail:
+      type: object
+      description: Detailed error payload with machine and human-readable context
+      properties:
+        code:
+          type: string
+          description: Machine-readable application error code
+          example: invalid_request
+        message:
+          type: string
+          description: Human-readable summary of the failure
+          example: Request payload did not pass validation checks
+        details:
+          type: string
+          description: Additional context describing the exact failure condition
+          example: Field incident_id must be a non-empty string
+        status:
+          type: integer
+          description: HTTP status code associated with this error
+          example: 400
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace id that can be used for support correlation
+          example: 4f2f2ccf-1d66-4e47-9e48-b0c687b03610
+      required:
+        - code
+        - message
+        - details
+        - status
+        - trace_id

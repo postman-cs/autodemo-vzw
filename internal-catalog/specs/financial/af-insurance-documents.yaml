@@ -1,0 +1,1216 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Insurance Documents API
+  description: >-
+    Upload, classify, store, and generate insurance documents including declarations pages, certificates of
+    insurance (COI), policy jackets, endorsements, binders, claim forms, and supporting evidence. Supports
+    automatic document classification via ML, version tracking, and presigned download URLs with configurable
+    expiration. Integrates with ACORD form standards for standardized document generation.
+  version: 2.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-insurance-documents
+  x-acme-domain: insurance
+servers:
+  - url: https://af-insurance-documents.api.acmefin.com/v1
+    description: Production
+  - url: https://af-insurance-documents.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Document Management
+    description: Upload, retrieve, classify, and attach documents to insurance entities
+  - name: Document Generation
+    description: Automated generation of declarations pages, certificates of insurance, and ACORD forms
+paths:
+  /documents:
+    get:
+      operationId: listDocuments
+      summary: List documents
+      description: >-
+        Retrieve a paginated list of documents in the document management system. Filter by document type,
+        associated entity, or upload date range.
+      tags:
+        - Document Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: document_type
+          in: query
+          required: false
+          description: Filter by document classification
+          schema:
+            type: "string"
+        - name: associated_entity_type
+          in: query
+          required: false
+          description: Filter by parent entity type
+          schema:
+            type: "string"
+            enum:
+              - POLICY
+              - CLAIM
+              - QUOTE
+              - APPLICATION
+        - name: associated_entity_id
+          in: query
+          required: false
+          description: Filter by parent entity ID
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                          description: Unique document identifier
+                          example: "DOC-00918273"
+                        filename:
+                          type: string
+                          description: Original filename
+                          example: "policy-declarations-2024.pdf"
+                        mime_type:
+                          type: string
+                          description: MIME content type
+                          example: "application/pdf"
+                        document_type:
+                          type: string
+                          description: Document classification
+                          example: "DECLARATIONS_PAGE"
+                          enum:
+                            - DECLARATIONS_PAGE
+                            - CERTIFICATE_OF_INSURANCE
+                            - ENDORSEMENT
+                            - APPLICATION
+                            - BINDER
+                            - POLICY_JACKET
+                            - CLAIM_FORM
+                            - PHOTO
+                            - MEDICAL_RECORD
+                            - APPRAISAL
+                            - CORRESPONDENCE
+                            - INVOICE
+                        size_bytes:
+                          type: integer
+                          description: File size in bytes
+                          example: 245890
+                        associated_entity_type:
+                          type: string
+                          description: Type of entity this document is attached to
+                          example: "POLICY"
+                          enum:
+                            - POLICY
+                            - CLAIM
+                            - QUOTE
+                            - APPLICATION
+                        associated_entity_id:
+                          type: string
+                          description: ID of the associated entity
+                          example: "POL-10029384"
+                        upload_date:
+                          type: string
+                          format: date-time
+                          example: "2024-08-20T09:15:00Z"
+                        uploaded_by:
+                          type: string
+                          description: User who uploaded the document
+                          example: "agent-00482"
+                        status:
+                          type: string
+                          example: "CLASSIFIED"
+                          enum:
+                            - PENDING_CLASSIFICATION
+                            - CLASSIFIED
+                            - ATTACHED
+                            - ARCHIVED
+                        download_url:
+                          type: string
+                          description: Presigned URL for document download
+                          format: uri
+                          example: "https://docs.acmefin.com/download/DOC-00918273?token=abc123"
+                      required:
+                        - document_id
+                        - filename
+                        - document_type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: uploadDocument
+      summary: Upload a document
+      description: >-
+        Upload a new document to the document management system. The document is stored securely and queued
+        for automatic classification if document_type is not provided. Maximum file size is 25 MB. Supported
+        formats: PDF, JPEG, PNG, TIFF, DOCX.
+      tags:
+        - Document Management
+      requestBody:
+        required: true
+        description: Upload a document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    filename:
+                      type: string
+                      description: Original filename
+                      example: "policy-declarations-2024.pdf"
+                    mime_type:
+                      type: string
+                      description: MIME content type
+                      example: "application/pdf"
+                    document_type:
+                      type: string
+                      description: Document classification
+                      example: "DECLARATIONS_PAGE"
+                      enum:
+                        - DECLARATIONS_PAGE
+                        - CERTIFICATE_OF_INSURANCE
+                        - ENDORSEMENT
+                        - APPLICATION
+                        - BINDER
+                        - POLICY_JACKET
+                        - CLAIM_FORM
+                        - PHOTO
+                        - MEDICAL_RECORD
+                        - APPRAISAL
+                        - CORRESPONDENCE
+                        - INVOICE
+                    associated_entity_type:
+                      type: string
+                      description: Type of entity this document is attached to
+                      example: "POLICY"
+                      enum:
+                        - POLICY
+                        - CLAIM
+                        - QUOTE
+                        - APPLICATION
+                    associated_entity_id:
+                      type: string
+                      description: ID of the associated entity
+                      example: "POL-10029384"
+                    content_base64:
+                      type: string
+                      description: Base64-encoded file content
+                      format: byte
+              required:
+                - filename
+                - content_base64
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Unique document identifier
+                    example: "DOC-00918273"
+                  filename:
+                    type: string
+                    description: Original filename
+                    example: "policy-declarations-2024.pdf"
+                  mime_type:
+                    type: string
+                    description: MIME content type
+                    example: "application/pdf"
+                  document_type:
+                    type: string
+                    description: Document classification
+                    example: "DECLARATIONS_PAGE"
+                    enum:
+                      - DECLARATIONS_PAGE
+                      - CERTIFICATE_OF_INSURANCE
+                      - ENDORSEMENT
+                      - APPLICATION
+                      - BINDER
+                      - POLICY_JACKET
+                      - CLAIM_FORM
+                      - PHOTO
+                      - MEDICAL_RECORD
+                      - APPRAISAL
+                      - CORRESPONDENCE
+                      - INVOICE
+                  size_bytes:
+                    type: integer
+                    description: File size in bytes
+                    example: 245890
+                  associated_entity_type:
+                    type: string
+                    description: Type of entity this document is attached to
+                    example: "POLICY"
+                    enum:
+                      - POLICY
+                      - CLAIM
+                      - QUOTE
+                      - APPLICATION
+                  associated_entity_id:
+                    type: string
+                    description: ID of the associated entity
+                    example: "POL-10029384"
+                  upload_date:
+                    type: string
+                    format: date-time
+                    example: "2024-08-20T09:15:00Z"
+                  uploaded_by:
+                    type: string
+                    description: User who uploaded the document
+                    example: "agent-00482"
+                  status:
+                    type: string
+                    example: "CLASSIFIED"
+                    enum:
+                      - PENDING_CLASSIFICATION
+                      - CLASSIFIED
+                      - ATTACHED
+                      - ARCHIVED
+                  download_url:
+                    type: string
+                    description: Presigned URL for document download
+                    format: uri
+                    example: "https://docs.acmefin.com/download/DOC-00918273?token=abc123"
+                required:
+                  - document_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/{document_id}:
+    get:
+      operationId: getDocument
+      summary: Retrieve document metadata
+      description: >-
+        Fetch document metadata including classification, associated entity, version history, and a
+        presigned download URL valid for 15 minutes.
+      tags:
+        - Document Management
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Unique document identifier
+                    example: "DOC-00918273"
+                  filename:
+                    type: string
+                    description: Original filename
+                    example: "policy-declarations-2024.pdf"
+                  mime_type:
+                    type: string
+                    description: MIME content type
+                    example: "application/pdf"
+                  document_type:
+                    type: string
+                    description: Document classification
+                    example: "DECLARATIONS_PAGE"
+                    enum:
+                      - DECLARATIONS_PAGE
+                      - CERTIFICATE_OF_INSURANCE
+                      - ENDORSEMENT
+                      - APPLICATION
+                      - BINDER
+                      - POLICY_JACKET
+                      - CLAIM_FORM
+                      - PHOTO
+                      - MEDICAL_RECORD
+                      - APPRAISAL
+                      - CORRESPONDENCE
+                      - INVOICE
+                  size_bytes:
+                    type: integer
+                    description: File size in bytes
+                    example: 245890
+                  associated_entity_type:
+                    type: string
+                    description: Type of entity this document is attached to
+                    example: "POLICY"
+                    enum:
+                      - POLICY
+                      - CLAIM
+                      - QUOTE
+                      - APPLICATION
+                  associated_entity_id:
+                    type: string
+                    description: ID of the associated entity
+                    example: "POL-10029384"
+                  upload_date:
+                    type: string
+                    format: date-time
+                    example: "2024-08-20T09:15:00Z"
+                  uploaded_by:
+                    type: string
+                    description: User who uploaded the document
+                    example: "agent-00482"
+                  status:
+                    type: string
+                    example: "CLASSIFIED"
+                    enum:
+                      - PENDING_CLASSIFICATION
+                      - CLASSIFIED
+                      - ATTACHED
+                      - ARCHIVED
+                  download_url:
+                    type: string
+                    description: Presigned URL for document download
+                    format: uri
+                    example: "https://docs.acmefin.com/download/DOC-00918273?token=abc123"
+                required:
+                  - document_id
+                  - filename
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteDocument
+      summary: Delete a document
+      description: >-
+        Permanently remove a document from storage. Documents attached to active claims or policies in
+        litigation cannot be deleted and must be archived instead.
+      tags:
+        - Document Management
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /documents/{document_id}/classify:
+    post:
+      operationId: classifyDocument
+      summary: Classify a document
+      description: >-
+        Assign or update the document classification type. ML-based auto-classification suggestions are
+        provided for unclassified documents. Manual classification overrides the ML suggestion.
+      tags:
+        - Document Management
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Classify a document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    document_type:
+                      type: string
+                      description: Document classification
+                      example: "DECLARATIONS_PAGE"
+                      enum:
+                        - DECLARATIONS_PAGE
+                        - CERTIFICATE_OF_INSURANCE
+                        - ENDORSEMENT
+                        - APPLICATION
+                        - BINDER
+                        - POLICY_JACKET
+                        - CLAIM_FORM
+                        - PHOTO
+                        - MEDICAL_RECORD
+                        - APPRAISAL
+                        - CORRESPONDENCE
+                        - INVOICE
+                    confidence_override:
+                      type: boolean
+                      description: Override ML classification confidence check
+                      default: false
+              required:
+                - document_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                  document_type:
+                    type: string
+                    description: Document classification
+                    example: "DECLARATIONS_PAGE"
+                    enum:
+                      - DECLARATIONS_PAGE
+                      - CERTIFICATE_OF_INSURANCE
+                      - ENDORSEMENT
+                      - APPLICATION
+                      - BINDER
+                      - POLICY_JACKET
+                      - CLAIM_FORM
+                      - PHOTO
+                      - MEDICAL_RECORD
+                      - APPRAISAL
+                      - CORRESPONDENCE
+                      - INVOICE
+                  classification_method:
+                    type: string
+                    example: "MANUAL"
+                    enum:
+                      - MANUAL
+                      - ML_AUTO
+                      - ML_CONFIRMED
+                  status:
+                    type: string
+                    example: "CLASSIFIED"
+                required:
+                  - document_id
+                  - document_type
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/{document_id}/attach:
+    post:
+      operationId: attachDocument
+      summary: Attach document to entity
+      description: >-
+        Link a document to a policy, claim, quote, or application. A single document can be attached to
+        multiple entities. Attaching to a claim in litigation triggers an automatic hold preventing
+        deletion.
+      tags:
+        - Document Management
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Attach document to entity request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    entity_type:
+                      type: string
+                      example: "CLAIM"
+                      enum:
+                        - POLICY
+                        - CLAIM
+                        - QUOTE
+                        - APPLICATION
+                    entity_id:
+                      type: string
+                      description: ID of the target entity
+                      example: "CLM-2024-00048291"
+              required:
+                - entity_type
+                - entity_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                  attached_to:
+                    type: string
+                  status:
+                    type: string
+                    example: "ATTACHED"
+                required:
+                  - document_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/search:
+    post:
+      operationId: searchDocuments
+      summary: Search documents
+      description: >-
+        Full-text search across document metadata and OCR-extracted content. Supports boolean queries, date
+        range filters, and entity-scoped searches.
+      tags:
+        - Document Management
+      requestBody:
+        required: true
+        description: Search documents request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    query:
+                      type: string
+                      description: Search query text
+                      example: "roof damage inspection report"
+                    entity_type:
+                      type: string
+                      enum:
+                        - POLICY
+                        - CLAIM
+                        - QUOTE
+                        - APPLICATION
+                    date_from:
+                      type: string
+                      format: date
+                    date_to:
+                      type: string
+                      format: date
+              required:
+                - query
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                  total_matches:
+                    type: integer
+                    example: 12
+                required:
+                  - results
+                  - total_matches
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/declarations:
+    post:
+      operationId: generateDeclarationsPage
+      summary: Generate declarations page
+      description: >-
+        Generate a policy declarations page (dec page) in PDF format. The dec page summarizes named
+        insureds, policy period, coverage selections, limits, deductibles, premium breakdown, and
+        endorsements. Conforms to ACORD form standards.
+      tags:
+        - Document Generation
+      requestBody:
+        required: true
+        description: Generate declarations page request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    policy_id:
+                      type: string
+                      description: Policy to generate dec page for
+                      example: "POL-10029384"
+                    include_endorsements:
+                      type: boolean
+                      description: Include endorsement schedule
+                      default: true
+              required:
+                - policy_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    example: "DOC-DEC-00482917"
+                  download_url:
+                    type: string
+                    format: uri
+                  page_count:
+                    type: integer
+                    example: 4
+                  generated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - document_id
+                  - download_url
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/certificates:
+    post:
+      operationId: generateCertificateOfInsurance
+      summary: Generate certificate of insurance
+      description: >-
+        Generate an ACORD 25 Certificate of Liability Insurance or ACORD 28 Evidence of Property Insurance.
+        Certificates are issued to third parties (certificate holders) as proof of insurance coverage.
+        Supports additional insured endorsement notation.
+      tags:
+        - Document Generation
+      requestBody:
+        required: true
+        description: Generate certificate of insurance request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    policy_id:
+                      type: string
+                      example: "POL-10029384"
+                    certificate_holder_name:
+                      type: string
+                      description: Name of the certificate holder
+                      example: "ABC Property Management LLC"
+                    certificate_holder_address:
+                      type: string
+                      example: "456 Oak Avenue, Suite 200, New York, NY 10022"
+                    additional_insured:
+                      type: boolean
+                      description: Whether certificate holder is named as additional insured
+                      default: false
+                    acord_form:
+                      type: string
+                      description: Certificate form type
+                      example: "ACORD_25"
+                      enum:
+                        - ACORD_25
+                        - ACORD_28
+              required:
+                - policy_id
+                - certificate_holder_name
+                - certificate_holder_address
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    example: "DOC-COI-00918274"
+                  certificate_number:
+                    type: string
+                    example: "COI-2024-00482917"
+                  download_url:
+                    type: string
+                    format: uri
+                  expiration_date:
+                    type: string
+                    format: date
+                required:
+                  - document_id
+                  - certificate_number
+                  - download_url
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/{document_id}/versions:
+    get:
+      operationId: listDocumentVersions
+      summary: List document versions
+      description: >-
+        Retrieve version history for a document, showing all revisions with timestamps, uploaders, and
+        change notes. Useful for audit trails on policy documents and claim evidence.
+      tags:
+        - Document Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version_id:
+                          type: string
+                        version_number:
+                          type: integer
+                        uploaded_at:
+                          type: string
+                          format: date-time
+                        uploaded_by:
+                          type: string
+                        change_note:
+                          type: string
+                        size_bytes:
+                          type: integer
+                      required:
+                        - version_id
+                        - version_number
+                        - uploaded_at
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

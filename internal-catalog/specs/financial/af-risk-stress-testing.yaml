@@ -1,0 +1,1054 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Stress Testing API
+  description: Enterprise stress testing platform supporting CCAR and DFAST regulatory stress test requirements, internal
+    capital adequacy assessment (ICAAP), and reverse stress testing. Enables scenario definition with Federal Reserve-prescribed
+    macroeconomic variables, portfolio impact analysis across credit, market, and operational risk, capital adequacy projections
+    under stress, and reverse stress test identification of scenarios that would breach capital thresholds.
+  version: 1.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-risk-stress-testing
+  x-acme-domain: risk
+servers:
+- url: https://af-risk-stress-testing.api.acmefin.com/v1
+  description: Production
+- url: https://af-risk-stress-testing.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Scenarios
+  description: Stress test scenario definition and management
+- name: Test Execution
+  description: Stress test execution and portfolio impact analysis
+- name: Capital Analysis
+  description: Capital adequacy projections and reverse stress testing
+paths:
+  /stress-tests/scenarios:
+    get:
+      operationId: listStressScenarios
+      summary: List stress test scenarios
+      description: Retrieve stress test scenarios including CCAR/DFAST prescribed scenarios (baseline, adverse, severely adverse),
+        custom internal scenarios, and reverse stress test definitions. Shows scenario status, approval state, and macroeconomic
+        variable projections.
+      tags:
+      - Scenarios
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: scenario_type
+        in: query
+        required: false
+        description: Filter by scenario type
+        schema:
+          type: string
+          enum:
+          - baseline
+          - adverse
+          - severely_adverse
+          - custom
+          - reverse
+      - name: status
+        in: query
+        required: false
+        description: Filter by status
+        schema:
+          type: string
+          enum:
+          - draft
+          - approved
+          - active
+          - archived
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        scenario_id:
+                          type: string
+                          description: Unique scenario identifier
+                          format: uuid
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        scenario_name:
+                          type: string
+                          description: Scenario display name
+                          example: Severe U.S. Recession with Global Spillover
+                        scenario_type:
+                          type: string
+                          description: Scenario classification
+                          example: severely_adverse
+                          enum:
+                          - baseline
+                          - adverse
+                          - severely_adverse
+                          - custom
+                          - reverse
+                        status:
+                          type: string
+                          description: Scenario lifecycle status
+                          example: approved
+                          enum:
+                          - draft
+                          - approved
+                          - active
+                          - archived
+                        macroeconomic_variables:
+                          type: object
+                          description: Macroeconomic variable projections
+                          properties:
+                            gdp_growth:
+                              type: number
+                              description: GDP growth rate (%)
+                              example: -4.5
+                            unemployment_rate:
+                              type: number
+                              description: Unemployment rate (%)
+                              example: 10.2
+                            fed_funds_rate:
+                              type: number
+                              description: Federal funds rate (%)
+                              example: 0.25
+                            house_price_index_change:
+                              type: number
+                              description: HPI change (%)
+                              example: -25.0
+                        time_horizon_quarters:
+                          type: integer
+                          description: Scenario projection horizon in quarters
+                          example: 9
+                        created_by:
+                          type: string
+                          description: Scenario author
+                          example: risk-analytics-team
+                        approved_by:
+                          type: string
+                          description: Approving authority
+                          example: Chief Risk Officer
+                      required:
+                      - scenario_id
+                      - scenario_name
+                      - scenario_type
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createStressScenario
+      summary: Create stress test scenario
+      description: Define a new stress test scenario with macroeconomic variable projections. CCAR/DFAST scenarios must include
+        Federal Reserve-prescribed variables. Custom scenarios support institution-specific risk factors. New scenarios are
+        created in 'draft' status and require risk committee approval before use.
+      tags:
+      - Scenarios
+      requestBody:
+        required: true
+        description: Create stress test scenario request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scenario_name:
+                  type: string
+                  description: Scenario name
+                  example: Custom - Cyberattack with Liquidity Stress
+                scenario_type:
+                  type: string
+                  description: Scenario type
+                  enum:
+                  - baseline
+                  - adverse
+                  - severely_adverse
+                  - custom
+                  - reverse
+                description:
+                  type: string
+                  description: Scenario narrative and assumptions
+                macroeconomic_variables:
+                  type: object
+                  description: Variable projections over horizon
+                time_horizon_quarters:
+                  type: integer
+                  description: Projection horizon in quarters
+                  example: 9
+                custom_risk_factors:
+                  type: array
+                  description: Institution-specific risk factors
+                  items:
+                    type: object
+              required:
+              - scenario_name
+              - scenario_type
+              - time_horizon_quarters
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenario_id:
+                    type: string
+                    description: Unique scenario identifier
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  scenario_name:
+                    type: string
+                    description: Scenario display name
+                    example: Severe U.S. Recession with Global Spillover
+                  scenario_type:
+                    type: string
+                    description: Scenario classification
+                    example: severely_adverse
+                    enum:
+                    - baseline
+                    - adverse
+                    - severely_adverse
+                    - custom
+                    - reverse
+                  status:
+                    type: string
+                    description: Scenario lifecycle status
+                    example: approved
+                    enum:
+                    - draft
+                    - approved
+                    - active
+                    - archived
+                  macroeconomic_variables:
+                    type: object
+                    description: Macroeconomic variable projections
+                    properties:
+                      gdp_growth:
+                        type: number
+                        description: GDP growth rate (%)
+                        example: -4.5
+                      unemployment_rate:
+                        type: number
+                        description: Unemployment rate (%)
+                        example: 10.2
+                      fed_funds_rate:
+                        type: number
+                        description: Federal funds rate (%)
+                        example: 0.25
+                      house_price_index_change:
+                        type: number
+                        description: HPI change (%)
+                        example: -25.0
+                  time_horizon_quarters:
+                    type: integer
+                    description: Scenario projection horizon in quarters
+                    example: 9
+                  created_by:
+                    type: string
+                    description: Scenario author
+                    example: risk-analytics-team
+                  approved_by:
+                    type: string
+                    description: Approving authority
+                    example: Chief Risk Officer
+                required:
+                - scenario_id
+                - scenario_name
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /stress-tests/scenarios/{scenario_id}:
+    get:
+      operationId: getStressScenario
+      summary: Get scenario details
+      description: Retrieve complete stress test scenario details including macroeconomic variable paths, custom risk factors,
+        approval history, and linked test results.
+      tags:
+      - Scenarios
+      parameters:
+      - name: scenario_id
+        in: path
+        required: true
+        description: Unique scenario id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenario_id:
+                    type: string
+                    description: Unique scenario identifier
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  scenario_name:
+                    type: string
+                    description: Scenario display name
+                    example: Severe U.S. Recession with Global Spillover
+                  scenario_type:
+                    type: string
+                    description: Scenario classification
+                    example: severely_adverse
+                    enum:
+                    - baseline
+                    - adverse
+                    - severely_adverse
+                    - custom
+                    - reverse
+                  status:
+                    type: string
+                    description: Scenario lifecycle status
+                    example: approved
+                    enum:
+                    - draft
+                    - approved
+                    - active
+                    - archived
+                  macroeconomic_variables:
+                    type: object
+                    description: Macroeconomic variable projections
+                    properties:
+                      gdp_growth:
+                        type: number
+                        description: GDP growth rate (%)
+                        example: -4.5
+                      unemployment_rate:
+                        type: number
+                        description: Unemployment rate (%)
+                        example: 10.2
+                      fed_funds_rate:
+                        type: number
+                        description: Federal funds rate (%)
+                        example: 0.25
+                      house_price_index_change:
+                        type: number
+                        description: HPI change (%)
+                        example: -25.0
+                  time_horizon_quarters:
+                    type: integer
+                    description: Scenario projection horizon in quarters
+                    example: 9
+                  created_by:
+                    type: string
+                    description: Scenario author
+                    example: risk-analytics-team
+                  approved_by:
+                    type: string
+                    description: Approving authority
+                    example: Chief Risk Officer
+                required:
+                - scenario_id
+                - scenario_name
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /stress-tests/run:
+    post:
+      operationId: runStressTest
+      summary: Execute stress test
+      description: Execute a stress test applying a defined scenario to the institution's portfolio. Computes projected losses,
+        revenue impacts, and capital ratios across the scenario time horizon. Supports full portfolio or segmented analysis
+        by business line, product type, or geographic region.
+      tags:
+      - Test Execution
+      requestBody:
+        required: true
+        description: Execute stress test request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scenario_id:
+                  type: string
+                  description: Scenario to apply
+                  format: uuid
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                portfolio_scope:
+                  type: string
+                  description: Portfolio scope
+                  example: full
+                  enum:
+                  - full
+                  - credit
+                  - market
+                  - operational
+                  - custom_segment
+                segment_filter:
+                  type: object
+                  description: Segment filter for custom_segment scope
+                include_second_order:
+                  type: boolean
+                  description: Include second-order effects (e.g., behavioral changes)
+                  example: true
+                output_granularity:
+                  type: string
+                  description: Result granularity
+                  example: business_line
+                  enum:
+                  - summary
+                  - business_line
+                  - product
+                  - detailed
+              required:
+              - scenario_id
+      responses:
+        '202':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  test_id:
+                    type: string
+                    description: Stress test execution identifier
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  scenario_id:
+                    type: string
+                    description: Applied scenario
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  status:
+                    type: string
+                    description: Execution status
+                    example: running
+                    enum:
+                    - running
+                    - complete
+                    - failed
+                  started_at:
+                    type: string
+                    description: Test start timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  estimated_completion_minutes:
+                    type: integer
+                    description: Estimated runtime in minutes
+                    example: 45
+                required:
+                - test_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /stress-tests/{test_id}/results:
+    get:
+      operationId: getStressTestResults
+      summary: Get stress test results
+      description: Retrieve results from a completed stress test including projected losses by risk type, revenue impacts,
+        pre-provision net revenue (PPNR), and capital ratio projections (CET1, Tier 1, Total Capital) over the scenario horizon.
+      tags:
+      - Test Execution
+      parameters:
+      - name: test_id
+        in: path
+        required: true
+        description: Unique test id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  test_id:
+                    type: string
+                    description: Stress test identifier
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  scenario_name:
+                    type: string
+                    description: Applied scenario
+                    example: Severe U.S. Recession
+                  status:
+                    type: string
+                    description: Test status
+                    example: complete
+                    enum:
+                    - running
+                    - complete
+                    - failed
+                  projected_losses:
+                    type: object
+                    description: Projected losses by risk type
+                    properties:
+                      credit_losses:
+                        type: number
+                        description: Projected credit losses
+                        format: double
+                        example: 15000.0
+                      market_losses:
+                        type: number
+                        description: Projected market losses
+                        format: double
+                        example: 15000.0
+                      operational_losses:
+                        type: number
+                        description: Projected operational losses
+                        format: double
+                        example: 15000.0
+                  capital_ratios:
+                    type: object
+                    description: Projected minimum capital ratios
+                    properties:
+                      cet1_minimum:
+                        type: number
+                        description: Minimum CET1 ratio (%)
+                        example: 7.2
+                      tier1_minimum:
+                        type: number
+                        description: Minimum Tier 1 ratio (%)
+                        example: 8.8
+                      total_capital_minimum:
+                        type: number
+                        description: Minimum Total Capital ratio (%)
+                        example: 11.4
+                  ppnr_projection:
+                    type: number
+                    description: Pre-Provision Net Revenue projection
+                    format: double
+                    example: 15000.0
+                  completed_at:
+                    type: string
+                    description: Test completion timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - test_id
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /stress-tests/capital-adequacy:
+    get:
+      operationId: getCapitalAdequacy
+      summary: Get capital adequacy summary
+      description: Retrieve current and stressed capital adequacy ratios including CET1, Tier 1, Total Capital, and Leverage
+        ratios. Compares current ratios against regulatory minimums, stress test minimums, and internal capital targets. Used
+        for ICAAP reporting and capital planning.
+      tags:
+      - Capital Analysis
+      parameters:
+      - name: as_of_date
+        in: query
+        required: false
+        description: Capital data as-of date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of_date:
+                    type: string
+                    description: Capital data as-of date
+                    format: date
+                    example: '2025-06-30'
+                  current_cet1:
+                    type: number
+                    description: Current CET1 ratio (%)
+                    example: 12.4
+                  current_tier1:
+                    type: number
+                    description: Current Tier 1 ratio (%)
+                    example: 14.1
+                  current_total_capital:
+                    type: number
+                    description: Current Total Capital ratio (%)
+                    example: 16.8
+                  regulatory_minimum_cet1:
+                    type: number
+                    description: Regulatory minimum CET1 (%)
+                    example: 4.5
+                  stress_buffer:
+                    type: number
+                    description: Stress Capital Buffer (%)
+                    example: 2.5
+                  capital_surplus:
+                    type: number
+                    description: Capital surplus over requirements
+                    format: double
+                    example: 15000.0
+                  well_capitalized:
+                    type: boolean
+                    description: Whether institution meets well-capitalized thresholds
+                    example: true
+                required:
+                - as_of_date
+                - current_cet1
+                - well_capitalized
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /stress-tests/reverse:
+    post:
+      operationId: runReverseStressTest
+      summary: Run reverse stress test
+      description: Execute a reverse stress test to identify scenarios that would cause the institution to breach capital
+        adequacy thresholds (e.g., CET1 falling below 4.5%). Works backwards from a defined failure point to determine the
+        severity of conditions required to reach it. Required under Basel III Pillar 2 and used for recovery planning.
+      tags:
+      - Capital Analysis
+      requestBody:
+        required: true
+        description: Run reverse stress test request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                failure_metric:
+                  type: string
+                  description: Capital metric to breach
+                  example: cet1
+                  enum:
+                  - cet1
+                  - tier1
+                  - total_capital
+                  - leverage_ratio
+                failure_threshold:
+                  type: number
+                  description: Threshold value to breach (%)
+                  example: 4.5
+                risk_dimensions:
+                  type: array
+                  description: Risk dimensions to stress
+                  items:
+                    type: string
+                    example: credit_losses
+                time_horizon_quarters:
+                  type: integer
+                  description: Time horizon in quarters
+                  example: 4
+              required:
+              - failure_metric
+              - failure_threshold
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reverse_test_id:
+                    type: string
+                    description: Reverse stress test identifier
+                    format: uuid
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  failure_metric:
+                    type: string
+                    description: Target metric
+                    example: cet1
+                  failure_threshold:
+                    type: number
+                    description: Target threshold
+                    example: 4.5
+                  scenario_severity:
+                    type: object
+                    description: Conditions required to breach threshold
+                    properties:
+                      gdp_decline_required:
+                        type: number
+                        description: Required GDP decline (%)
+                        example: -8.2
+                      unemployment_required:
+                        type: number
+                        description: Required unemployment rate (%)
+                        example: 14.5
+                      credit_loss_rate_required:
+                        type: number
+                        description: Required credit loss rate (%)
+                        example: 6.8
+                  probability_assessment:
+                    type: string
+                    description: Assessed probability of scenario
+                    example: very_unlikely
+                    enum:
+                    - extremely_unlikely
+                    - very_unlikely
+                    - unlikely
+                    - plausible
+                required:
+                - reverse_test_id
+                - failure_metric
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

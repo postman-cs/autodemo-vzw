@@ -1,0 +1,876 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Document Archival API
+  description: >-
+    Long-term document archival with configurable retention policies, tiered storage management, legal hold
+    enforcement, and regulatory compliance for SEC Rule 17a-4, SOX, and FINRA recordkeeping requirements. Supports
+    automatic archival based on document age and access patterns, with retrieval times ranging from milliseconds
+    (standard tier) to hours (deep archive).
+  version: 1.0.4
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-docs-archival
+  x-acme-domain: docs
+servers:
+  - url: https://af-docs-archival.api.acmefin.com/v1
+    description: Production
+  - url: https://af-docs-archival.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Archives
+    description: Archive, retrieve, and manage long-term document storage with legal hold capabilities
+  - name: Retention Policies
+    description: Configure document retention policies aligned with regulatory requirements
+paths:
+  /archives:
+    get:
+      operationId: listArchives
+      summary: List archived documents
+      description: >-
+        Retrieve archived document records with filtering by retention policy, archive tier, legal hold
+        status, and archival date. Documents under legal hold are flagged to prevent accidental purging.
+      tags:
+        - Archives
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: archive_tier
+          in: query
+          required: false
+          description: Filter by storage tier
+          schema:
+            type: "string"
+            enum:
+              - standard
+              - infrequent_access
+              - glacier
+              - deep_archive
+        - name: legal_hold
+          in: query
+          required: false
+          description: Filter by legal hold status
+          schema:
+            type: "boolean"
+        - name: retention_policy
+          in: query
+          required: false
+          description: Filter by retention policy
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        archive_id:
+                          type: string
+                          description: Archive record identifier
+                          format: uuid
+                          example: "arc-6b7c8d9e-f0a1-2345-bcde-789012345678"
+                        document_id:
+                          type: string
+                          description: Original document identifier
+                          format: uuid
+                          example: "doc-8f9a0b1c"
+                        archive_tier:
+                          type: string
+                          description: Storage tier for cost management
+                          example: "standard"
+                          enum:
+                            - standard
+                            - infrequent_access
+                            - glacier
+                            - deep_archive
+                        retention_policy:
+                          type: string
+                          description: Applied retention policy name
+                          example: "regulatory_10yr"
+                        retention_expires_at:
+                          type: string
+                          description: When the retention period expires
+                          format: date-time
+                          example: "2035-03-15T00:00:00Z"
+                        legal_hold:
+                          type: boolean
+                          description: Whether the document is under legal hold
+                          example: false
+                        original_size_bytes:
+                          type: integer
+                          description: Original document size
+                          example: 245862
+                        compressed_size_bytes:
+                          type: integer
+                          description: Compressed archive size
+                          example: 98345
+                        archived_at:
+                          type: string
+                          description: When the document was archived
+                          format: date-time
+                          example: "2025-03-15T02:00:00Z"
+                        archived_by:
+                          type: string
+                          description: User or system that initiated archival
+                          example: "system:retention-scheduler"
+                      required:
+                        - archive_id
+                        - document_id
+                        - archive_tier
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: archiveDocument
+      summary: Archive document
+      description: >-
+        Archive a document from the active document management system to long-term storage. The document is
+        compressed, encrypted, and stored according to the specified retention policy. Original metadata and
+        version history are preserved.
+      tags:
+        - Archives
+      requestBody:
+        required: true
+        description: Archive document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    document_id:
+                      type: string
+                      description: Document to archive
+                      format: uuid
+                      example: "doc-8f9a0b1c"
+                    retention_policy:
+                      type: string
+                      description: Retention policy to apply
+                      example: "regulatory_10yr"
+                    archive_tier:
+                      type: string
+                      description: Target storage tier
+                      example: "standard"
+                      enum:
+                        - standard
+                        - infrequent_access
+                        - glacier
+                        - deep_archive
+                    reason:
+                      type: string
+                      description: Reason for archival
+                      example: "Regulatory retention - loan closed 2024-12-31"
+                    preserve_active_copy:
+                      type: boolean
+                      description: Keep a copy in the active document system
+                      example: false
+              required:
+                - document_id
+                - retention_policy
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archive_id:
+                    type: string
+                    description: Archive record identifier
+                    format: uuid
+                    example: "arc-6b7c8d9e-f0a1-2345-bcde-789012345678"
+                  document_id:
+                    type: string
+                    description: Original document identifier
+                    format: uuid
+                    example: "doc-8f9a0b1c"
+                  archive_tier:
+                    type: string
+                    description: Storage tier for cost management
+                    example: "standard"
+                    enum:
+                      - standard
+                      - infrequent_access
+                      - glacier
+                      - deep_archive
+                  retention_policy:
+                    type: string
+                    description: Applied retention policy name
+                    example: "regulatory_10yr"
+                  retention_expires_at:
+                    type: string
+                    description: When the retention period expires
+                    format: date-time
+                    example: "2035-03-15T00:00:00Z"
+                  legal_hold:
+                    type: boolean
+                    description: Whether the document is under legal hold
+                    example: false
+                  original_size_bytes:
+                    type: integer
+                    description: Original document size
+                    example: 245862
+                  compressed_size_bytes:
+                    type: integer
+                    description: Compressed archive size
+                    example: 98345
+                  archived_at:
+                    type: string
+                    description: When the document was archived
+                    format: date-time
+                    example: "2025-03-15T02:00:00Z"
+                  archived_by:
+                    type: string
+                    description: User or system that initiated archival
+                    example: "system:retention-scheduler"
+                required:
+                  - archive_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /archives/{archive_id}:
+    get:
+      operationId: getArchive
+      summary: Retrieve archived document
+      description: >-
+        Retrieve metadata and request restoration of an archived document. For glacier and deep archive
+        tiers, restoration is asynchronous and may take 1-12 hours depending on the tier. Standard and
+        infrequent access tiers return download URLs immediately.
+      tags:
+        - Archives
+      parameters:
+        - name: archive_id
+          in: path
+          required: true
+          description: Unique archive id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archive_id:
+                    type: string
+                    description: Archive record identifier
+                    format: uuid
+                    example: "arc-6b7c8d9e-f0a1-2345-bcde-789012345678"
+                  document_id:
+                    type: string
+                    description: Original document identifier
+                    format: uuid
+                    example: "doc-8f9a0b1c"
+                  archive_tier:
+                    type: string
+                    description: Storage tier for cost management
+                    example: "standard"
+                    enum:
+                      - standard
+                      - infrequent_access
+                      - glacier
+                      - deep_archive
+                  retention_policy:
+                    type: string
+                    description: Applied retention policy name
+                    example: "regulatory_10yr"
+                  retention_expires_at:
+                    type: string
+                    description: When the retention period expires
+                    format: date-time
+                    example: "2035-03-15T00:00:00Z"
+                  legal_hold:
+                    type: boolean
+                    description: Whether the document is under legal hold
+                    example: false
+                  original_size_bytes:
+                    type: integer
+                    description: Original document size
+                    example: 245862
+                  compressed_size_bytes:
+                    type: integer
+                    description: Compressed archive size
+                    example: 98345
+                  archived_at:
+                    type: string
+                    description: When the document was archived
+                    format: date-time
+                    example: "2025-03-15T02:00:00Z"
+                  archived_by:
+                    type: string
+                    description: User or system that initiated archival
+                    example: "system:retention-scheduler"
+                  restoration_status:
+                    type: string
+                    description: Restoration status for glacier/deep tiers
+                    example: "not_requested"
+                    enum:
+                      - not_requested
+                      - in_progress
+                      - available
+                      - expired
+                  download_url:
+                    type: string
+                    description: Download URL (available for standard/IA tiers or after restoration)
+                    example: "https://archive.acmefin.com/dl/arc-6b7c8d9e?token=restore123"
+                  download_expires_at:
+                    type: string
+                    description: Download URL expiration
+                    format: date-time
+                    example: "2025-03-16T02:00:00Z"
+                required:
+                  - archive_id
+                  - archive_tier
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /archives/{archive_id}/legal-hold:
+    post:
+      operationId: toggleLegalHold
+      summary: Set legal hold
+      description: >-
+        Place or remove a legal hold on an archived document. Documents under legal hold cannot be purged
+        regardless of retention policy expiration. Legal holds are typically placed in response to
+        litigation, regulatory investigation, or audit requirements.
+      tags:
+        - Archives
+      parameters:
+        - name: archive_id
+          in: path
+          required: true
+          description: Unique archive id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Set legal hold request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    action:
+                      type: string
+                      description: Legal hold action
+                      example: "place"
+                      enum:
+                        - place
+                        - remove
+                    matter_reference:
+                      type: string
+                      description: Legal matter or case reference
+                      example: "LIT-2025-0042"
+                    hold_reason:
+                      type: string
+                      description: Reason for placing or removing hold
+                      example: "Pending litigation - Johnson v. Acme Finance"
+                    authorized_by:
+                      type: string
+                      description: Legal counsel authorizing the hold
+                      example: "Sarah Chen, General Counsel"
+              required:
+                - action
+                - matter_reference
+                - authorized_by
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archive_id:
+                    type: string
+                    description: Archive record
+                    format: uuid
+                    example: "arc-6b7c8d9e"
+                  legal_hold:
+                    type: boolean
+                    description: Current legal hold status
+                    example: true
+                  matter_reference:
+                    type: string
+                    description: Associated legal matter
+                    example: "LIT-2025-0042"
+                  hold_placed_at:
+                    type: string
+                    description: When the hold was placed
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                  authorized_by:
+                    type: string
+                    description: Authorizing counsel
+                    example: "Sarah Chen, General Counsel"
+                required:
+                  - archive_id
+                  - legal_hold
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /retention-policies:
+    get:
+      operationId: listRetentionPolicies
+      summary: List retention policies
+      description: >-
+        Retrieve configured document retention policies. Each policy defines retention duration, target
+        archive tier, auto-archival triggers, and the regulatory basis for the retention requirement.
+      tags:
+        - Retention Policies
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        policy_id:
+                          type: string
+                          description: Retention policy identifier
+                          format: uuid
+                          example: "ret-7c8d9e0f-a1b2-3456-cdef-890123456789"
+                        policy_name:
+                          type: string
+                          description: Policy display name
+                          example: "Regulatory 10-Year Retention"
+                        retention_years:
+                          type: integer
+                          description: Number of years to retain documents
+                          example: 10
+                        document_types:
+                          type: array
+                          description: Document types this policy applies to
+                          items:
+                            type: string
+                            example: "loan_agreement"
+                        archive_tier:
+                          type: string
+                          description: Target storage tier after archival
+                          example: "standard"
+                          enum:
+                            - standard
+                            - infrequent_access
+                            - glacier
+                            - deep_archive
+                        auto_archive_after_days:
+                          type: integer
+                          description: Days after last access before auto-archival
+                          example: 365
+                        auto_purge:
+                          type: boolean
+                          description: Whether to automatically purge after retention expires
+                          example: false
+                        is_active:
+                          type: boolean
+                          description: Whether this policy is active
+                          example: true
+                        regulatory_basis:
+                          type: string
+                          description: Regulatory requirement driving this policy
+                          example: "SEC Rule 17a-4, SOX Section 802"
+                      required:
+                        - policy_id
+                        - policy_name
+                        - retention_years
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

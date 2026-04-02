@@ -1,0 +1,1372 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance International Payments API
+  description: >-
+    Cross-border payment processing with real-time FX quotes, SWIFT gpi tracking, and comprehensive beneficiary
+    management. Supports SWIFT, SEPA, and local clearing rails with integrated OFAC/sanctions screening, KYC/AML
+    compliance, and nostro/vostro account settlement across 180+ countries and 45 currencies.
+  version: 2.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-payments-international
+  x-acme-domain: payments
+servers:
+  - url: https://af-payments-international.api.acmefin.com/v1
+    description: Production
+  - url: https://af-payments-international.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Cross-Border Transfers
+    description: Initiate and track cross-border payment transfers with SWIFT gpi visibility
+  - name: FX Quotes
+    description: Foreign exchange rate quotes and indicative rates for supported corridors
+  - name: Beneficiary Management
+    description: Manage international payment beneficiary profiles with KYC/AML verification
+paths:
+  /transfers:
+    get:
+      operationId: listInternationalTransfers
+      summary: List international transfers
+      description: >-
+        Retrieve cross-border payment transfers with filtering by corridor, status, payment rail, and
+        compliance status. Includes SWIFT gpi tracking data where available.
+      tags:
+        - Cross-Border Transfers
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+        - name: payment_rail
+          in: query
+          required: false
+          description: Filter by payment_rail
+          schema:
+            type: "string"
+        - name: destination_currency
+          in: query
+          required: false
+          description: Filter by destination_currency
+          schema:
+            type: "string"
+        - name: date_from
+          in: query
+          required: false
+          description: Filter by date_from
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transfer_id:
+                          type: string
+                          description: Cross-border transfer identifier
+                          format: uuid
+                        source_currency:
+                          type: string
+                          description: Originating currency (ISO 4217)
+                          example: "USD"
+                        destination_currency:
+                          type: string
+                          description: Destination currency (ISO 4217)
+                          example: "EUR"
+                        source_amount:
+                          type: number
+                          description: Amount in source currency
+                          format: double
+                          example: 10000.0
+                        destination_amount:
+                          type: number
+                          description: Amount in destination currency
+                          format: double
+                          example: 9215.5
+                        fx_rate:
+                          type: number
+                          description: Applied foreign exchange rate
+                          format: double
+                          example: 0.92155
+                        status:
+                          type: string
+                          enum:
+                            - pending_compliance
+                            - approved
+                            - processing
+                            - in_transit
+                            - delivered
+                            - returned
+                            - blocked
+                        payment_rail:
+                          type: string
+                          description: Transfer network used
+                          enum:
+                            - SWIFT
+                            - SEPA
+                            - local_clearing
+                            - blockchain
+                        swift_ref:
+                          type: string
+                          description: SWIFT UETR (Unique End-to-End Transaction Reference)
+                          example: "eb6305c2-9824-4832-a234-1c7b849ae5f5"
+                        beneficiary_id:
+                          type: string
+                          format: uuid
+                        purpose_code:
+                          type: string
+                          description: Purpose of payment per local regulations
+                          example: "P0801"
+                        charges:
+                          type: string
+                          description: SWIFT charge allocation (OUR/BEN/SHA)
+                          enum:
+                            - OUR
+                            - BEN
+                            - SHA
+                      required:
+                        - transfer_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: initiateTransfer
+      summary: Initiate international transfer
+      description: >-
+        Submit a cross-border payment. Requires a valid FX quote and verified beneficiary. The transfer
+        undergoes OFAC/sanctions screening and local regulatory compliance checks before processing.
+        Supports SWIFT, SEPA, and local clearing rails.
+      tags:
+        - Cross-Border Transfers
+      requestBody:
+        required: true
+        description: Initiate international transfer request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    quote_id:
+                      type: string
+                      format: uuid
+                    beneficiary_id:
+                      type: string
+                      format: uuid
+                    purpose_code:
+                      type: string
+                      description: Purpose of payment per local regulations
+                      example: "P0801"
+                    charges:
+                      type: string
+                      description: SWIFT charge allocation (OUR/BEN/SHA)
+                      enum:
+                        - OUR
+                        - BEN
+                        - SHA
+                    remittance_info:
+                      type: string
+                      description: Payment reference for the beneficiary
+                      maxLength: 140
+                    source_of_funds:
+                      type: string
+                      enum:
+                        - salary
+                        - business_revenue
+                        - investment
+                        - savings
+                        - other
+              required:
+                - quote_id
+                - beneficiary_id
+                - purpose_code
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transfer_id:
+                    type: string
+                    description: Cross-border transfer identifier
+                    format: uuid
+                  source_currency:
+                    type: string
+                    description: Originating currency (ISO 4217)
+                    example: "USD"
+                  destination_currency:
+                    type: string
+                    description: Destination currency (ISO 4217)
+                    example: "EUR"
+                  source_amount:
+                    type: number
+                    description: Amount in source currency
+                    format: double
+                    example: 10000.0
+                  destination_amount:
+                    type: number
+                    description: Amount in destination currency
+                    format: double
+                    example: 9215.5
+                  fx_rate:
+                    type: number
+                    description: Applied foreign exchange rate
+                    format: double
+                    example: 0.92155
+                  status:
+                    type: string
+                    enum:
+                      - pending_compliance
+                      - approved
+                      - processing
+                      - in_transit
+                      - delivered
+                      - returned
+                      - blocked
+                  payment_rail:
+                    type: string
+                    description: Transfer network used
+                    enum:
+                      - SWIFT
+                      - SEPA
+                      - local_clearing
+                      - blockchain
+                  swift_ref:
+                    type: string
+                    description: SWIFT UETR (Unique End-to-End Transaction Reference)
+                    example: "eb6305c2-9824-4832-a234-1c7b849ae5f5"
+                  beneficiary_id:
+                    type: string
+                    format: uuid
+                  purpose_code:
+                    type: string
+                    description: Purpose of payment per local regulations
+                    example: "P0801"
+                  charges:
+                    type: string
+                    description: SWIFT charge allocation (OUR/BEN/SHA)
+                    enum:
+                      - OUR
+                      - BEN
+                      - SHA
+                required:
+                  - transfer_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transfers/{transfer_id}:
+    get:
+      operationId: getTransfer
+      summary: Get international transfer
+      description: >-
+        Retrieve transfer details including FX rate, SWIFT tracking (UETR), correspondent bank chain, and
+        compliance screening results.
+      tags:
+        - Cross-Border Transfers
+      parameters:
+        - name: transfer_id
+          in: path
+          required: true
+          description: Unique transfer id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transfer_id:
+                    type: string
+                    description: Cross-border transfer identifier
+                    format: uuid
+                  source_currency:
+                    type: string
+                    description: Originating currency (ISO 4217)
+                    example: "USD"
+                  destination_currency:
+                    type: string
+                    description: Destination currency (ISO 4217)
+                    example: "EUR"
+                  source_amount:
+                    type: number
+                    description: Amount in source currency
+                    format: double
+                    example: 10000.0
+                  destination_amount:
+                    type: number
+                    description: Amount in destination currency
+                    format: double
+                    example: 9215.5
+                  fx_rate:
+                    type: number
+                    description: Applied foreign exchange rate
+                    format: double
+                    example: 0.92155
+                  status:
+                    type: string
+                    enum:
+                      - pending_compliance
+                      - approved
+                      - processing
+                      - in_transit
+                      - delivered
+                      - returned
+                      - blocked
+                  payment_rail:
+                    type: string
+                    description: Transfer network used
+                    enum:
+                      - SWIFT
+                      - SEPA
+                      - local_clearing
+                      - blockchain
+                  swift_ref:
+                    type: string
+                    description: SWIFT UETR (Unique End-to-End Transaction Reference)
+                    example: "eb6305c2-9824-4832-a234-1c7b849ae5f5"
+                  beneficiary_id:
+                    type: string
+                    format: uuid
+                  purpose_code:
+                    type: string
+                    description: Purpose of payment per local regulations
+                    example: "P0801"
+                  charges:
+                    type: string
+                    description: SWIFT charge allocation (OUR/BEN/SHA)
+                    enum:
+                      - OUR
+                      - BEN
+                      - SHA
+                required:
+                  - transfer_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /transfers/{transfer_id}/tracking:
+    get:
+      operationId: trackTransfer
+      summary: Track SWIFT transfer
+      description: >-
+        Retrieve real-time SWIFT gpi tracking information. Shows the payment's progress through
+        correspondent banks with timestamps and status updates from each institution in the chain.
+      tags:
+        - Cross-Border Transfers
+      parameters:
+        - name: transfer_id
+          in: path
+          required: true
+          description: Unique transfer id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transfer_id:
+                    type: string
+                    description: Cross-border transfer identifier
+                    format: uuid
+                  uetr:
+                    type: string
+                    description: SWIFT UETR (Unique End-to-End Transaction Reference)
+                    example: "eb6305c2-9824-4832-a234-1c7b849ae5f5"
+                  status:
+                    type: string
+                  tracker_events:
+                    type: array
+                    description: Ordered list of gpi tracker status updates from correspondent banks
+                    items:
+                      type: object
+                required:
+                  - transfer_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /transfers/{transfer_id}/compliance:
+    get:
+      operationId: getComplianceStatus
+      summary: Get compliance status
+      description: >-
+        Retrieve sanctions screening and regulatory compliance results for a transfer. Includes OFAC, EU
+        sanctions list, and local regulatory check outcomes.
+      tags:
+        - Cross-Border Transfers
+      parameters:
+        - name: transfer_id
+          in: path
+          required: true
+          description: Unique transfer id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transfer_id:
+                    type: string
+                    description: Cross-border transfer identifier
+                    format: uuid
+                  ofac_result:
+                    type: string
+                    enum:
+                      - clear
+                      - potential_match
+                      - blocked
+                  sanctions_checked_at:
+                    type: string
+                    format: date-time
+                  regulatory_holds:
+                    type: array
+                    description: Active regulatory holds on the transfer
+                    items:
+                      type: object
+                required:
+                  - transfer_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /fx/quotes:
+    post:
+      operationId: getFxQuote
+      summary: Get FX quote
+      description: >-
+        Request a live foreign exchange quote for a currency pair. Quotes are locked for 30 seconds and
+        include the all-in rate (mid-market + spread) and transfer fee. Rate is guaranteed if the transfer
+        is initiated before expiry.
+      tags:
+        - FX Quotes
+      requestBody:
+        required: true
+        description: Get FX quote request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    source_currency:
+                      type: string
+                      description: Originating currency (ISO 4217)
+                      example: "USD"
+                    destination_currency:
+                      type: string
+                      description: Destination currency (ISO 4217)
+                      example: "EUR"
+                    source_amount:
+                      type: number
+                      description: Amount in source currency
+                      format: double
+                      example: 10000.0
+                    payment_rail:
+                      type: string
+                      enum:
+                        - SWIFT
+                        - SEPA
+                        - local_clearing
+              required:
+                - source_currency
+                - destination_currency
+                - source_amount
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                    format: uuid
+                  source_currency:
+                    type: string
+                    description: Originating currency (ISO 4217)
+                    example: "USD"
+                  destination_currency:
+                    type: string
+                    description: Destination currency (ISO 4217)
+                    example: "EUR"
+                  rate:
+                    type: number
+                    description: Quoted FX rate (mid-market + spread)
+                    format: double
+                    example: 0.92155
+                  spread_bps:
+                    type: integer
+                    description: Spread in basis points above mid-market
+                    example: 25
+                  source_amount:
+                    type: number
+                    description: Amount in source currency
+                    format: double
+                    example: 10000.0
+                  destination_amount:
+                    type: number
+                    description: Amount in destination currency
+                    format: double
+                    example: 9215.5
+                  fee:
+                    type: number
+                    description: Transfer fee in source currency
+                    format: double
+                    example: 25.0
+                  expires_at:
+                    type: string
+                    description: Quote expiration (typically 30 seconds)
+                    format: date-time
+                required:
+                  - quote_id
+                  - rate
+                  - expires_at
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /fx/rates:
+    get:
+      operationId: getIndicativeRates
+      summary: Get indicative FX rates
+      description: >-
+        Retrieve indicative (non-binding) exchange rates for supported currency corridors. Rates are
+        refreshed every 60 seconds from interbank feeds. Use /fx/quotes for binding rates.
+      tags:
+        - FX Quotes
+      parameters:
+        - name: base_currency
+          in: query
+          required: true
+          description: Base currency code
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  base_currency:
+                    type: string
+                    example: "USD"
+                  rates:
+                    type: array
+                    description: Currency pair indicative rates
+                    items:
+                      type: object
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - base_currency
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /beneficiaries:
+    get:
+      operationId: listBeneficiaries
+      summary: List beneficiaries
+      description: >-
+        Retrieve stored beneficiary profiles with compliance verification status. Only verified
+        beneficiaries can receive transfers.
+      tags:
+        - Beneficiary Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: country
+          in: query
+          required: false
+          description: Filter by country
+          schema:
+            type: "string"
+        - name: compliance_status
+          in: query
+          required: false
+          description: Filter by compliance_status
+          schema:
+            type: "string"
+        - name: account_type
+          in: query
+          required: false
+          description: Filter by account_type
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        beneficiary_id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                          description: Beneficiary legal name
+                          example: "Müller GmbH"
+                        country:
+                          type: string
+                          description: Beneficiary country (ISO 3166-1)
+                          example: "DE"
+                        account_number:
+                          type: string
+                          description: Account number or IBAN
+                          example: "DE89370400440532013000"
+                        swift_bic:
+                          type: string
+                          description: SWIFT BIC code
+                          example: "COBADEFFXXX"
+                          pattern: '^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$'
+                        bank_name:
+                          type: string
+                          example: "Commerzbank AG"
+                        account_type:
+                          type: string
+                          enum:
+                            - individual
+                            - business
+                        compliance_status:
+                          type: string
+                          description: KYC/AML verification status
+                          enum:
+                            - verified
+                            - pending_review
+                            - blocked
+                            - expired
+                      required:
+                        - beneficiary_id
+                        - name
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createBeneficiary
+      summary: Create beneficiary
+      description: >-
+        Register a new international payment beneficiary. Triggers KYC/AML verification including name
+        screening against global sanctions lists. IBAN format is validated for SEPA-zone countries; SWIFT
+        BIC is required for SWIFT-rail payments.
+      tags:
+        - Beneficiary Management
+      requestBody:
+        required: true
+        description: Create beneficiary request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: Beneficiary legal name
+                      example: "Müller GmbH"
+                    country:
+                      type: string
+                      description: Beneficiary country (ISO 3166-1)
+                      example: "DE"
+                    account_number:
+                      type: string
+                      description: Account number or IBAN
+                      example: "DE89370400440532013000"
+                    swift_bic:
+                      type: string
+                      description: SWIFT BIC code
+                      example: "COBADEFFXXX"
+                      pattern: '^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$'
+                    bank_name:
+                      type: string
+                      example: "Commerzbank AG"
+                    account_type:
+                      type: string
+                      enum:
+                        - individual
+                        - business
+              required:
+                - name
+                - country
+                - account_number
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  beneficiary_id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                    description: Beneficiary legal name
+                    example: "Müller GmbH"
+                  country:
+                    type: string
+                    description: Beneficiary country (ISO 3166-1)
+                    example: "DE"
+                  account_number:
+                    type: string
+                    description: Account number or IBAN
+                    example: "DE89370400440532013000"
+                  swift_bic:
+                    type: string
+                    description: SWIFT BIC code
+                    example: "COBADEFFXXX"
+                    pattern: '^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$'
+                  bank_name:
+                    type: string
+                    example: "Commerzbank AG"
+                  account_type:
+                    type: string
+                    enum:
+                      - individual
+                      - business
+                  compliance_status:
+                    type: string
+                    description: KYC/AML verification status
+                    enum:
+                      - verified
+                      - pending_review
+                      - blocked
+                      - expired
+                required:
+                  - beneficiary_id
+                  - compliance_status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /beneficiaries/{beneficiary_id}:
+    get:
+      operationId: getBeneficiary
+      summary: Get beneficiary
+      description: >-
+        Retrieve beneficiary details including bank information, compliance status, and transfer history
+        summary.
+      tags:
+        - Beneficiary Management
+      parameters:
+        - name: beneficiary_id
+          in: path
+          required: true
+          description: Unique beneficiary id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  beneficiary_id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                    description: Beneficiary legal name
+                    example: "Müller GmbH"
+                  country:
+                    type: string
+                    description: Beneficiary country (ISO 3166-1)
+                    example: "DE"
+                  account_number:
+                    type: string
+                    description: Account number or IBAN
+                    example: "DE89370400440532013000"
+                  swift_bic:
+                    type: string
+                    description: SWIFT BIC code
+                    example: "COBADEFFXXX"
+                    pattern: '^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$'
+                  bank_name:
+                    type: string
+                    example: "Commerzbank AG"
+                  account_type:
+                    type: string
+                    enum:
+                      - individual
+                      - business
+                  compliance_status:
+                    type: string
+                    description: KYC/AML verification status
+                    enum:
+                      - verified
+                      - pending_review
+                      - blocked
+                      - expired
+                required:
+                  - beneficiary_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateBeneficiary
+      summary: Update beneficiary
+      description: >-
+        Update beneficiary details. Changes to account or bank information trigger re-verification.
+      tags:
+        - Beneficiary Management
+      parameters:
+        - name: beneficiary_id
+          in: path
+          required: true
+          description: Unique beneficiary id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update beneficiary request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: Beneficiary legal name
+                      example: "Müller GmbH"
+                    account_number:
+                      type: string
+                      description: Account number or IBAN
+                      example: "DE89370400440532013000"
+                    swift_bic:
+                      type: string
+                      description: SWIFT BIC code
+                      example: "COBADEFFXXX"
+                      pattern: '^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$'
+                    bank_name:
+                      type: string
+                      example: "Commerzbank AG"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  beneficiary_id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                    description: Beneficiary legal name
+                    example: "Müller GmbH"
+                  country:
+                    type: string
+                    description: Beneficiary country (ISO 3166-1)
+                    example: "DE"
+                  account_number:
+                    type: string
+                    description: Account number or IBAN
+                    example: "DE89370400440532013000"
+                  swift_bic:
+                    type: string
+                    description: SWIFT BIC code
+                    example: "COBADEFFXXX"
+                    pattern: '^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$'
+                  bank_name:
+                    type: string
+                    example: "Commerzbank AG"
+                  account_type:
+                    type: string
+                    enum:
+                      - individual
+                      - business
+                  compliance_status:
+                    type: string
+                    description: KYC/AML verification status
+                    enum:
+                      - verified
+                      - pending_review
+                      - blocked
+                      - expired
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteBeneficiary
+      summary: Delete beneficiary
+      description: Remove a beneficiary profile. Does not affect previously completed transfers.
+      tags:
+        - Beneficiary Management
+      parameters:
+        - name: beneficiary_id
+          in: path
+          required: true
+          description: Unique beneficiary id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

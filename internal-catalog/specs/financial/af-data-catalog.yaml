@@ -1,0 +1,1795 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Data Catalog API
+  description: >-
+    Centralized metadata catalog for discovering, registering, and governing enterprise datasets. Provides a
+    searchable inventory of all data assets with schema registry integration, lineage visualization, sensitivity
+    classification, and self-service access request workflows. Supports Avro, Protobuf, and JSON Schema formats
+    with configurable compatibility modes for safe schema evolution.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-data-catalog
+  x-acme-domain: data
+servers:
+  - url: https://af-data-catalog.api.acmefin.com/v1
+    description: Production
+  - url: https://af-data-catalog.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Datasets
+    description: Register, search, and manage dataset metadata in the enterprise catalog
+  - name: Schema Registry
+    description: Manage schema definitions with versioning and compatibility enforcement
+  - name: Access Requests
+    description: Request and approve access to cataloged datasets
+  - name: Tags
+    description: Organize catalog assets with a controlled tag vocabulary
+paths:
+  /datasets:
+    get:
+      operationId: listDatasets
+      summary: List datasets
+      description: >-
+        Retrieve cataloged datasets with filters for classification, format, owner, and tags. Results
+        include profiling statistics.
+      tags:
+        - Datasets
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: classification
+          in: query
+          required: false
+          description: Filter by sensitivity classification
+          schema:
+            type: "string"
+            enum:
+              - public
+              - internal
+              - confidential
+              - restricted
+        - name: format
+          in: query
+          required: false
+          description: Filter by storage format
+          schema:
+            type: "string"
+            enum:
+              - parquet
+              - avro
+              - csv
+              - json
+              - delta
+        - name: owner
+          in: query
+          required: false
+          description: Filter by data steward email
+          schema:
+            type: "string"
+        - name: tag
+          in: query
+          required: false
+          description: Filter by tag (key:value)
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        dataset_id:
+                          type: string
+                          description: "Unique dataset identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Fully-qualified dataset name"
+                          example: "finance.transactions.daily"
+                        description:
+                          type: string
+                          description: "Business context and usage guidance for this dataset"
+                        owner:
+                          type: string
+                          description: "Data steward responsible for this dataset"
+                          example: "data-eng@acmefin.com"
+                        classification:
+                          type: string
+                          description: "Data sensitivity classification"
+                          enum:
+                            - public
+                            - internal
+                            - confidential
+                            - restricted
+                        format:
+                          type: string
+                          description: "Storage format"
+                          enum:
+                            - parquet
+                            - avro
+                            - csv
+                            - json
+                            - delta
+                        location:
+                          type: string
+                          description: "Physical storage URI"
+                          example: "s3://acme-datalake/finance/transactions/"
+                        row_count:
+                          type: integer
+                          description: "Approximate row count from last profiling run"
+                          example: 14500000
+                        size_bytes:
+                          type: integer
+                          description: "Storage size in bytes"
+                        tags:
+                          type: array
+                          description: "Catalog tags for discovery"
+                          items:
+                            type: string
+                        created_at:
+                          type: string
+                          description: "Registration timestamp"
+                          format: date-time
+                      required:
+                        - dataset_id
+                        - name
+                        - owner
+                        - classification
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: registerDataset
+      summary: Register dataset
+      description: >-
+        Register a new dataset in the catalog. Triggers an asynchronous profiling job to compute row counts,
+        schema inference, and quality baseline.
+      tags:
+        - Datasets
+      requestBody:
+        required: true
+        description: Register dataset request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Fully-qualified dataset name"
+                    description:
+                      type: string
+                      description: "Business context"
+                    owner:
+                      type: string
+                      description: "Data steward email"
+                    classification:
+                      type: string
+                      enum:
+                        - public
+                        - internal
+                        - confidential
+                        - restricted
+                    format:
+                      type: string
+                      enum:
+                        - parquet
+                        - avro
+                        - csv
+                        - json
+                        - delta
+                    location:
+                      type: string
+                      description: "Storage URI"
+              required:
+                - name
+                - owner
+                - classification
+                - format
+                - location
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dataset_id:
+                    type: string
+                    description: "Unique dataset identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Fully-qualified dataset name"
+                    example: "finance.transactions.daily"
+                  description:
+                    type: string
+                    description: "Business context and usage guidance for this dataset"
+                  owner:
+                    type: string
+                    description: "Data steward responsible for this dataset"
+                    example: "data-eng@acmefin.com"
+                  classification:
+                    type: string
+                    description: "Data sensitivity classification"
+                    enum:
+                      - public
+                      - internal
+                      - confidential
+                      - restricted
+                  format:
+                    type: string
+                    description: "Storage format"
+                    enum:
+                      - parquet
+                      - avro
+                      - csv
+                      - json
+                      - delta
+                  location:
+                    type: string
+                    description: "Physical storage URI"
+                    example: "s3://acme-datalake/finance/transactions/"
+                  row_count:
+                    type: integer
+                    description: "Approximate row count from last profiling run"
+                    example: 14500000
+                  size_bytes:
+                    type: integer
+                    description: "Storage size in bytes"
+                  tags:
+                    type: array
+                    description: "Catalog tags for discovery"
+                    items:
+                      type: string
+                  created_at:
+                    type: string
+                    description: "Registration timestamp"
+                    format: date-time
+                required:
+                  - dataset_id
+                  - name
+                  - owner
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /datasets/{dataset_id}:
+    get:
+      operationId: getDataset
+      summary: Get dataset details
+      description: >-
+        Retrieve complete metadata for a dataset including profiling stats, schema snapshot, and linked
+        lineage nodes.
+      tags:
+        - Datasets
+      parameters:
+        - name: dataset_id
+          in: path
+          required: true
+          description: Unique dataset id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dataset_id:
+                    type: string
+                    description: "Unique dataset identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Fully-qualified dataset name"
+                    example: "finance.transactions.daily"
+                  description:
+                    type: string
+                    description: "Business context and usage guidance for this dataset"
+                  owner:
+                    type: string
+                    description: "Data steward responsible for this dataset"
+                    example: "data-eng@acmefin.com"
+                  classification:
+                    type: string
+                    description: "Data sensitivity classification"
+                    enum:
+                      - public
+                      - internal
+                      - confidential
+                      - restricted
+                  format:
+                    type: string
+                    description: "Storage format"
+                    enum:
+                      - parquet
+                      - avro
+                      - csv
+                      - json
+                      - delta
+                  location:
+                    type: string
+                    description: "Physical storage URI"
+                    example: "s3://acme-datalake/finance/transactions/"
+                  row_count:
+                    type: integer
+                    description: "Approximate row count from last profiling run"
+                    example: 14500000
+                  size_bytes:
+                    type: integer
+                    description: "Storage size in bytes"
+                  tags:
+                    type: array
+                    description: "Catalog tags for discovery"
+                    items:
+                      type: string
+                  created_at:
+                    type: string
+                    description: "Registration timestamp"
+                    format: date-time
+                required:
+                  - dataset_id
+                  - name
+                  - owner
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateDataset
+      summary: Update dataset metadata
+      description: >-
+        Update mutable dataset fields such as description, owner, classification, or tags.
+      tags:
+        - Datasets
+      parameters:
+        - name: dataset_id
+          in: path
+          required: true
+          description: Unique dataset id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update dataset metadata request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    description:
+                      type: string
+                    owner:
+                      type: string
+                    classification:
+                      type: string
+                      enum:
+                        - public
+                        - internal
+                        - confidential
+                        - restricted
+                    tags:
+                      type: array
+                      items:
+                        type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dataset_id:
+                    type: string
+                    description: "Unique dataset identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Fully-qualified dataset name"
+                    example: "finance.transactions.daily"
+                  description:
+                    type: string
+                    description: "Business context and usage guidance for this dataset"
+                  owner:
+                    type: string
+                    description: "Data steward responsible for this dataset"
+                    example: "data-eng@acmefin.com"
+                  classification:
+                    type: string
+                    description: "Data sensitivity classification"
+                    enum:
+                      - public
+                      - internal
+                      - confidential
+                      - restricted
+                  format:
+                    type: string
+                    description: "Storage format"
+                    enum:
+                      - parquet
+                      - avro
+                      - csv
+                      - json
+                      - delta
+                  location:
+                    type: string
+                    description: "Physical storage URI"
+                    example: "s3://acme-datalake/finance/transactions/"
+                  row_count:
+                    type: integer
+                    description: "Approximate row count from last profiling run"
+                    example: 14500000
+                  size_bytes:
+                    type: integer
+                    description: "Storage size in bytes"
+                  tags:
+                    type: array
+                    description: "Catalog tags for discovery"
+                    items:
+                      type: string
+                  created_at:
+                    type: string
+                    description: "Registration timestamp"
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /datasets/{dataset_id}/lineage:
+    get:
+      operationId: getDatasetLineage
+      summary: Get dataset lineage
+      description: >-
+        Retrieve the lineage graph for a dataset showing upstream sources, transformation stages, and
+        downstream consumers.
+      tags:
+        - Datasets
+      parameters:
+        - name: dataset_id
+          in: path
+          required: true
+          description: Unique dataset id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dataset_id:
+                    type: string
+                    description: "Root dataset"
+                  upstream:
+                    type: array
+                    description: "Upstream source nodes"
+                    items:
+                      type: object
+                  downstream:
+                    type: array
+                    description: "Downstream consumer nodes"
+                    items:
+                      type: object
+                  depth:
+                    type: integer
+                    description: "Graph traversal depth"
+                required:
+                  - dataset_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /datasets/search:
+    post:
+      operationId: searchDatasets
+      summary: Search datasets
+      description: >-
+        Full-text and faceted search across all cataloged datasets. Supports query expansion, fuzzy
+        matching, and relevance-ranked results.
+      tags:
+        - Datasets
+      requestBody:
+        required: true
+        description: Search datasets request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    query:
+                      type: string
+                      description: "Free-text search query"
+                    filters:
+                      type: object
+                      description: "Structured filters (classification, format, tags)"
+                    boost_fields:
+                      type: array
+                      description: "Fields to boost in relevance scoring"
+                      items:
+                        type: string
+              required:
+                - query
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    description: "Ranked search results"
+                    items:
+                      type: object
+                  total_hits:
+                    type: integer
+                    description: "Total matching datasets"
+                  facets:
+                    type: object
+                    description: "Facet counts for refinement"
+                required:
+                  - results
+                  - total_hits
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /schemas:
+    get:
+      operationId: listSchemas
+      summary: List schemas
+      description: >-
+        Retrieve all registered schemas with version counts and compatibility configuration.
+      tags:
+        - Schema Registry
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        schema_id:
+                          type: string
+                          description: "Unique schema identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Schema name"
+                          example: "TransactionEvent"
+                        namespace:
+                          type: string
+                          description: "Schema namespace"
+                          example: "com.acmefin.events"
+                        format:
+                          type: string
+                          description: "Schema format"
+                          enum:
+                            - avro
+                            - protobuf
+                            - json-schema
+                        compatibility_mode:
+                          type: string
+                          description: "Schema evolution compatibility mode"
+                          enum:
+                            - backward
+                            - forward
+                            - full
+                            - none
+                        version_count:
+                          type: integer
+                          description: "Number of registered versions"
+                        latest_version:
+                          type: integer
+                          description: "Latest version number"
+                      required:
+                        - schema_id
+                        - name
+                        - format
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: registerSchema
+      summary: Register schema
+      description: >-
+        Register a new schema definition. The schema is validated against the specified format before
+        registration.
+      tags:
+        - Schema Registry
+      requestBody:
+        required: true
+        description: Register schema request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Schema name"
+                    namespace:
+                      type: string
+                      description: "Schema namespace"
+                    format:
+                      type: string
+                      enum:
+                        - avro
+                        - protobuf
+                        - json-schema
+                    compatibility_mode:
+                      type: string
+                      enum:
+                        - backward
+                        - forward
+                        - full
+                        - none
+                    definition:
+                      type: string
+                      description: "Schema definition body"
+              required:
+                - name
+                - format
+                - definition
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schema_id:
+                    type: string
+                    description: "Unique schema identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Schema name"
+                    example: "TransactionEvent"
+                  namespace:
+                    type: string
+                    description: "Schema namespace"
+                    example: "com.acmefin.events"
+                  format:
+                    type: string
+                    description: "Schema format"
+                    enum:
+                      - avro
+                      - protobuf
+                      - json-schema
+                  compatibility_mode:
+                    type: string
+                    description: "Schema evolution compatibility mode"
+                    enum:
+                      - backward
+                      - forward
+                      - full
+                      - none
+                  version_count:
+                    type: integer
+                    description: "Number of registered versions"
+                  latest_version:
+                    type: integer
+                    description: "Latest version number"
+                required:
+                  - schema_id
+                  - name
+                  - format
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /schemas/{schema_id}:
+    get:
+      operationId: getSchema
+      summary: Get schema
+      description: >-
+        Retrieve a schema definition with its full version history and compatibility check results.
+      tags:
+        - Schema Registry
+      parameters:
+        - name: schema_id
+          in: path
+          required: true
+          description: Unique schema id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schema_id:
+                    type: string
+                    description: "Unique schema identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Schema name"
+                    example: "TransactionEvent"
+                  namespace:
+                    type: string
+                    description: "Schema namespace"
+                    example: "com.acmefin.events"
+                  format:
+                    type: string
+                    description: "Schema format"
+                    enum:
+                      - avro
+                      - protobuf
+                      - json-schema
+                  compatibility_mode:
+                    type: string
+                    description: "Schema evolution compatibility mode"
+                    enum:
+                      - backward
+                      - forward
+                      - full
+                      - none
+                  version_count:
+                    type: integer
+                    description: "Number of registered versions"
+                  latest_version:
+                    type: integer
+                    description: "Latest version number"
+                required:
+                  - schema_id
+                  - name
+                  - format
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /schemas/{schema_id}/versions:
+    get:
+      operationId: listSchemaVersions
+      summary: List schema versions
+      description: Retrieve all versions of a schema with diffs between consecutive versions.
+      tags:
+        - Schema Registry
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version:
+                          type: integer
+                          description: "Version number"
+                        checksum:
+                          type: string
+                          description: "Schema content hash"
+                        created_at:
+                          type: string
+                          format: date-time
+                        is_compatible:
+                          type: boolean
+                          description: "Whether this version passed compatibility check"
+                      required:
+                        - version
+                        - checksum
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /access-requests:
+    get:
+      operationId: listAccessRequests
+      summary: List access requests
+      description: Retrieve access requests for datasets, filterable by status and requester.
+      tags:
+        - Access Requests
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by approval status
+          schema:
+            type: "string"
+            enum:
+              - pending
+              - approved
+              - denied
+              - revoked
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        request_id:
+                          type: string
+                          description: "Access request identifier"
+                          format: uuid
+                          readOnly: true
+                        dataset_id:
+                          type: string
+                          description: "Requested dataset"
+                          format: uuid
+                        requester:
+                          type: string
+                          description: "Requesting user or service account"
+                        justification:
+                          type: string
+                          description: "Business justification for access"
+                        access_level:
+                          type: string
+                          description: "Requested permission level"
+                          enum:
+                            - read
+                            - write
+                            - admin
+                        status:
+                          type: string
+                          description: "Approval status"
+                          enum:
+                            - pending
+                            - approved
+                            - denied
+                            - revoked
+                        expires_at:
+                          type: string
+                          description: "Access grant expiration"
+                          format: date-time
+                      required:
+                        - request_id
+                        - dataset_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createAccessRequest
+      summary: Request dataset access
+      description: >-
+        Submit a new access request for a cataloged dataset. Requires a business justification and requested
+        permission level.
+      tags:
+        - Access Requests
+      requestBody:
+        required: true
+        description: Request dataset access request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    dataset_id:
+                      type: string
+                      description: "Target dataset"
+                      format: uuid
+                    justification:
+                      type: string
+                      description: "Business justification"
+                    access_level:
+                      type: string
+                      enum:
+                        - read
+                        - write
+                        - admin
+              required:
+                - dataset_id
+                - justification
+                - access_level
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "Access request identifier"
+                    format: uuid
+                    readOnly: true
+                  dataset_id:
+                    type: string
+                    description: "Requested dataset"
+                    format: uuid
+                  requester:
+                    type: string
+                    description: "Requesting user or service account"
+                  justification:
+                    type: string
+                    description: "Business justification for access"
+                  access_level:
+                    type: string
+                    description: "Requested permission level"
+                    enum:
+                      - read
+                      - write
+                      - admin
+                  status:
+                    type: string
+                    description: "Approval status"
+                    enum:
+                      - pending
+                      - approved
+                      - denied
+                      - revoked
+                  expires_at:
+                    type: string
+                    description: "Access grant expiration"
+                    format: date-time
+                required:
+                  - request_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /access-requests/{request_id}:
+    patch:
+      operationId: updateAccessRequest
+      summary: Approve or deny access request
+      description: >-
+        Update the status of an access request. Only data stewards for the target dataset may approve or
+        deny.
+      tags:
+        - Access Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: Unique request id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Approve or deny access request request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    status:
+                      type: string
+                      enum:
+                        - approved
+                        - denied
+                        - revoked
+                    reviewer_notes:
+                      type: string
+                      description: "Reviewer comments"
+              required:
+                - status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "Access request identifier"
+                    format: uuid
+                    readOnly: true
+                  dataset_id:
+                    type: string
+                    description: "Requested dataset"
+                    format: uuid
+                  requester:
+                    type: string
+                    description: "Requesting user or service account"
+                  justification:
+                    type: string
+                    description: "Business justification for access"
+                  access_level:
+                    type: string
+                    description: "Requested permission level"
+                    enum:
+                      - read
+                      - write
+                      - admin
+                  status:
+                    type: string
+                    description: "Approval status"
+                    enum:
+                      - pending
+                      - approved
+                      - denied
+                      - revoked
+                  expires_at:
+                    type: string
+                    description: "Access grant expiration"
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /tags:
+    get:
+      operationId: listTags
+      summary: List catalog tags
+      description: Retrieve the controlled vocabulary of catalog tags with usage counts.
+      tags:
+        - Tags
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tag_id:
+                          type: string
+                          description: "Tag identifier"
+                          format: uuid
+                          readOnly: true
+                        key:
+                          type: string
+                          description: "Tag key"
+                          example: "domain"
+                        value:
+                          type: string
+                          description: "Tag value"
+                          example: "core-banking"
+                        usage_count:
+                          type: integer
+                          description: "Number of assets using this tag"
+                      required:
+                        - tag_id
+                        - key
+                        - value
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTag
+      summary: Create catalog tag
+      description: Add a new tag to the controlled vocabulary.
+      tags:
+        - Tags
+      requestBody:
+        required: true
+        description: Create catalog tag request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    key:
+                      type: string
+                      description: "Tag key"
+                    value:
+                      type: string
+                      description: "Tag value"
+              required:
+                - key
+                - value
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tag_id:
+                    type: string
+                    description: "Tag identifier"
+                    format: uuid
+                    readOnly: true
+                  key:
+                    type: string
+                    description: "Tag key"
+                    example: "domain"
+                  value:
+                    type: string
+                    description: "Tag value"
+                    example: "core-banking"
+                  usage_count:
+                    type: integer
+                    description: "Number of assets using this tag"
+                required:
+                  - tag_id
+                  - key
+                  - value
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /tags/{tag_id}:
+    get:
+      operationId: getTag
+      summary: Get catalog tag
+      description: Retrieve a catalog tag with usage statistics and linked datasets.
+      tags:
+        - Tags
+      parameters:
+        - name: tag_id
+          in: path
+          required: true
+          description: Unique tag id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tag_id:
+                    type: string
+                    description: "Tag identifier"
+                    format: uuid
+                    readOnly: true
+                  key:
+                    type: string
+                    description: "Tag key"
+                    example: "domain"
+                  value:
+                    type: string
+                    description: "Tag value"
+                    example: "core-banking"
+                  usage_count:
+                    type: integer
+                    description: "Number of assets using this tag"
+                required:
+                  - tag_id
+                  - key
+                  - value
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteTag
+      summary: Delete catalog tag
+      description: >-
+        Remove a tag from the controlled vocabulary. Does not remove tag assignments from datasets.
+      tags:
+        - Tags
+      parameters:
+        - name: tag_id
+          in: path
+          required: true
+          description: Unique tag id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

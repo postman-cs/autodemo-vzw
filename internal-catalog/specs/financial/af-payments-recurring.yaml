@@ -1,0 +1,1150 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Recurring Payments API
+  description: >-
+    Manage recurring payment mandates and automated collection execution across card, ACH, SEPA Direct Debit, and
+    BACS schemes. Supports flexible frequencies, mandate lifecycle management (pause, resume, cancel), smart retry
+    strategies for failed collections, and SEPA DD mandate reference (UMR) generation.
+  version: 2.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-payments-recurring
+  x-acme-domain: payments
+servers:
+  - url: https://af-payments-recurring.api.acmefin.com/v1
+    description: Production
+  - url: https://af-payments-recurring.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Mandates
+    description: Create and manage recurring payment mandates with multi-scheme support
+  - name: Executions
+    description: Track and retry automated payment collection executions
+paths:
+  /mandates:
+    get:
+      operationId: listMandates
+      summary: List mandates
+      description: >-
+        Retrieve recurring payment mandates with filtering by status, scheme, and frequency. Includes next
+        collection date and payment method details.
+      tags:
+        - Mandates
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+        - name: scheme
+          in: query
+          required: false
+          description: Filter by scheme
+          schema:
+            type: "string"
+        - name: customer_id
+          in: query
+          required: false
+          description: Filter by customer_id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        mandate_id:
+                          type: string
+                          description: Recurring payment mandate identifier
+                          format: uuid
+                        customer_id:
+                          type: string
+                          description: Customer account identifier
+                        payment_method_id:
+                          type: string
+                          description: Linked payment method
+                          format: uuid
+                        amount:
+                          type: number
+                          description: Transaction amount
+                          format: double
+                          example: 1500.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        frequency:
+                          type: string
+                          description: Collection frequency
+                          enum:
+                            - weekly
+                            - biweekly
+                            - monthly
+                            - quarterly
+                            - annually
+                        scheme:
+                          type: string
+                          description: Payment collection scheme
+                          enum:
+                            - card_recurring
+                            - ACH
+                            - SEPA_DD
+                            - BACS_DD
+                        status:
+                          type: string
+                          enum:
+                            - active
+                            - paused
+                            - cancelled
+                            - expired
+                            - pending_authorization
+                        start_date:
+                          type: string
+                          description: First collection date
+                          format: date
+                        next_collection_date:
+                          type: string
+                          description: Next scheduled collection
+                          format: date
+                        mandate_reference:
+                          type: string
+                          description: Unique mandate reference (UMR) for SEPA DD
+                          example: "ACME-MND-2025-001"
+                      required:
+                        - mandate_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createMandate
+      summary: Create mandate
+      description: >-
+        Establish a new recurring payment mandate. For SEPA Direct Debit, generates a compliant mandate
+        reference (UMR) and requires debtor authorization via the SDD mandate flow. Card-based recurring
+        mandates store a credential-on-file indicator for subsequent MIT (Merchant Initiated Transaction)
+        processing.
+      tags:
+        - Mandates
+      requestBody:
+        required: true
+        description: Create mandate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    customer_id:
+                      type: string
+                      description: Customer account identifier
+                    payment_method_id:
+                      type: string
+                      description: Linked payment method
+                      format: uuid
+                    amount:
+                      type: number
+                      description: Transaction amount
+                      format: double
+                      example: 1500.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    frequency:
+                      type: string
+                      description: Collection frequency
+                      enum:
+                        - weekly
+                        - biweekly
+                        - monthly
+                        - quarterly
+                        - annually
+                    scheme:
+                      type: string
+                      description: Payment collection scheme
+                      enum:
+                        - card_recurring
+                        - ACH
+                        - SEPA_DD
+                        - BACS_DD
+                    start_date:
+                      type: string
+                      description: First collection date
+                      format: date
+              required:
+                - customer_id
+                - payment_method_id
+                - amount
+                - currency
+                - frequency
+                - scheme
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mandate_id:
+                    type: string
+                    description: Recurring payment mandate identifier
+                    format: uuid
+                  customer_id:
+                    type: string
+                    description: Customer account identifier
+                  payment_method_id:
+                    type: string
+                    description: Linked payment method
+                    format: uuid
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  frequency:
+                    type: string
+                    description: Collection frequency
+                    enum:
+                      - weekly
+                      - biweekly
+                      - monthly
+                      - quarterly
+                      - annually
+                  scheme:
+                    type: string
+                    description: Payment collection scheme
+                    enum:
+                      - card_recurring
+                      - ACH
+                      - SEPA_DD
+                      - BACS_DD
+                  status:
+                    type: string
+                    enum:
+                      - active
+                      - paused
+                      - cancelled
+                      - expired
+                      - pending_authorization
+                  start_date:
+                    type: string
+                    description: First collection date
+                    format: date
+                  next_collection_date:
+                    type: string
+                    description: Next scheduled collection
+                    format: date
+                  mandate_reference:
+                    type: string
+                    description: Unique mandate reference (UMR) for SEPA DD
+                    example: "ACME-MND-2025-001"
+                required:
+                  - mandate_id
+                  - status
+                  - mandate_reference
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mandates/{mandate_id}:
+    get:
+      operationId: getMandate
+      summary: Get mandate
+      description: >-
+        Retrieve mandate details including collection history, next execution date, and authorization
+        status.
+      tags:
+        - Mandates
+      parameters:
+        - name: mandate_id
+          in: path
+          required: true
+          description: Unique mandate id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mandate_id:
+                    type: string
+                    description: Recurring payment mandate identifier
+                    format: uuid
+                  customer_id:
+                    type: string
+                    description: Customer account identifier
+                  payment_method_id:
+                    type: string
+                    description: Linked payment method
+                    format: uuid
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  frequency:
+                    type: string
+                    description: Collection frequency
+                    enum:
+                      - weekly
+                      - biweekly
+                      - monthly
+                      - quarterly
+                      - annually
+                  scheme:
+                    type: string
+                    description: Payment collection scheme
+                    enum:
+                      - card_recurring
+                      - ACH
+                      - SEPA_DD
+                      - BACS_DD
+                  status:
+                    type: string
+                    enum:
+                      - active
+                      - paused
+                      - cancelled
+                      - expired
+                      - pending_authorization
+                  start_date:
+                    type: string
+                    description: First collection date
+                    format: date
+                  next_collection_date:
+                    type: string
+                    description: Next scheduled collection
+                    format: date
+                  mandate_reference:
+                    type: string
+                    description: Unique mandate reference (UMR) for SEPA DD
+                    example: "ACME-MND-2025-001"
+                required:
+                  - mandate_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateMandate
+      summary: Update mandate
+      description: >-
+        Modify mandate parameters such as amount, frequency, or payment method. Changes take effect from the
+        next collection cycle. SEPA DD mandates require debtor re-authorization for certain amendments.
+      tags:
+        - Mandates
+      parameters:
+        - name: mandate_id
+          in: path
+          required: true
+          description: Unique mandate id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update mandate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    amount:
+                      type: number
+                      description: Transaction amount
+                      format: double
+                      example: 1500.0
+                    frequency:
+                      type: string
+                      description: Collection frequency
+                      enum:
+                        - weekly
+                        - biweekly
+                        - monthly
+                        - quarterly
+                        - annually
+                    payment_method_id:
+                      type: string
+                      description: Linked payment method
+                      format: uuid
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mandate_id:
+                    type: string
+                    description: Recurring payment mandate identifier
+                    format: uuid
+                  customer_id:
+                    type: string
+                    description: Customer account identifier
+                  payment_method_id:
+                    type: string
+                    description: Linked payment method
+                    format: uuid
+                  amount:
+                    type: number
+                    description: Transaction amount
+                    format: double
+                    example: 1500.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  frequency:
+                    type: string
+                    description: Collection frequency
+                    enum:
+                      - weekly
+                      - biweekly
+                      - monthly
+                      - quarterly
+                      - annually
+                  scheme:
+                    type: string
+                    description: Payment collection scheme
+                    enum:
+                      - card_recurring
+                      - ACH
+                      - SEPA_DD
+                      - BACS_DD
+                  status:
+                    type: string
+                    enum:
+                      - active
+                      - paused
+                      - cancelled
+                      - expired
+                      - pending_authorization
+                  start_date:
+                    type: string
+                    description: First collection date
+                    format: date
+                  next_collection_date:
+                    type: string
+                    description: Next scheduled collection
+                    format: date
+                  mandate_reference:
+                    type: string
+                    description: Unique mandate reference (UMR) for SEPA DD
+                    example: "ACME-MND-2025-001"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mandates/{mandate_id}/pause:
+    post:
+      operationId: pauseMandate
+      summary: Pause mandate
+      description: >-
+        Temporarily suspend collections on a mandate. Scheduled executions during the pause period are
+        skipped. Resume to reactivate.
+      tags:
+        - Mandates
+      parameters:
+        - name: mandate_id
+          in: path
+          required: true
+          description: Unique mandate id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Pause mandate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    resume_date:
+                      type: string
+                      description: Optional date to automatically resume collections
+                      format: date
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mandates/{mandate_id}/resume:
+    post:
+      operationId: resumeMandate
+      summary: Resume mandate
+      description: >-
+        Reactivate a paused mandate. The next collection is scheduled based on the original frequency from
+        the resume date.
+      tags:
+        - Mandates
+      parameters:
+        - name: mandate_id
+          in: path
+          required: true
+          description: Unique mandate id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mandate_id:
+                    type: string
+                    description: Recurring payment mandate identifier
+                    format: uuid
+                  status:
+                    type: string
+                    example: "active"
+                  next_collection_date:
+                    type: string
+                    description: Next scheduled collection
+                    format: date
+                required:
+                  - mandate_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /mandates/{mandate_id}/cancel:
+    post:
+      operationId: cancelMandate
+      summary: Cancel mandate
+      description: >-
+        Permanently cancel a recurring payment mandate. For SEPA DD, submits a cancellation notification to
+        the debtor's bank. This action cannot be undone.
+      tags:
+        - Mandates
+      parameters:
+        - name: mandate_id
+          in: path
+          required: true
+          description: Unique mandate id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Cancel mandate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: Cancellation reason
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /executions:
+    get:
+      operationId: listExecutions
+      summary: List executions
+      description: >-
+        Retrieve execution history across all mandates. Filter by status to identify failed or retrying
+        collections.
+      tags:
+        - Executions
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+        - name: mandate_id
+          in: query
+          required: false
+          description: Filter by mandate_id
+          schema:
+            type: "string"
+        - name: from_date
+          in: query
+          required: false
+          description: Filter by from_date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        execution_id:
+                          type: string
+                          format: uuid
+                        mandate_id:
+                          type: string
+                          description: Recurring payment mandate identifier
+                          format: uuid
+                        amount:
+                          type: number
+                          description: Transaction amount
+                          format: double
+                          example: 1500.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        status:
+                          type: string
+                          enum:
+                            - scheduled
+                            - processing
+                            - completed
+                            - failed
+                            - skipped
+                            - retrying
+                        attempt_count:
+                          type: integer
+                          description: Number of collection attempts
+                          example: 1
+                        failure_reason:
+                          type: string
+                          description: Reason for failure if applicable
+                          nullable: true
+                        collected_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - execution_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /executions/{execution_id}/retry:
+    post:
+      operationId: retryExecution
+      summary: Retry failed execution
+      description: >-
+        Retry a failed collection attempt. Configurable retry strategies include immediate retry, next-day
+        retry, or retry with an alternative payment method.
+      tags:
+        - Executions
+      parameters:
+        - name: execution_id
+          in: path
+          required: true
+          description: Unique execution id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Retry failed execution request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    retry_strategy:
+                      type: string
+                      description: Retry approach
+                      enum:
+                        - immediate
+                        - next_day
+                        - alternative_method
+                    alternative_payment_method_id:
+                      type: string
+                      description: Alternative payment method (required for alternative_method strategy)
+                      format: uuid
+                      nullable: true
+              required:
+                - retry_strategy
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  execution_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: "retrying"
+                  next_attempt_at:
+                    type: string
+                    format: date-time
+                required:
+                  - execution_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

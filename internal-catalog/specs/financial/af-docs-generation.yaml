@@ -1,0 +1,1122 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Document Generation API
+  description: >-
+    Template-driven document generation engine for producing personalized financial documents at scale. Supports
+    merge-field data binding, conditional content blocks, multi-language output, and batch generation for
+    statement runs and regulatory mailings. Output formats include PDF, DOCX, and HTML with pixel-perfect
+    rendering fidelity.
+  version: 1.6.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-docs-generation
+  x-acme-domain: docs
+servers:
+  - url: https://af-docs-generation.api.acmefin.com/v1
+    description: Production
+  - url: https://af-docs-generation.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Templates
+    description: Manage document generation templates with merge fields, conditional logic, and versioning
+  - name: Rendering
+    description: Render documents from templates with data binding, preview, and batch generation
+paths:
+  /templates:
+    get:
+      operationId: listTemplates
+      summary: List templates
+      description: >-
+        Retrieve available document generation templates with filtering by category, status, output format,
+        and language. Active templates are sorted by usage frequency.
+      tags:
+        - Templates
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: category
+          in: query
+          required: false
+          description: Filter by template category
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+            enum:
+              - draft
+              - active
+              - deprecated
+        - name: output_format
+          in: query
+          required: false
+          description: Filter by output format
+          schema:
+            type: "string"
+            enum:
+              - pdf
+              - docx
+              - html
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        template_id:
+                          type: string
+                          description: Template identifier
+                          format: uuid
+                          example: "tpl-1c2d3e4f-a5b6-7890-cdea-345678901234"
+                        template_name:
+                          type: string
+                          description: Template display name
+                          example: "Consumer Loan Agreement Template"
+                        category:
+                          type: string
+                          description: Template category
+                          example: "loan_agreement"
+                          enum:
+                            - loan_agreement
+                            - disclosure_notice
+                            - account_statement
+                            - correspondence
+                            - regulatory_notice
+                            - welcome_kit
+                        output_format:
+                          type: string
+                          description: Default output format
+                          example: "pdf"
+                          enum:
+                            - pdf
+                            - docx
+                            - html
+                        merge_fields:
+                          type: array
+                          description: Available merge field names
+                          items:
+                            type: string
+                            example: "borrower_name"
+                        version:
+                          type: integer
+                          description: Template version number
+                          example: 5
+                        status:
+                          type: string
+                          description: Template lifecycle status
+                          example: "draft"
+                          enum:
+                            - draft
+                            - active
+                            - deprecated
+                        language:
+                          type: string
+                          description: Template language code
+                          example: "en-US"
+                        last_used_at:
+                          type: string
+                          description: When this template was last used to generate a document
+                          format: date-time
+                          example: "2025-03-14T16:00:00Z"
+                        created_at:
+                          type: string
+                          description: Creation timestamp
+                          format: date-time
+                          example: "2024-06-01T09:00:00Z"
+                      required:
+                        - template_id
+                        - template_name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTemplate
+      summary: Create template
+      description: >-
+        Create a new document generation template. Templates define the document structure, merge fields,
+        conditional content blocks, and styling. New templates are created in draft status and must be
+        activated before use in production.
+      tags:
+        - Templates
+      requestBody:
+        required: true
+        description: Create template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    template_name:
+                      type: string
+                      description: Template name
+                      example: "Auto Loan Disclosure Notice"
+                    category:
+                      type: string
+                      description: Category
+                      example: "loan_agreement"
+                      enum:
+                        - loan_agreement
+                        - disclosure_notice
+                        - account_statement
+                        - correspondence
+                    output_format:
+                      type: string
+                      description: Output format
+                      example: "pdf"
+                      enum:
+                        - pdf
+                        - docx
+                        - html
+                    content_html:
+                      type: string
+                      description: Template content with merge field placeholders
+                      example: '<h1>Loan Disclosure for {{borrower_name}}</h1>'
+                    merge_fields:
+                      type: array
+                      description: Merge field definitions
+                      items:
+                        type: string
+                        example: "borrower_name"
+                    language:
+                      type: string
+                      description: Language code
+                      example: "en-US"
+              required:
+                - template_name
+                - category
+                - content_html
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: Template identifier
+                    format: uuid
+                    example: "tpl-1c2d3e4f-a5b6-7890-cdea-345678901234"
+                  template_name:
+                    type: string
+                    description: Template display name
+                    example: "Consumer Loan Agreement Template"
+                  category:
+                    type: string
+                    description: Template category
+                    example: "loan_agreement"
+                    enum:
+                      - loan_agreement
+                      - disclosure_notice
+                      - account_statement
+                      - correspondence
+                      - regulatory_notice
+                      - welcome_kit
+                  output_format:
+                    type: string
+                    description: Default output format
+                    example: "pdf"
+                    enum:
+                      - pdf
+                      - docx
+                      - html
+                  merge_fields:
+                    type: array
+                    description: Available merge field names
+                    items:
+                      type: string
+                      example: "borrower_name"
+                  version:
+                    type: integer
+                    description: Template version number
+                    example: 5
+                  status:
+                    type: string
+                    description: Template lifecycle status
+                    example: "draft"
+                    enum:
+                      - draft
+                      - active
+                      - deprecated
+                  language:
+                    type: string
+                    description: Template language code
+                    example: "en-US"
+                  last_used_at:
+                    type: string
+                    description: When this template was last used to generate a document
+                    format: date-time
+                    example: "2025-03-14T16:00:00Z"
+                  created_at:
+                    type: string
+                    description: Creation timestamp
+                    format: date-time
+                    example: "2024-06-01T09:00:00Z"
+                required:
+                  - template_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /templates/{template_id}:
+    get:
+      operationId: getTemplate
+      summary: Get template details
+      description: >-
+        Retrieve complete template configuration including content, merge field definitions, conditional
+        blocks, and usage statistics.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: Unique template id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: Template identifier
+                    format: uuid
+                    example: "tpl-1c2d3e4f-a5b6-7890-cdea-345678901234"
+                  template_name:
+                    type: string
+                    description: Template display name
+                    example: "Consumer Loan Agreement Template"
+                  category:
+                    type: string
+                    description: Template category
+                    example: "loan_agreement"
+                    enum:
+                      - loan_agreement
+                      - disclosure_notice
+                      - account_statement
+                      - correspondence
+                      - regulatory_notice
+                      - welcome_kit
+                  output_format:
+                    type: string
+                    description: Default output format
+                    example: "pdf"
+                    enum:
+                      - pdf
+                      - docx
+                      - html
+                  merge_fields:
+                    type: array
+                    description: Available merge field names
+                    items:
+                      type: string
+                      example: "borrower_name"
+                  version:
+                    type: integer
+                    description: Template version number
+                    example: 5
+                  status:
+                    type: string
+                    description: Template lifecycle status
+                    example: "draft"
+                    enum:
+                      - draft
+                      - active
+                      - deprecated
+                  language:
+                    type: string
+                    description: Template language code
+                    example: "en-US"
+                  last_used_at:
+                    type: string
+                    description: When this template was last used to generate a document
+                    format: date-time
+                    example: "2025-03-14T16:00:00Z"
+                  created_at:
+                    type: string
+                    description: Creation timestamp
+                    format: date-time
+                    example: "2024-06-01T09:00:00Z"
+                required:
+                  - template_id
+                  - template_name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateTemplate
+      summary: Update template
+      description: >-
+        Update a template's content, merge fields, or configuration. Updates to active templates create a
+        new version; the previous version remains available for documents already generated.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: Unique template id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    template_name:
+                      type: string
+                      description: Updated name
+                      example: "Auto Loan Disclosure Notice v2"
+                    content_html:
+                      type: string
+                      description: Updated content
+                      example: '<h1>Updated disclosure for {{borrower_name}}</h1>'
+                    merge_fields:
+                      type: array
+                      description: Updated merge fields
+                      items:
+                        type: string
+                        example: "loan_amount"
+                    status:
+                      type: string
+                      description: Updated status
+                      example: "draft"
+                      enum:
+                        - draft
+                        - active
+                        - deprecated
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: Template identifier
+                    format: uuid
+                    example: "tpl-1c2d3e4f-a5b6-7890-cdea-345678901234"
+                  template_name:
+                    type: string
+                    description: Template display name
+                    example: "Consumer Loan Agreement Template"
+                  category:
+                    type: string
+                    description: Template category
+                    example: "loan_agreement"
+                    enum:
+                      - loan_agreement
+                      - disclosure_notice
+                      - account_statement
+                      - correspondence
+                      - regulatory_notice
+                      - welcome_kit
+                  output_format:
+                    type: string
+                    description: Default output format
+                    example: "pdf"
+                    enum:
+                      - pdf
+                      - docx
+                      - html
+                  merge_fields:
+                    type: array
+                    description: Available merge field names
+                    items:
+                      type: string
+                      example: "borrower_name"
+                  version:
+                    type: integer
+                    description: Template version number
+                    example: 5
+                  status:
+                    type: string
+                    description: Template lifecycle status
+                    example: "draft"
+                    enum:
+                      - draft
+                      - active
+                      - deprecated
+                  language:
+                    type: string
+                    description: Template language code
+                    example: "en-US"
+                  last_used_at:
+                    type: string
+                    description: When this template was last used to generate a document
+                    format: date-time
+                    example: "2025-03-14T16:00:00Z"
+                  created_at:
+                    type: string
+                    description: Creation timestamp
+                    format: date-time
+                    example: "2024-06-01T09:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteTemplate
+      summary: Delete template
+      description: >-
+        Soft-delete a template. Deprecated templates are archived and cannot generate new documents.
+        Previously generated documents are not affected.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: Unique template id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /templates/{template_id}/render:
+    post:
+      operationId: renderDocument
+      summary: Render document from template
+      description: >-
+        Generate a document by merging data into a template. The merge data must include values for all
+        required merge fields defined in the template. The rendered document is returned as a download URL.
+        Processing is synchronous for single documents (typically under 5 seconds).
+      tags:
+        - Rendering
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: Unique template id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Render document from template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    merge_data:
+                      type: string
+                      description: JSON object with merge field values
+                      example: '{"borrower_name": "Robert Johnson", "loan_amount": "$25,000"}'
+                    output_format:
+                      type: string
+                      description: Output format override
+                      example: "pdf"
+                      enum:
+                        - pdf
+                        - docx
+                        - html
+                    watermark:
+                      type: string
+                      description: Optional watermark text (e.g., DRAFT)
+                      example: ""
+                    metadata:
+                      type: string
+                      description: Additional metadata to embed in the generated document
+                      example: '{"generated_for": "loan-app-4d5e6f7a"}'
+              required:
+                - merge_data
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  render_id:
+                    type: string
+                    description: Render job identifier
+                    format: uuid
+                    example: "rnd-2d3e4f5a"
+                  download_url:
+                    type: string
+                    description: URL to download the rendered document
+                    example: "https://docgen.acmefin.com/dl/rnd-2d3e4f5a"
+                  output_format:
+                    type: string
+                    description: Rendered format
+                    example: "pdf"
+                  page_count:
+                    type: integer
+                    description: Number of pages in the generated document
+                    example: 12
+                  file_size_bytes:
+                    type: integer
+                    description: Generated file size
+                    example: 185640
+                  rendered_at:
+                    type: string
+                    description: Rendering timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                required:
+                  - render_id
+                  - download_url
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /templates/{template_id}/preview:
+    post:
+      operationId: previewDocument
+      summary: Preview document rendering
+      description: >-
+        Generate a preview rendering of a template with sample or partial merge data. Preview documents are
+        watermarked and not stored permanently. Useful for template development and approval workflows.
+      tags:
+        - Rendering
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: Unique template id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Preview document rendering request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    sample_data:
+                      type: string
+                      description: Sample merge data for preview
+                      example: '{"borrower_name": "Sample Borrower", "loan_amount": "$XX,XXX"}'
+                    output_format:
+                      type: string
+                      description: Preview format
+                      example: "pdf"
+                      enum:
+                        - pdf
+                        - html
+              required:
+                - sample_data
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preview_url:
+                    type: string
+                    description: URL to view the preview
+                    example: "https://docgen.acmefin.com/preview/prv-3e4f5a6b"
+                  expires_at:
+                    type: string
+                    description: Preview URL expiration
+                    format: date-time
+                    example: "2025-03-15T17:00:00Z"
+                  page_count:
+                    type: integer
+                    description: Number of pages
+                    example: 12
+                  warnings:
+                    type: array
+                    description: Merge field or formatting warnings
+                    items:
+                      type: string
+                      example: "Merge field 'co_borrower_name' has no value"
+                required:
+                  - preview_url
+                  - expires_at
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /render/batch:
+    post:
+      operationId: batchRenderDocuments
+      summary: Batch generate documents
+      description: >-
+        Submit a batch of document rendering jobs for a single template with different merge data per
+        document. Batch jobs are processed asynchronously and can contain up to 50,000 documents per batch.
+        Commonly used for monthly statement runs, regulatory mailings, and marketing campaigns.
+      tags:
+        - Rendering
+      requestBody:
+        required: true
+        description: Batch generate documents request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    template_id:
+                      type: string
+                      description: Template to use
+                      format: uuid
+                      example: "tpl-1c2d3e4f"
+                    documents:
+                      type: array
+                      description: Array of merge data objects, one per document
+                      items:
+                        type: object
+                    output_format:
+                      type: string
+                      description: Output format for all documents
+                      example: "pdf"
+                      enum:
+                        - pdf
+                        - docx
+                    callback_url:
+                      type: string
+                      description: Webhook URL for batch completion notification
+                      example: "https://api.acmefin.com/webhooks/docgen-complete"
+                    delivery_method:
+                      type: string
+                      description: How to deliver generated documents
+                      example: "download_archive"
+                      enum:
+                        - download_archive
+                        - individual_urls
+                        - email_to_recipients
+              required:
+                - template_id
+                - documents
+                - output_format
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: Batch job identifier
+                    format: uuid
+                    example: "btc-4f5a6b7c"
+                  status:
+                    type: string
+                    description: Batch processing status
+                    example: "queued"
+                    enum:
+                      - queued
+                      - processing
+                      - completed
+                      - failed
+                  total_documents:
+                    type: integer
+                    description: Documents in batch
+                    example: 15000
+                  estimated_completion:
+                    type: string
+                    description: Estimated completion time
+                    format: date-time
+                    example: "2025-03-15T20:00:00Z"
+                required:
+                  - batch_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

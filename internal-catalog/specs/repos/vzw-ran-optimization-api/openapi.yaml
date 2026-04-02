@@ -1,0 +1,1428 @@
+openapi: 3.0.3
+info:
+  title: VZW RAN Optimization API
+  version: 1.0.0
+  description: |
+    The VZW RAN Optimization API orchestrates continuous radio access network (RAN) tuning
+    for private campus networks. It combines KPI telemetry, policy-aware parameter
+    recommendations, and controlled rollout plans to improve throughput, handover stability,
+    and latency SLO adherence.
+
+    The API is designed for closed-loop optimization workflows where network engineers:
+      - start scoped optimization jobs for selected campuses and slices,
+      - review candidate parameter deltas and confidence scores,
+      - request deterministic parameter recommendations for specific cells,
+      - apply approved plans with operational guardrails,
+      - monitor anomaly signals after rollout.
+  contact:
+    name: Verizon Network Engineering APIs
+    email: ran-api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/
+  x-verizon-catalog-id: vzw-ran-optimization-api
+  x-verizon-domain: ran
+servers:
+  - url: https://vzw-ran-optimization-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-ran-optimization-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Optimization Jobs
+    description: Manage asynchronous optimization workflows and rollout candidates.
+  - name: Cell KPIs
+    description: Retrieve near-real-time and interval KPI statistics for RAN cells.
+  - name: Parameter Recommendations
+    description: Generate explainable cell-level tuning recommendations.
+  - name: Anomaly Detection
+    description: Detect post-change performance regressions and drift signals.
+paths:
+  /v1/optimization/jobs:
+    post:
+      tags:
+        - Optimization Jobs
+      operationId: startOptimizationJob
+      summary: Start optimization run scoped by campus and slice
+      description: |
+        Creates a new asynchronous optimization job for a target campus and one or more network
+        slices. The optimizer evaluates historical and near-real-time KPIs, computes candidate
+        parameter deltas, and produces an optimization plan draft that can later be applied.
+
+        Jobs are idempotent by `request_id` for 24 hours.
+      requestBody:
+        required: true
+        description: Optimization scope, objective weights, and execution guardrails.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartOptimizationJobRequest'
+            examples:
+              campusSliceOptimization:
+                summary: Throughput and handover stability tuned for campus A
+                value:
+                  request_id: req-1d28de4a-79f3-4c18-b770-5f42a31f1234
+                  campus_id: campus-west-01
+                  slice_ids:
+                    - slice-embb-campus-west
+                    - slice-urlcc-campus-west
+                  target_window:
+                    start_time: 2026-03-27T00:00:00Z
+                    end_time: 2026-03-27T06:00:00Z
+                  objective_weights:
+                    throughput_weight: 0.45
+                    latency_weight: 0.30
+                    ho_stability_weight: 0.25
+                  constraints:
+                    max_cells_to_tune: 24
+                    max_tx_power_delta_dbm: 2.0
+                    max_antenna_tilt_delta_degrees: 1.5
+                    allowed_parameter_set:
+                      - pci
+                      - tx_power_dbm
+                      - antenna_tilt_degrees
+                      - q_offset_db
+                  rollout_strategy: canary
+      responses:
+        '202':
+          description: Optimization job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptimizationJobAcceptedResponse'
+              examples:
+                accepted:
+                  value:
+                    job_id: job-4ad60e18-31fa-4f1f-b00f-cc3a2b5f1321
+                    status: queued
+                    created_at: 2026-03-27T00:00:02Z
+                    estimated_completion_at: 2026-03-27T00:05:02Z
+                    links:
+                      self: /v1/optimization/jobs/job-4ad60e18-31fa-4f1f-b00f-cc3a2b5f1321
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-rate-limit-tier: enterprise
+  /v1/optimization/jobs/{jobId}:
+    get:
+      tags:
+        - Optimization Jobs
+      operationId: getOptimizationJob
+      summary: Get job progress and candidate parameter deltas
+      description: |
+        Returns execution state for an optimization job and includes candidate parameter deltas
+        when available. Candidate deltas are ranked by expected impact and confidence.
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job state retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptimizationJobStatusResponse'
+              examples:
+                running:
+                  value:
+                    job_id: job-4ad60e18-31fa-4f1f-b00f-cc3a2b5f1321
+                    status: running
+                    progress_pct: 62.5
+                    objective_score_baseline: 0.71
+                    objective_score_candidate: 0.82
+                    started_at: 2026-03-27T00:00:05Z
+                    updated_at: 2026-03-27T00:03:22Z
+                    scope:
+                      campus_id: campus-west-01
+                      slice_ids:
+                        - slice-embb-campus-west
+                        - slice-urlcc-campus-west
+                    candidate_parameter_deltas:
+                      - plan_id: plan-e127f348-9874-46ef-b2dc-a73f38d83052
+                        cell_id: cell-5g-west-101
+                        parameter_name: antenna_tilt_degrees
+                        current_value: 4.5
+                        proposed_value: 5.5
+                        expected_throughput_delta_pct: 7.2
+                        expected_ho_failure_rate_delta_pct: -0.35
+                        confidence_score: 0.88
+                      - plan_id: plan-e127f348-9874-46ef-b2dc-a73f38d83052
+                        cell_id: cell-5g-west-103
+                        parameter_name: tx_power_dbm
+                        current_value: 41.0
+                        proposed_value: 42.0
+                        expected_throughput_delta_pct: 3.1
+                        expected_ho_failure_rate_delta_pct: -0.12
+                        confidence_score: 0.81
+                    warnings:
+                      - type: policy_guardrail
+                        message: Proposed PCI adjustment skipped on 1 cell due to collision risk.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/cells/{cellId}/kpis:
+    get:
+      tags:
+        - Cell KPIs
+      operationId: getCellKpis
+      summary: Get PRB utilization, HO failure rate, and RSRP/RSRQ statistics
+      description: |
+        Returns KPI statistics for a specific cell over a requested interval. The response
+        includes aggregate values and optional bucketed time series for operational debugging.
+      parameters:
+        - $ref: '#/components/parameters/CellId'
+        - $ref: '#/components/parameters/StartTime'
+        - $ref: '#/components/parameters/EndTime'
+        - $ref: '#/components/parameters/BucketSize'
+      responses:
+        '200':
+          description: Cell KPI snapshot and time series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CellKpisResponse'
+              examples:
+                kpiWindow:
+                  value:
+                    cell_id: cell-5g-west-101
+                    campus_id: campus-west-01
+                    interval:
+                      start_time: 2026-03-27T00:00:00Z
+                      end_time: 2026-03-27T01:00:00Z
+                      bucket_size: 5m
+                    aggregates:
+                      prb_utilization_pct:
+                        p50: 63.4
+                        p95: 81.2
+                      ho_failure_rate:
+                        attempts: 1321
+                        failures: 41
+                        rate_pct: 3.10
+                      rsrp_dbm:
+                        mean: -92.5
+                        p05: -106.0
+                        p95: -79.2
+                      rsrq_db:
+                        mean: -10.8
+                        p05: -16.1
+                        p95: -7.3
+                      latency_ms:
+                        p50: 11.8
+                        p95: 24.1
+                    buckets:
+                      - ts: 2026-03-27T00:00:00Z
+                        prb_utilization_pct: 59.1
+                        ho_failure_rate_pct: 2.9
+                        rsrp_mean_dbm: -93.1
+                        rsrq_mean_db: -10.4
+                        latency_p95_ms: 22.7
+                      - ts: 2026-03-27T00:05:00Z
+                        prb_utilization_pct: 61.8
+                        ho_failure_rate_pct: 3.0
+                        rsrp_mean_dbm: -92.7
+                        rsrq_mean_db: -10.6
+                        latency_p95_ms: 23.9
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/cells/{cellId}/parameter-recommendations:
+    post:
+      tags:
+        - Parameter Recommendations
+      operationId: recommendCellParameters
+      summary: Recommend PCI, tilt, and power adjustments
+      description: |
+        Generates a deterministic recommendation set for a single cell using current KPIs,
+        neighbor topology, and policy constraints. Explanations and expected KPI impacts are
+        included for each recommendation.
+      parameters:
+        - $ref: '#/components/parameters/CellId'
+      requestBody:
+        required: true
+        description: Recommendation context, objectives, and enforceable guardrails.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParameterRecommendationRequest'
+            examples:
+              recommendationRequest:
+                value:
+                  request_id: req-1f8f0df8-57d4-4e0c-aa43-80fcdb96dbce
+                  campus_id: campus-west-01
+                  slice_id: slice-embb-campus-west
+                  current_snapshot_time: 2026-03-27T00:04:00Z
+                  goals:
+                    throughput_min_mbps: 200
+                    latency_p95_max_ms: 25
+                    ho_failure_rate_max_pct: 3.2
+                  candidate_parameters:
+                    - pci
+                    - antenna_tilt_degrees
+                    - tx_power_dbm
+                    - q_offset_db
+                  guardrails:
+                    avoid_neighbor_pci_collisions: true
+                    max_tx_power_delta_dbm: 2
+                    max_antenna_tilt_delta_degrees: 1.5
+      responses:
+        '200':
+          description: Parameter recommendations generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParameterRecommendationResponse'
+              examples:
+                recommendations:
+                  value:
+                    recommendation_id: rec-c321a17f-a49f-4ef4-997a-e6134dd2196a
+                    cell_id: cell-5g-west-101
+                    generated_at: 2026-03-27T00:04:03Z
+                    recommendations:
+                      - parameter_name: pci
+                        current_value: 171
+                        proposed_value: 174
+                        expected_kpi_impact:
+                          throughput_delta_pct: 0.9
+                          ho_failure_rate_delta_pct: -0.28
+                          latency_p95_delta_ms: -0.8
+                        rationale:
+                          - Neighbor collision risk reduced for sector overlap with cell-5g-west-102.
+                          - Expected to stabilize A3 event trigger consistency.
+                        confidence_score: 0.79
+                      - parameter_name: antenna_tilt_degrees
+                        current_value: 4.5
+                        proposed_value: 5.2
+                        expected_kpi_impact:
+                          throughput_delta_pct: 4.8
+                          ho_failure_rate_delta_pct: -0.22
+                          latency_p95_delta_ms: -1.4
+                        rationale:
+                          - Coverage overshoot observed on eastern edge users.
+                          - Predicted SINR uplift for indoor campus zones.
+                        confidence_score: 0.86
+                    policy_notes:
+                      - All recommendations satisfy max_tx_power_delta_dbm and tilt constraints.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/optimization/plans/{planId}:apply:
+    post:
+      tags:
+        - Optimization Jobs
+      operationId: applyOptimizationPlan
+      summary: Apply approved tuning plan
+      description: |
+        Applies a previously approved optimization plan. The apply workflow supports dry-run,
+        canary, and full rollout modes, and enforces policy guardrails before each execution step.
+      parameters:
+        - $ref: '#/components/parameters/PlanId'
+      requestBody:
+        required: true
+        description: Apply mode, change window, and rollback instructions.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyPlanRequest'
+            examples:
+              applyCanary:
+                value:
+                  approved_by: netops.sre@verizon.com
+                  rollout_mode: canary
+                  dry_run: false
+                  canary_cell_ids:
+                    - cell-5g-west-101
+                    - cell-5g-west-103
+                  rollback_on_kpi_regression: true
+                  kpi_regression_thresholds:
+                    max_latency_p95_increase_ms: 3.0
+                    max_ho_failure_rate_increase_pct: 0.40
+                    min_throughput_delta_pct: -2.0
+      responses:
+        '202':
+          description: Plan application accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyPlanAcceptedResponse'
+              examples:
+                applying:
+                  value:
+                    apply_id: apply-4aa92039-4d89-46b2-8933-6f1f03f1a8da
+                    plan_id: plan-e127f348-9874-46ef-b2dc-a73f38d83052
+                    status: accepted
+                    rollout_mode: canary
+                    started_at: 2026-03-27T00:06:00Z
+                    links:
+                      plan: /v1/optimization/jobs/job-4ad60e18-31fa-4f1f-b00f-cc3a2b5f1321
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/optimization/anomalies:
+    get:
+      tags:
+        - Anomaly Detection
+      operationId: listOptimizationAnomalies
+      summary: Detect regressions with confidence scores
+      description: |
+        Returns anomaly events associated with optimization activity and background drift
+        monitoring. Results can be filtered by time window, severity, campus, and cell.
+      parameters:
+        - $ref: '#/components/parameters/CampusIdQuery'
+        - $ref: '#/components/parameters/CellIdQuery'
+        - $ref: '#/components/parameters/StartTime'
+        - $ref: '#/components/parameters/EndTime'
+        - $ref: '#/components/parameters/Severity'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Anomaly events retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnomalyListResponse'
+              examples:
+                anomalies:
+                  value:
+                    page: 1
+                    per_page: 2
+                    total: 27
+                    data:
+                      - anomaly_id: anom-40ac7c73-7b89-4b22-b3e0-809bc8ef5b1d
+                        detected_at: 2026-03-27T00:10:00Z
+                        campus_id: campus-west-01
+                        cell_id: cell-5g-west-101
+                        slice_id: slice-embb-campus-west
+                        category: throughput_regression
+                        severity: high
+                        confidence_score: 0.91
+                        metrics:
+                          throughput_delta_pct: -6.2
+                          latency_p95_delta_ms: 1.1
+                          ho_failure_rate_delta_pct: 0.12
+                        suspected_plan_id: plan-e127f348-9874-46ef-b2dc-a73f38d83052
+                        recommendation: Trigger rollback for tx_power_dbm delta on affected sector.
+                      - anomaly_id: anom-6f4db065-5e6f-4ce8-81b6-fdc7a42537fc
+                        detected_at: 2026-03-27T00:12:00Z
+                        campus_id: campus-west-01
+                        cell_id: cell-5g-west-103
+                        slice_id: slice-urlcc-campus-west
+                        category: latency_regression
+                        severity: medium
+                        confidence_score: 0.84
+                        metrics:
+                          throughput_delta_pct: 0.6
+                          latency_p95_delta_ms: 4.8
+                          ho_failure_rate_delta_pct: 0.03
+                        suspected_plan_id: plan-e127f348-9874-46ef-b2dc-a73f38d83052
+                        recommendation: Reduce antenna_tilt_degrees by 0.4 for indoor edge zone.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      description: Unique optimization job identifier.
+      schema:
+        type: string
+        example: job-4ad60e18-31fa-4f1f-b00f-cc3a2b5f1321
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      description: Approved optimization plan identifier.
+      schema:
+        type: string
+        example: plan-e127f348-9874-46ef-b2dc-a73f38d83052
+    CellId:
+      name: cellId
+      in: path
+      required: true
+      description: Unique NR cell identifier in Verizon inventory.
+      schema:
+        type: string
+        example: cell-5g-west-101
+    CellIdQuery:
+      name: cell_id
+      in: query
+      required: false
+      description: Optional cell filter.
+      schema:
+        type: string
+        example: cell-5g-west-101
+    CampusIdQuery:
+      name: campus_id
+      in: query
+      required: false
+      description: Optional campus filter.
+      schema:
+        type: string
+        example: campus-west-01
+    StartTime:
+      name: start_time
+      in: query
+      required: false
+      description: Inclusive interval start time in UTC.
+      schema:
+        type: string
+        format: date-time
+        example: 2026-03-27T00:00:00Z
+    EndTime:
+      name: end_time
+      in: query
+      required: false
+      description: Exclusive interval end time in UTC.
+      schema:
+        type: string
+        format: date-time
+        example: 2026-03-27T01:00:00Z
+    BucketSize:
+      name: bucket_size
+      in: query
+      required: false
+      description: Time bucket resolution for KPI series.
+      schema:
+        type: string
+        enum:
+          - 1m
+          - 5m
+          - 15m
+          - 1h
+        default: 5m
+    Severity:
+      name: severity
+      in: query
+      required: false
+      description: Minimum anomaly severity to return.
+      schema:
+        type: string
+        enum:
+          - low
+          - medium
+          - high
+          - critical
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number for paginated results.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Number of records per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    BadRequest:
+      description: Invalid request syntax or parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidInput:
+              value:
+                error:
+                  code: bad_request
+                  message: Invalid value for start_time.
+                  request_id: req-f603fba1-3df5-4b2e-a36f-b0fa193a4b9e
+                  details:
+                    - field: start_time
+                      issue: must be RFC3339 UTC timestamp
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missingToken:
+              value:
+                error:
+                  code: unauthorized
+                  message: Bearer token is required.
+                  request_id: req-f0d82f8b-dd62-4888-8cc4-5e5fce69b667
+    Forbidden:
+      description: Caller lacks permission for the requested scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            scopeDenied:
+              value:
+                error:
+                  code: forbidden
+                  message: Access denied for campus campus-west-01.
+                  request_id: req-70ef4693-5d04-4988-bbb0-873efcb0a9cb
+    NotFound:
+      description: Requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            resourceMissing:
+              value:
+                error:
+                  code: not_found
+                  message: Optimization job not found.
+                  request_id: req-eec3d8b6-c510-4923-a1ab-a61edfa5a6a8
+    Conflict:
+      description: Request conflicts with current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            duplicateRequest:
+              value:
+                error:
+                  code: conflict
+                  message: request_id already processed.
+                  request_id: req-f8f65d6f-b287-42cf-893e-f84cbac353cb
+    UnprocessableEntity:
+      description: Request is syntactically valid but violates policy or constraints.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            guardrailViolation:
+              value:
+                error:
+                  code: unprocessable_entity
+                  message: max_tx_power_delta_dbm exceeds policy limit.
+                  request_id: req-6d53d3de-a3a5-472f-8c5e-eeebfcdf8a86
+                  details:
+                    - field: constraints.max_tx_power_delta_dbm
+                      issue: must be <= 2.0
+    TooManyRequests:
+      description: Too many requests for this API key.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            throttled:
+              value:
+                error:
+                  code: rate_limited
+                  message: Request limit exceeded. Retry later.
+                  request_id: req-e04294f5-684f-4c12-9445-41593d513945
+    InternalServerError:
+      description: Unexpected server-side failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internalError:
+              value:
+                error:
+                  code: internal_error
+                  message: Unexpected error while processing optimization graph.
+                  request_id: req-a0562af8-ac08-47a7-bd3b-302ac4475ce0
+  schemas:
+    StartOptimizationJobRequest:
+      type: object
+      required:
+        - request_id
+        - campus_id
+        - slice_ids
+        - objective_weights
+        - constraints
+        - rollout_strategy
+      properties:
+        request_id:
+          type: string
+          description: Client-generated idempotency key.
+        campus_id:
+          type: string
+          description: Campus scope for optimization.
+        slice_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        target_window:
+          $ref: '#/components/schemas/TimeWindow'
+        objective_weights:
+          $ref: '#/components/schemas/ObjectiveWeights'
+        constraints:
+          $ref: '#/components/schemas/OptimizationConstraints'
+        rollout_strategy:
+          type: string
+          enum:
+            - dry_run
+            - canary
+            - phased
+            - full
+          description: Preferred default rollout mode for generated plans.
+    OptimizationJobAcceptedResponse:
+      type: object
+      required:
+        - job_id
+        - status
+        - created_at
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+        created_at:
+          type: string
+          format: date-time
+        estimated_completion_at:
+          type: string
+          format: date-time
+        links:
+          $ref: '#/components/schemas/ResourceLinks'
+    OptimizationJobStatusResponse:
+      type: object
+      required:
+        - job_id
+        - status
+        - progress_pct
+        - scope
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+            - canceled
+        progress_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        objective_score_baseline:
+          type: number
+          format: float
+          description: Normalized score for current network state.
+        objective_score_candidate:
+          type: number
+          format: float
+          description: Predicted score for candidate plan state.
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        scope:
+          $ref: '#/components/schemas/OptimizationScope'
+        candidate_parameter_deltas:
+          type: array
+          items:
+            $ref: '#/components/schemas/CandidateParameterDelta'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/WarningMessage'
+        failure_reason:
+          type: string
+    CellKpisResponse:
+      type: object
+      required:
+        - cell_id
+        - campus_id
+        - interval
+        - aggregates
+      properties:
+        cell_id:
+          type: string
+        campus_id:
+          type: string
+        interval:
+          $ref: '#/components/schemas/KpiInterval'
+        aggregates:
+          $ref: '#/components/schemas/KpiAggregates'
+        buckets:
+          type: array
+          description: Optional bucketed KPI series matching requested bucket_size.
+          items:
+            $ref: '#/components/schemas/KpiBucket'
+    ParameterRecommendationRequest:
+      type: object
+      required:
+        - request_id
+        - campus_id
+        - slice_id
+        - goals
+        - candidate_parameters
+        - guardrails
+      properties:
+        request_id:
+          type: string
+        campus_id:
+          type: string
+        slice_id:
+          type: string
+        current_snapshot_time:
+          type: string
+          format: date-time
+        goals:
+          $ref: '#/components/schemas/OptimizationGoals'
+        candidate_parameters:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - pci
+              - antenna_tilt_degrees
+              - tx_power_dbm
+              - q_offset_db
+              - handover_a3_offset_db
+              - handover_ttt_ms
+        guardrails:
+          $ref: '#/components/schemas/RecommendationGuardrails'
+    ParameterRecommendationResponse:
+      type: object
+      required:
+        - recommendation_id
+        - cell_id
+        - generated_at
+        - recommendations
+      properties:
+        recommendation_id:
+          type: string
+        cell_id:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParameterRecommendation'
+        policy_notes:
+          type: array
+          items:
+            type: string
+    ApplyPlanRequest:
+      type: object
+      required:
+        - approved_by
+        - rollout_mode
+        - dry_run
+      properties:
+        approved_by:
+          type: string
+          format: email
+        rollout_mode:
+          type: string
+          enum:
+            - dry_run
+            - canary
+            - phased
+            - full
+        dry_run:
+          type: boolean
+        canary_cell_ids:
+          type: array
+          items:
+            type: string
+        rollback_on_kpi_regression:
+          type: boolean
+          default: true
+        kpi_regression_thresholds:
+          $ref: '#/components/schemas/KpiRegressionThresholds'
+    ApplyPlanAcceptedResponse:
+      type: object
+      required:
+        - apply_id
+        - plan_id
+        - status
+        - rollout_mode
+      properties:
+        apply_id:
+          type: string
+        plan_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - accepted
+            - running
+            - completed
+            - rolled_back
+            - failed
+        rollout_mode:
+          type: string
+          enum:
+            - dry_run
+            - canary
+            - phased
+            - full
+        started_at:
+          type: string
+          format: date-time
+        links:
+          $ref: '#/components/schemas/ResourceLinks'
+    AnomalyListResponse:
+      type: object
+      required:
+        - page
+        - per_page
+        - total
+        - data
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        per_page:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Anomaly'
+    Anomaly:
+      type: object
+      required:
+        - anomaly_id
+        - detected_at
+        - campus_id
+        - cell_id
+        - category
+        - severity
+        - confidence_score
+      properties:
+        anomaly_id:
+          type: string
+        detected_at:
+          type: string
+          format: date-time
+        campus_id:
+          type: string
+        cell_id:
+          type: string
+        slice_id:
+          type: string
+        category:
+          type: string
+          enum:
+            - throughput_regression
+            - latency_regression
+            - ho_instability
+            - interference_spike
+            - coverage_hole
+        severity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+            - critical
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        metrics:
+          $ref: '#/components/schemas/AnomalyMetricDelta'
+        suspected_plan_id:
+          type: string
+        recommendation:
+          type: string
+    TimeWindow:
+      type: object
+      required:
+        - start_time
+        - end_time
+      properties:
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+    ObjectiveWeights:
+      type: object
+      required:
+        - throughput_weight
+        - latency_weight
+        - ho_stability_weight
+      properties:
+        throughput_weight:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        latency_weight:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        ho_stability_weight:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+      description: Weights should sum to 1.0.
+    OptimizationConstraints:
+      type: object
+      required:
+        - max_cells_to_tune
+        - allowed_parameter_set
+      properties:
+        max_cells_to_tune:
+          type: integer
+          minimum: 1
+          maximum: 500
+        max_tx_power_delta_dbm:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+        max_antenna_tilt_delta_degrees:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+        allowed_parameter_set:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - pci
+              - antenna_tilt_degrees
+              - tx_power_dbm
+              - q_offset_db
+              - handover_a3_offset_db
+              - handover_ttt_ms
+    OptimizationScope:
+      type: object
+      required:
+        - campus_id
+        - slice_ids
+      properties:
+        campus_id:
+          type: string
+        slice_ids:
+          type: array
+          items:
+            type: string
+    CandidateParameterDelta:
+      type: object
+      required:
+        - plan_id
+        - cell_id
+        - parameter_name
+        - current_value
+        - proposed_value
+        - confidence_score
+      properties:
+        plan_id:
+          type: string
+        cell_id:
+          type: string
+        parameter_name:
+          type: string
+          enum:
+            - pci
+            - antenna_tilt_degrees
+            - tx_power_dbm
+            - q_offset_db
+            - handover_a3_offset_db
+            - handover_ttt_ms
+        current_value:
+          oneOf:
+            - type: number
+            - type: integer
+        proposed_value:
+          oneOf:
+            - type: number
+            - type: integer
+        expected_throughput_delta_pct:
+          type: number
+          format: float
+        expected_ho_failure_rate_delta_pct:
+          type: number
+          format: float
+        expected_latency_p95_delta_ms:
+          type: number
+          format: float
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+    WarningMessage:
+      type: object
+      required:
+        - type
+        - message
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+    KpiInterval:
+      type: object
+      required:
+        - start_time
+        - end_time
+      properties:
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        bucket_size:
+          type: string
+          enum:
+            - 1m
+            - 5m
+            - 15m
+            - 1h
+    KpiAggregates:
+      type: object
+      required:
+        - prb_utilization_pct
+        - ho_failure_rate
+        - rsrp_dbm
+        - rsrq_db
+      properties:
+        prb_utilization_pct:
+          $ref: '#/components/schemas/PercentilePair'
+        ho_failure_rate:
+          $ref: '#/components/schemas/HoFailureStats'
+        rsrp_dbm:
+          $ref: '#/components/schemas/SignalStats'
+        rsrq_db:
+          $ref: '#/components/schemas/SignalStats'
+        latency_ms:
+          $ref: '#/components/schemas/LatencyStats'
+    PercentilePair:
+      type: object
+      required:
+        - p50
+        - p95
+      properties:
+        p50:
+          type: number
+          format: float
+        p95:
+          type: number
+          format: float
+    HoFailureStats:
+      type: object
+      required:
+        - attempts
+        - failures
+        - rate_pct
+      properties:
+        attempts:
+          type: integer
+          minimum: 0
+        failures:
+          type: integer
+          minimum: 0
+        rate_pct:
+          type: number
+          format: float
+    SignalStats:
+      type: object
+      required:
+        - mean
+        - p05
+        - p95
+      properties:
+        mean:
+          type: number
+          format: float
+        p05:
+          type: number
+          format: float
+        p95:
+          type: number
+          format: float
+    LatencyStats:
+      type: object
+      required:
+        - p50
+        - p95
+      properties:
+        p50:
+          type: number
+          format: float
+        p95:
+          type: number
+          format: float
+    KpiBucket:
+      type: object
+      required:
+        - ts
+        - prb_utilization_pct
+        - ho_failure_rate_pct
+        - rsrp_mean_dbm
+        - rsrq_mean_db
+      properties:
+        ts:
+          type: string
+          format: date-time
+        prb_utilization_pct:
+          type: number
+          format: float
+        ho_failure_rate_pct:
+          type: number
+          format: float
+        rsrp_mean_dbm:
+          type: number
+          format: float
+        rsrq_mean_db:
+          type: number
+          format: float
+        latency_p95_ms:
+          type: number
+          format: float
+    OptimizationGoals:
+      type: object
+      properties:
+        throughput_min_mbps:
+          type: number
+          format: float
+          minimum: 0
+        latency_p95_max_ms:
+          type: number
+          format: float
+          minimum: 0
+        ho_failure_rate_max_pct:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+    RecommendationGuardrails:
+      type: object
+      properties:
+        avoid_neighbor_pci_collisions:
+          type: boolean
+          default: true
+        max_tx_power_delta_dbm:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+        max_antenna_tilt_delta_degrees:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+    ParameterRecommendation:
+      type: object
+      required:
+        - parameter_name
+        - current_value
+        - proposed_value
+        - expected_kpi_impact
+        - confidence_score
+      properties:
+        parameter_name:
+          type: string
+          enum:
+            - pci
+            - antenna_tilt_degrees
+            - tx_power_dbm
+            - q_offset_db
+            - handover_a3_offset_db
+            - handover_ttt_ms
+        current_value:
+          oneOf:
+            - type: number
+            - type: integer
+        proposed_value:
+          oneOf:
+            - type: number
+            - type: integer
+        expected_kpi_impact:
+          $ref: '#/components/schemas/ExpectedKpiImpact'
+        rationale:
+          type: array
+          items:
+            type: string
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+    ExpectedKpiImpact:
+      type: object
+      properties:
+        throughput_delta_pct:
+          type: number
+          format: float
+        ho_failure_rate_delta_pct:
+          type: number
+          format: float
+        latency_p95_delta_ms:
+          type: number
+          format: float
+    KpiRegressionThresholds:
+      type: object
+      properties:
+        max_latency_p95_increase_ms:
+          type: number
+          format: float
+          minimum: 0
+        max_ho_failure_rate_increase_pct:
+          type: number
+          format: float
+          minimum: 0
+        min_throughput_delta_pct:
+          type: number
+          format: float
+    AnomalyMetricDelta:
+      type: object
+      properties:
+        throughput_delta_pct:
+          type: number
+          format: float
+        latency_p95_delta_ms:
+          type: number
+          format: float
+        ho_failure_rate_delta_pct:
+          type: number
+          format: float
+    ResourceLinks:
+      type: object
+      additionalProperties:
+        type: string
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - request_id
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+        issue:
+          type: string

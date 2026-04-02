@@ -1,0 +1,1259 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance 3D Secure Authentication API
+  description: >-
+    Manages EMV 3-D Secure (3DS2) authentication for card-not-present transactions. Supports frictionless and
+    challenge authentication flows, cardholder enrollment management, and real-time transaction risk assessment.
+    Implements the EMVCo 3DS 2.2.0 and 2.3.1 specifications with issuer ACS integration for SCA compliance under
+    PSD2 and similar regulations.
+  version: 2.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-cards-3ds
+  x-acme-domain: cards
+servers:
+  - url: https://af-cards-3ds.api.acmefin.com/v1
+    description: Production
+  - url: https://af-cards-3ds.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: 3DS Authentication
+    description: Initiate, challenge, and retrieve 3DS authentication sessions for e-commerce transactions
+  - name: 3DS Enrollment
+    description: Manage card enrollment in the 3D Secure program
+paths:
+  /authentications:
+    post:
+      operationId: createAuthentication
+      summary: Initiate 3DS authentication
+      description: >-
+        Creates a new 3DS authentication session for a card-not-present transaction. The system evaluates
+        the transaction risk profile and determines whether a frictionless or challenge flow is required. If
+        challenge is required, the response includes the ACS URL for cardholder redirect. Authentication
+        sessions expire after 15 minutes.
+      tags:
+        - 3DS Authentication
+      requestBody:
+        required: true
+        description: Initiate 3DS authentication request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    card_id:
+                      type: string
+                      description: Unique card identifier
+                      example: "card-8a2f4b91"
+                    transaction_id:
+                      type: string
+                      description: Originating transaction identifier from the payment gateway
+                      example: "txn-9c4e7d"
+                    amount:
+                      type: number
+                      description: Monetary amount
+                      format: double
+                      example: 250.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    merchant_name:
+                      type: string
+                      description: Merchant name as registered with the acquirer
+                      example: "ACME Electronics Store"
+                    merchant_category_code:
+                      type: string
+                      description: ISO 18245 merchant category code
+                      example: "5411"
+                      pattern: '^[0-9]{4}$'
+                    browser_info:
+                      type: object
+                      description: Cardholder browser capabilities for 3DS2 device fingerprinting
+                      properties:
+                        user_agent:
+                          type: string
+                          description: Browser User-Agent header
+                        accept_header:
+                          type: string
+                          description: Browser Accept header
+                        java_enabled:
+                          type: boolean
+                          description: Whether Java is enabled
+                        screen_width:
+                          type: integer
+                          description: Screen width in pixels
+                        screen_height:
+                          type: integer
+                          description: Screen height in pixels
+              required:
+                - card_id
+                - transaction_id
+                - amount
+                - currency
+                - merchant_name
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authentication_id:
+                    type: string
+                    description: Unique 3DS authentication session identifier
+                    example: "3ds-a8f21b04"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  transaction_id:
+                    type: string
+                    description: Originating transaction identifier from the payment gateway
+                    example: "txn-9c4e7d"
+                  status:
+                    type: string
+                    description: 3DS authentication lifecycle status
+                    example: "CHALLENGE_REQUIRED"
+                    enum:
+                      - CREATED
+                      - CHALLENGE_REQUIRED
+                      - CHALLENGE_SENT
+                      - AUTHENTICATED
+                      - REJECTED
+                      - TIMED_OUT
+                      - ERROR
+                  protocol_version:
+                    type: string
+                    description: 3DS protocol version used
+                    example: "2.2.0"
+                    enum:
+                      - 2.1.0
+                      - 2.2.0
+                      - 2.3.1
+                  eci:
+                    type: string
+                    description: Electronic Commerce Indicator returned by the ACS
+                    example: "05"
+                  authentication_value:
+                    type: string
+                    description: Base64-encoded CAVV/AAV authentication value for the issuer
+                    example: "AAABBJkZUQAAAABkl4DQAAAAAAA="
+                  ds_transaction_id:
+                    type: string
+                    description: Directory Server transaction identifier
+                    format: uuid
+                    example: "d45f2a10-cc7b-4e5d-9a81-3f6c2b8a1d0e"
+                  acs_url:
+                    type: string
+                    description: ACS challenge URL for cardholder browser redirect
+                    format: uri
+                    example: "https://acs.issuer-bank.com/3ds/challenge"
+                  risk_score:
+                    type: integer
+                    description: Issuer risk score from 0 (low risk) to 100 (high risk)
+                    example: 25
+                    minimum: 0
+                    maximum: 100
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authentication_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    get:
+      operationId: listAuthentications
+      summary: List 3DS authentication sessions
+      description: >-
+        Returns a paginated list of 3DS authentication sessions. Supports filtering by card, status,
+        protocol version, and date range. Results are sorted by creation time descending by default. Use
+        this endpoint for audit and reporting purposes.
+      tags:
+        - 3DS Authentication
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: card_id
+          in: query
+          required: false
+          description: Filter by card identifier
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by authentication status
+          schema:
+            type: "string"
+            enum:
+              - CREATED
+              - CHALLENGE_REQUIRED
+              - AUTHENTICATED
+              - REJECTED
+              - TIMED_OUT
+        - name: from_date
+          in: query
+          required: false
+          description: Filter sessions created on or after this date
+          schema:
+            type: "string"
+            format: "date"
+        - name: to_date
+          in: query
+          required: false
+          description: Filter sessions created on or before this date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        authentication_id:
+                          type: string
+                          description: Unique 3DS authentication session identifier
+                          example: "3ds-a8f21b04"
+                        card_id:
+                          type: string
+                          description: Unique card identifier
+                          example: "card-8a2f4b91"
+                        transaction_id:
+                          type: string
+                          description: Originating transaction identifier from the payment gateway
+                          example: "txn-9c4e7d"
+                        status:
+                          type: string
+                          description: 3DS authentication lifecycle status
+                          example: "CHALLENGE_REQUIRED"
+                          enum:
+                            - CREATED
+                            - CHALLENGE_REQUIRED
+                            - CHALLENGE_SENT
+                            - AUTHENTICATED
+                            - REJECTED
+                            - TIMED_OUT
+                            - ERROR
+                        protocol_version:
+                          type: string
+                          description: 3DS protocol version used
+                          example: "2.2.0"
+                          enum:
+                            - 2.1.0
+                            - 2.2.0
+                            - 2.3.1
+                        eci:
+                          type: string
+                          description: Electronic Commerce Indicator returned by the ACS
+                          example: "05"
+                        authentication_value:
+                          type: string
+                          description: Base64-encoded CAVV/AAV authentication value for the issuer
+                          example: "AAABBJkZUQAAAABkl4DQAAAAAAA="
+                        ds_transaction_id:
+                          type: string
+                          description: Directory Server transaction identifier
+                          format: uuid
+                          example: "d45f2a10-cc7b-4e5d-9a81-3f6c2b8a1d0e"
+                        acs_url:
+                          type: string
+                          description: ACS challenge URL for cardholder browser redirect
+                          format: uri
+                          example: "https://acs.issuer-bank.com/3ds/challenge"
+                        risk_score:
+                          type: integer
+                          description: Issuer risk score from 0 (low risk) to 100 (high risk)
+                          example: 25
+                          minimum: 0
+                          maximum: 100
+                        amount:
+                          type: number
+                          description: Monetary amount
+                          format: double
+                          example: 250.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        merchant_name:
+                          type: string
+                          description: Merchant name as registered with the acquirer
+                          example: "ACME Electronics Store"
+                        created_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - authentication_id
+                        - card_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /authentications/{authentication_id}:
+    get:
+      operationId: getAuthentication
+      summary: Get 3DS authentication details
+      description: >-
+        Retrieves the full details of a 3DS authentication session including its current status, risk score,
+        ECI value, and authentication result. For completed sessions the CAVV/AAV value is included for
+        downstream authorization.
+      tags:
+        - 3DS Authentication
+      parameters:
+        - name: authentication_id
+          in: path
+          required: true
+          description: Unique authentication id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authentication_id:
+                    type: string
+                    description: Unique 3DS authentication session identifier
+                    example: "3ds-a8f21b04"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  transaction_id:
+                    type: string
+                    description: Originating transaction identifier from the payment gateway
+                    example: "txn-9c4e7d"
+                  status:
+                    type: string
+                    description: 3DS authentication lifecycle status
+                    example: "CHALLENGE_REQUIRED"
+                    enum:
+                      - CREATED
+                      - CHALLENGE_REQUIRED
+                      - CHALLENGE_SENT
+                      - AUTHENTICATED
+                      - REJECTED
+                      - TIMED_OUT
+                      - ERROR
+                  protocol_version:
+                    type: string
+                    description: 3DS protocol version used
+                    example: "2.2.0"
+                    enum:
+                      - 2.1.0
+                      - 2.2.0
+                      - 2.3.1
+                  eci:
+                    type: string
+                    description: Electronic Commerce Indicator returned by the ACS
+                    example: "05"
+                  authentication_value:
+                    type: string
+                    description: Base64-encoded CAVV/AAV authentication value for the issuer
+                    example: "AAABBJkZUQAAAABkl4DQAAAAAAA="
+                  ds_transaction_id:
+                    type: string
+                    description: Directory Server transaction identifier
+                    format: uuid
+                    example: "d45f2a10-cc7b-4e5d-9a81-3f6c2b8a1d0e"
+                  acs_url:
+                    type: string
+                    description: ACS challenge URL for cardholder browser redirect
+                    format: uri
+                    example: "https://acs.issuer-bank.com/3ds/challenge"
+                  risk_score:
+                    type: integer
+                    description: Issuer risk score from 0 (low risk) to 100 (high risk)
+                    example: 25
+                    minimum: 0
+                    maximum: 100
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authentication_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /authentications/{authentication_id}/challenge:
+    post:
+      operationId: submitChallenge
+      summary: Submit challenge response
+      description: >-
+        Submits the cardholder's challenge response (OTP, biometric, or out-of-band confirmation) to the
+        ACS. The ACS validates the response and returns the authentication result. If the response is
+        incorrect, the authentication transitions to REJECTED. Typically called after the cardholder
+        completes the challenge form on the ACS page.
+      tags:
+        - 3DS Authentication
+      parameters:
+        - name: authentication_id
+          in: path
+          required: true
+          description: Unique authentication id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Submit challenge response request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    challenge_response:
+                      type: string
+                      description: Cardholder challenge response value (OTP code or confirmation token)
+                      example: "847293"
+                    challenge_type:
+                      type: string
+                      description: Type of challenge completed
+                      example: "OTP"
+                      enum:
+                        - OTP
+                        - BIOMETRIC
+                        - OUT_OF_BAND
+                        - DECOUPLED
+              required:
+                - challenge_response
+                - challenge_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authentication_id:
+                    type: string
+                    description: Unique 3DS authentication session identifier
+                    example: "3ds-a8f21b04"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  transaction_id:
+                    type: string
+                    description: Originating transaction identifier from the payment gateway
+                    example: "txn-9c4e7d"
+                  status:
+                    type: string
+                    description: 3DS authentication lifecycle status
+                    example: "CHALLENGE_REQUIRED"
+                    enum:
+                      - CREATED
+                      - CHALLENGE_REQUIRED
+                      - CHALLENGE_SENT
+                      - AUTHENTICATED
+                      - REJECTED
+                      - TIMED_OUT
+                      - ERROR
+                  protocol_version:
+                    type: string
+                    description: 3DS protocol version used
+                    example: "2.2.0"
+                    enum:
+                      - 2.1.0
+                      - 2.2.0
+                      - 2.3.1
+                  eci:
+                    type: string
+                    description: Electronic Commerce Indicator returned by the ACS
+                    example: "05"
+                  authentication_value:
+                    type: string
+                    description: Base64-encoded CAVV/AAV authentication value for the issuer
+                    example: "AAABBJkZUQAAAABkl4DQAAAAAAA="
+                  ds_transaction_id:
+                    type: string
+                    description: Directory Server transaction identifier
+                    format: uuid
+                    example: "d45f2a10-cc7b-4e5d-9a81-3f6c2b8a1d0e"
+                  acs_url:
+                    type: string
+                    description: ACS challenge URL for cardholder browser redirect
+                    format: uri
+                    example: "https://acs.issuer-bank.com/3ds/challenge"
+                  risk_score:
+                    type: integer
+                    description: Issuer risk score from 0 (low risk) to 100 (high risk)
+                    example: 25
+                    minimum: 0
+                    maximum: 100
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - authentication_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /authentications/{authentication_id}/result:
+    get:
+      operationId: getAuthenticationResult
+      summary: Get authentication result
+      description: >-
+        Returns the final authentication result for a completed 3DS session. Includes the ECI, CAVV/AAV
+        value, and DS transaction ID needed to submit the authorized transaction to the card network. Only
+        available for sessions in AUTHENTICATED or REJECTED status.
+      tags:
+        - 3DS Authentication
+      parameters:
+        - name: authentication_id
+          in: path
+          required: true
+          description: Unique authentication id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authentication_id:
+                    type: string
+                    description: Unique 3DS authentication session identifier
+                    example: "3ds-a8f21b04"
+                  status:
+                    type: string
+                    description: 3DS authentication lifecycle status
+                    example: "CHALLENGE_REQUIRED"
+                    enum:
+                      - CREATED
+                      - CHALLENGE_REQUIRED
+                      - CHALLENGE_SENT
+                      - AUTHENTICATED
+                      - REJECTED
+                      - TIMED_OUT
+                      - ERROR
+                  eci:
+                    type: string
+                    description: Electronic Commerce Indicator returned by the ACS
+                    example: "05"
+                  authentication_value:
+                    type: string
+                    description: Base64-encoded CAVV/AAV authentication value for the issuer
+                    example: "AAABBJkZUQAAAABkl4DQAAAAAAA="
+                  ds_transaction_id:
+                    type: string
+                    description: Directory Server transaction identifier
+                    format: uuid
+                    example: "d45f2a10-cc7b-4e5d-9a81-3f6c2b8a1d0e"
+                  liability_shift:
+                    type: boolean
+                    description: Whether liability shift to the issuer applies
+                    example: true
+                required:
+                  - authentication_id
+                  - status
+                  - eci
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /enrollments:
+    post:
+      operationId: enrollCard
+      summary: Enroll card in 3D Secure
+      description: >-
+        Enrolls a card in the 3D Secure program, enabling it to participate in 3DS authentication flows. The
+        card must be in ACTIVE status. Enrollment provisions the card with the issuer ACS and registers
+        supported protocol versions. Cards are typically auto-enrolled during issuance, but this endpoint
+        supports manual enrollment for legacy cards.
+      tags:
+        - 3DS Enrollment
+      requestBody:
+        required: true
+        description: Enroll card in 3D Secure request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    card_id:
+                      type: string
+                      description: Unique card identifier
+                      example: "card-8a2f4b91"
+                    cardholder_name:
+                      type: string
+                      description: Full name of the cardholder as embossed on the card
+                      example: "Jane A. Doe"
+                    cardholder_email:
+                      type: string
+                      description: Cardholder email for OOB challenge delivery
+                      format: email
+                      example: "jane.doe@email.com"
+                    cardholder_phone:
+                      type: string
+                      description: Cardholder phone for SMS challenge delivery in E.164
+                      example: "+14155551234"
+              required:
+                - card_id
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  enrolled:
+                    type: boolean
+                    description: Whether the card is enrolled in 3DS
+                    example: true
+                  protocol_versions:
+                    type: array
+                    description: Supported 3DS protocol versions
+                    items:
+                      type: string
+                      example: "2.2.0"
+                  acs_reference_number:
+                    type: string
+                    description: ACS reference number for this enrollment
+                    example: "ACS-REF-3829174"
+                  enrolled_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - card_id
+                  - enrolled
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /enrollments/{card_id}:
+    get:
+      operationId: getEnrollment
+      summary: Get card 3DS enrollment status
+      description: >-
+        Returns the 3DS enrollment status for a card, including supported protocol versions and ACS
+        reference number. Use this to determine if a card can participate in 3DS authentication before
+        initiating a session.
+      tags:
+        - 3DS Enrollment
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          description: Unique card id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  enrolled:
+                    type: boolean
+                    description: Whether the card is enrolled in 3DS
+                    example: true
+                  protocol_versions:
+                    type: array
+                    description: Supported 3DS protocol versions
+                    items:
+                      type: string
+                      example: "2.2.0"
+                  acs_reference_number:
+                    type: string
+                    description: ACS reference number for this enrollment
+                    example: "ACS-REF-3829174"
+                  enrolled_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - card_id
+                  - enrolled
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: unenrollCard
+      summary: Remove card from 3D Secure
+      description: >-
+        Removes a card from the 3D Secure program. The card will no longer be able to participate in 3DS
+        authentication flows. Any in-progress authentication sessions for this card are not affected but no
+        new sessions can be created. Use with caution as this may increase fraud liability.
+      tags:
+        - 3DS Enrollment
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          description: Unique card id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /risk-assessments:
+    post:
+      operationId: assessTransactionRisk
+      summary: Evaluate transaction risk score
+      description: >-
+        Performs a real-time risk assessment for a proposed transaction without initiating a full 3DS
+        authentication. Returns a risk score from 0-100, recommended authentication flow (frictionless vs.
+        challenge), and contributing risk factors. Use this for pre-screening before 3DS or for analytics.
+      tags:
+        - 3DS Authentication
+      requestBody:
+        required: true
+        description: Evaluate transaction risk score request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    card_id:
+                      type: string
+                      description: Unique card identifier
+                      example: "card-8a2f4b91"
+                    amount:
+                      type: number
+                      description: Monetary amount
+                      format: double
+                      example: 250.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+                    merchant_name:
+                      type: string
+                      description: Merchant name as registered with the acquirer
+                      example: "ACME Electronics Store"
+                    merchant_category_code:
+                      type: string
+                      description: ISO 18245 merchant category code
+                      example: "5411"
+                      pattern: '^[0-9]{4}$'
+                    ip_address:
+                      type: string
+                      description: Cardholder IP address
+                      example: "203.0.113.42"
+                    device_id:
+                      type: string
+                      description: Device fingerprint identifier
+                      example: "dev-f9a23c"
+                    shipping_address_match:
+                      type: boolean
+                      description: Whether shipping address matches billing address on file
+                      example: true
+              required:
+                - card_id
+                - amount
+                - currency
+                - merchant_name
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  risk_score:
+                    type: integer
+                    description: Issuer risk score from 0 (low risk) to 100 (high risk)
+                    example: 25
+                    minimum: 0
+                    maximum: 100
+                  recommendation:
+                    type: string
+                    description: Recommended authentication flow based on risk assessment
+                    example: "FRICTIONLESS"
+                    enum:
+                      - FRICTIONLESS
+                      - CHALLENGE
+                      - DECLINE
+                  risk_factors:
+                    type: array
+                    description: Contributing risk factors identified during assessment
+                    items:
+                      type: string
+                      example: "NEW_DEVICE"
+                  confidence:
+                    type: number
+                    description: Model confidence level from 0.0 to 1.0
+                    format: double
+                    example: 0.92
+                required:
+                  - risk_score
+                  - recommendation
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

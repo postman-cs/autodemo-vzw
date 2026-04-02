@@ -1,0 +1,1377 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Data Quality API
+  description: >-
+    Automated data quality monitoring and scoring for enterprise datasets. Define quality rules across six
+    dimensions (completeness, uniqueness, validity, consistency, timeliness, accuracy), execute checks with pass-
+    rate thresholds, profile datasets for statistical summaries, detect anomalies in data distributions, and
+    manage quality alerts with severity-based routing.
+  version: 2.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-data-quality
+  x-acme-domain: data
+servers:
+  - url: https://af-data-quality.api.acmefin.com/v1
+    description: Production
+  - url: https://af-data-quality.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Quality Rules
+    description: Define and manage data quality rules across quality dimensions
+  - name: Quality Checks
+    description: Execute and review data quality check results
+  - name: Data Profiling
+    description: Run statistical profiling on datasets
+  - name: Alerts
+    description: Monitor and acknowledge data quality alerts
+paths:
+  /rules:
+    get:
+      operationId: listQualityRules
+      summary: List quality rules
+      description: >-
+        Retrieve all data quality rules with quality dimension, severity, and enabled status.
+      tags:
+        - Quality Rules
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: type
+          in: query
+          required: false
+          description: Filter by quality dimension
+          schema:
+            type: "string"
+            enum:
+              - completeness
+              - uniqueness
+              - validity
+              - consistency
+              - timeliness
+              - accuracy
+        - name: dataset_id
+          in: query
+          required: false
+          description: Filter by target dataset
+          schema:
+            type: "string"
+        - name: severity
+          in: query
+          required: false
+          description: Filter by alert severity
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rule_id:
+                          type: string
+                          description: "Quality rule identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Rule name"
+                          example: "non_null_account_id"
+                        type:
+                          type: string
+                          description: "Quality dimension"
+                          enum:
+                            - completeness
+                            - uniqueness
+                            - validity
+                            - consistency
+                            - timeliness
+                            - accuracy
+                        expression:
+                          type: string
+                          description: "Rule expression (SQL predicate or regex)"
+                          example: "account_id IS NOT NULL"
+                        dataset_id:
+                          type: string
+                          description: "Target dataset"
+                          format: uuid
+                        severity:
+                          type: string
+                          description: "Alert severity on failure"
+                          enum:
+                            - info
+                            - warning
+                            - critical
+                        is_enabled:
+                          type: boolean
+                        pass_rate_threshold:
+                          type: number
+                          description: "Minimum pass rate (0.0-1.0) before alerting"
+                          format: double
+                          example: 0.99
+                      required:
+                        - rule_id
+                        - name
+                        - type
+                        - severity
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createQualityRule
+      summary: Create quality rule
+      description: >-
+        Define a new quality rule with a SQL predicate or regex expression, quality dimension, and pass-rate
+        threshold.
+      tags:
+        - Quality Rules
+      requestBody:
+        required: true
+        description: Create quality rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    type:
+                      type: string
+                      enum:
+                        - completeness
+                        - uniqueness
+                        - validity
+                        - consistency
+                        - timeliness
+                        - accuracy
+                    expression:
+                      type: string
+                    dataset_id:
+                      type: string
+                      format: uuid
+                    severity:
+                      type: string
+                      enum:
+                        - info
+                        - warning
+                        - critical
+                    pass_rate_threshold:
+                      type: number
+                      format: double
+              required:
+                - name
+                - type
+                - expression
+                - dataset_id
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: "Quality rule identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Rule name"
+                    example: "non_null_account_id"
+                  type:
+                    type: string
+                    description: "Quality dimension"
+                    enum:
+                      - completeness
+                      - uniqueness
+                      - validity
+                      - consistency
+                      - timeliness
+                      - accuracy
+                  expression:
+                    type: string
+                    description: "Rule expression (SQL predicate or regex)"
+                    example: "account_id IS NOT NULL"
+                  dataset_id:
+                    type: string
+                    description: "Target dataset"
+                    format: uuid
+                  severity:
+                    type: string
+                    description: "Alert severity on failure"
+                    enum:
+                      - info
+                      - warning
+                      - critical
+                  is_enabled:
+                    type: boolean
+                  pass_rate_threshold:
+                    type: number
+                    description: "Minimum pass rate (0.0-1.0) before alerting"
+                    format: double
+                    example: 0.99
+                required:
+                  - rule_id
+                  - name
+                  - type
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /rules/{rule_id}:
+    get:
+      operationId: getQualityRule
+      summary: Get quality rule
+      description: Retrieve a quality rule with its recent check history and pass-rate trend.
+      tags:
+        - Quality Rules
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          description: Unique rule id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: "Quality rule identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Rule name"
+                    example: "non_null_account_id"
+                  type:
+                    type: string
+                    description: "Quality dimension"
+                    enum:
+                      - completeness
+                      - uniqueness
+                      - validity
+                      - consistency
+                      - timeliness
+                      - accuracy
+                  expression:
+                    type: string
+                    description: "Rule expression (SQL predicate or regex)"
+                    example: "account_id IS NOT NULL"
+                  dataset_id:
+                    type: string
+                    description: "Target dataset"
+                    format: uuid
+                  severity:
+                    type: string
+                    description: "Alert severity on failure"
+                    enum:
+                      - info
+                      - warning
+                      - critical
+                  is_enabled:
+                    type: boolean
+                  pass_rate_threshold:
+                    type: number
+                    description: "Minimum pass rate (0.0-1.0) before alerting"
+                    format: double
+                    example: 0.99
+                required:
+                  - rule_id
+                  - name
+                  - type
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateQualityRule
+      summary: Update quality rule
+      description: Modify rule expression, severity, threshold, or enabled status.
+      tags:
+        - Quality Rules
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          description: Unique rule id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update quality rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    expression:
+                      type: string
+                    severity:
+                      type: string
+                      enum:
+                        - info
+                        - warning
+                        - critical
+                    pass_rate_threshold:
+                      type: number
+                      format: double
+                    is_enabled:
+                      type: boolean
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: "Quality rule identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Rule name"
+                    example: "non_null_account_id"
+                  type:
+                    type: string
+                    description: "Quality dimension"
+                    enum:
+                      - completeness
+                      - uniqueness
+                      - validity
+                      - consistency
+                      - timeliness
+                      - accuracy
+                  expression:
+                    type: string
+                    description: "Rule expression (SQL predicate or regex)"
+                    example: "account_id IS NOT NULL"
+                  dataset_id:
+                    type: string
+                    description: "Target dataset"
+                    format: uuid
+                  severity:
+                    type: string
+                    description: "Alert severity on failure"
+                    enum:
+                      - info
+                      - warning
+                      - critical
+                  is_enabled:
+                    type: boolean
+                  pass_rate_threshold:
+                    type: number
+                    description: "Minimum pass rate (0.0-1.0) before alerting"
+                    format: double
+                    example: 0.99
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteQualityRule
+      summary: Delete quality rule
+      description: Remove a quality rule and its check history.
+      tags:
+        - Quality Rules
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          description: Unique rule id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /checks:
+    get:
+      operationId: listQualityChecks
+      summary: List quality checks
+      description: >-
+        Retrieve quality check executions with pass/fail results, record counts, and pass rates.
+      tags:
+        - Quality Checks
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: rule_id
+          in: query
+          required: false
+          description: Filter by quality rule
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by result status
+          schema:
+            type: "string"
+            enum:
+              - running
+              - passed
+              - failed
+              - error
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        check_id:
+                          type: string
+                          description: "Check execution identifier"
+                          format: uuid
+                          readOnly: true
+                        rule_id:
+                          type: string
+                          format: uuid
+                        dataset_id:
+                          type: string
+                          format: uuid
+                        status:
+                          type: string
+                          description: "Check execution result"
+                          enum:
+                            - running
+                            - passed
+                            - failed
+                            - error
+                        records_checked:
+                          type: integer
+                          description: "Total records evaluated"
+                        records_passed:
+                          type: integer
+                          description: "Records passing the rule"
+                        pass_rate:
+                          type: number
+                          description: "Pass rate (0.0-1.0)"
+                          format: double
+                        executed_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - check_id
+                        - rule_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: runQualityCheck
+      summary: Run quality check
+      description: Trigger a quality check execution for a specific rule or all rules on a dataset.
+      tags:
+        - Quality Checks
+      requestBody:
+        required: true
+        description: Run quality check request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    rule_id:
+                      type: string
+                      description: "Specific rule to check (omit for all rules on dataset)"
+                      format: uuid
+                    dataset_id:
+                      type: string
+                      description: "Target dataset"
+                      format: uuid
+              required:
+                - dataset_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  check_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                  rules_evaluated:
+                    type: integer
+                required:
+                  - check_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /checks/{check_id}:
+    get:
+      operationId: getQualityCheck
+      summary: Get quality check results
+      description: >-
+        Retrieve detailed check results with per-column pass rates and sample failing records.
+      tags:
+        - Quality Checks
+      parameters:
+        - name: check_id
+          in: path
+          required: true
+          description: Unique check id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  check_id:
+                    type: string
+                    description: "Check execution identifier"
+                    format: uuid
+                    readOnly: true
+                  rule_id:
+                    type: string
+                    format: uuid
+                  dataset_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    description: "Check execution result"
+                    enum:
+                      - running
+                      - passed
+                      - failed
+                      - error
+                  records_checked:
+                    type: integer
+                    description: "Total records evaluated"
+                  records_passed:
+                    type: integer
+                    description: "Records passing the rule"
+                  pass_rate:
+                    type: number
+                    description: "Pass rate (0.0-1.0)"
+                    format: double
+                  executed_at:
+                    type: string
+                    format: date-time
+                required:
+                  - check_id
+                  - rule_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /checks/{check_id}/scores:
+    get:
+      operationId: getQualityScores
+      summary: Get quality scores
+      description: Retrieve composite quality scores per dimension for a check execution.
+      tags:
+        - Quality Checks
+      parameters:
+        - name: check_id
+          in: path
+          required: true
+          description: Unique check id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  check_id:
+                    type: string
+                  overall_score:
+                    type: number
+                    description: "Weighted composite quality score (0-100)"
+                    format: double
+                  dimension_scores:
+                    type: object
+                    description: "Per-dimension scores (completeness, uniqueness, etc.)"
+                  trend:
+                    type: string
+                    enum:
+                      - improving
+                      - stable
+                      - declining
+                required:
+                  - check_id
+                  - overall_score
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /profiles:
+    get:
+      operationId: listProfiles
+      summary: List data profiles
+      description: >-
+        Retrieve statistical profiles for datasets with row counts, null rates, and freshness.
+      tags:
+        - Data Profiling
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        profile_id:
+                          type: string
+                          description: "Profile identifier"
+                          format: uuid
+                          readOnly: true
+                        dataset_id:
+                          type: string
+                          format: uuid
+                        row_count:
+                          type: integer
+                          description: "Total rows in dataset"
+                        column_count:
+                          type: integer
+                        null_percentage:
+                          type: number
+                          description: "Overall null percentage"
+                          format: double
+                        duplicate_percentage:
+                          type: number
+                          format: double
+                        freshness_hours:
+                          type: number
+                          description: "Hours since last data update"
+                          format: double
+                        profiled_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - profile_id
+                        - dataset_id
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: runProfile
+      summary: Run data profile
+      description: >-
+        Trigger statistical profiling of a dataset to compute distributions, null rates, cardinality, and
+        freshness.
+      tags:
+        - Data Profiling
+      requestBody:
+        required: true
+        description: Run data profile request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    dataset_id:
+                      type: string
+                      format: uuid
+                    sample_size:
+                      type: integer
+                      description: "Number of rows to sample (omit for full scan)"
+              required:
+                - dataset_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                  dataset_id:
+                    type: string
+                required:
+                  - profile_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /profiles/{profile_id}:
+    get:
+      operationId: getProfile
+      summary: Get data profile
+      description: >-
+        Retrieve a complete statistical profile with per-column distributions, histograms, and anomaly
+        flags.
+      tags:
+        - Data Profiling
+      parameters:
+        - name: profile_id
+          in: path
+          required: true
+          description: Unique profile id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile_id:
+                    type: string
+                    description: "Profile identifier"
+                    format: uuid
+                    readOnly: true
+                  dataset_id:
+                    type: string
+                    format: uuid
+                  row_count:
+                    type: integer
+                    description: "Total rows in dataset"
+                  column_count:
+                    type: integer
+                  null_percentage:
+                    type: number
+                    description: "Overall null percentage"
+                    format: double
+                  duplicate_percentage:
+                    type: number
+                    format: double
+                  freshness_hours:
+                    type: number
+                    description: "Hours since last data update"
+                    format: double
+                  profiled_at:
+                    type: string
+                    format: date-time
+                required:
+                  - profile_id
+                  - dataset_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /alerts:
+    get:
+      operationId: listQualityAlerts
+      summary: List quality alerts
+      description: >-
+        Retrieve data quality alerts triggered by rule failures, with severity and acknowledgment status.
+      tags:
+        - Alerts
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: severity
+          in: query
+          required: false
+          description: Filter by severity
+          schema:
+            type: "string"
+            enum:
+              - info
+              - warning
+              - critical
+        - name: is_acknowledged
+          in: query
+          required: false
+          description: Filter by acknowledgment status
+          schema:
+            type: "boolean"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alert_id:
+                          type: string
+                          description: "Alert identifier"
+                          format: uuid
+                          readOnly: true
+                        rule_id:
+                          type: string
+                          format: uuid
+                        check_id:
+                          type: string
+                          format: uuid
+                        severity:
+                          type: string
+                          enum:
+                            - info
+                            - warning
+                            - critical
+                        message:
+                          type: string
+                          description: "Alert message"
+                        pass_rate:
+                          type: number
+                          format: double
+                        is_acknowledged:
+                          type: boolean
+                        triggered_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - alert_id
+                        - severity
+                        - triggered_at
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

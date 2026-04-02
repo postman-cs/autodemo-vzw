@@ -1,0 +1,1230 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Credit Monitoring API
+  description: >-
+    Real-time credit monitoring with configurable alert thresholds, credit event tracking, and multi-channel
+    notifications. Monitors all three bureaus for score changes, new inquiries, delinquencies, public records, and
+    suspected fraud activity. Supports consumer-facing monitoring products and internal portfolio surveillance.
+  version: 1.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-credit-monitoring
+  x-acme-domain: credit
+servers:
+  - url: https://af-credit-monitoring.api.acmefin.com/v1
+    description: Production
+  - url: https://af-credit-monitoring.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Alerts
+    description: View and manage credit monitoring alerts triggered by threshold rules or bureau events
+  - name: Thresholds
+    description: Configure monitoring thresholds and notification rules for credit events
+  - name: Events
+    description: Query raw credit events detected across monitored consumer files
+paths:
+  /alerts:
+    get:
+      operationId: listAlerts
+      summary: List monitoring alerts
+      description: >-
+        Retrieve credit monitoring alerts with filtering by severity, type, status, and date range.
+        Unacknowledged critical alerts are surfaced first. Alerts older than 90 days are automatically
+        archived.
+      tags:
+        - Alerts
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: severity
+          in: query
+          required: false
+          description: Filter by severity
+          schema:
+            type: "string"
+            enum:
+              - critical
+              - high
+              - medium
+              - low
+              - informational
+        - name: status
+          in: query
+          required: false
+          description: Filter by acknowledgment status
+          schema:
+            type: "string"
+            enum:
+              - new
+              - acknowledged
+              - dismissed
+              - escalated
+        - name: consumer_id
+          in: query
+          required: false
+          description: Filter by consumer
+          schema:
+            type: "string"
+        - name: alert_type
+          in: query
+          required: false
+          description: Filter by alert type
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alert_id:
+                          type: string
+                          description: Alert identifier
+                          format: uuid
+                          example: "malt-7a8b9c0d-e1f2-3456-abcd-789012345678"
+                        consumer_id:
+                          type: string
+                          description: Consumer being monitored
+                          format: uuid
+                          example: "con-8b3c4d5e"
+                        alert_type:
+                          type: string
+                          description: Alert classification
+                          example: "score_change"
+                          enum:
+                            - score_change
+                            - new_inquiry
+                            - new_account
+                            - delinquency
+                            - address_change
+                            - public_record
+                            - collection_filed
+                            - fraud_suspected
+                        severity:
+                          type: string
+                          description: Alert severity level
+                          example: "critical"
+                          enum:
+                            - critical
+                            - high
+                            - medium
+                            - low
+                            - informational
+                        title:
+                          type: string
+                          description: Alert title
+                          example: "Credit score decreased by 45 points"
+                        detail:
+                          type: string
+                          description: Detailed alert description
+                          example: "FICO 8 score dropped from 742 to 697 due to new 30-day late payment on Chase Visa account"
+                        status:
+                          type: string
+                          description: Alert acknowledgment status
+                          example: "new"
+                          enum:
+                            - new
+                            - acknowledged
+                            - dismissed
+                            - escalated
+                        source_bureau:
+                          type: string
+                          description: Bureau that reported the event
+                          example: "experian"
+                          enum:
+                            - experian
+                            - equifax
+                            - transunion
+                        detected_at:
+                          type: string
+                          description: When the event was detected
+                          format: date-time
+                          example: "2025-03-15T06:30:00Z"
+                      required:
+                        - alert_id
+                        - alert_type
+                        - severity
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /alerts/{alert_id}:
+    get:
+      operationId: getAlert
+      summary: Get alert details
+      description: >-
+        Retrieve full details of a credit monitoring alert including the triggering event data, matched
+        threshold rule, and any actions taken.
+      tags:
+        - Alerts
+      parameters:
+        - name: alert_id
+          in: path
+          required: true
+          description: Unique alert id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_id:
+                    type: string
+                    description: Alert identifier
+                    format: uuid
+                    example: "malt-7a8b9c0d-e1f2-3456-abcd-789012345678"
+                  consumer_id:
+                    type: string
+                    description: Consumer being monitored
+                    format: uuid
+                    example: "con-8b3c4d5e"
+                  alert_type:
+                    type: string
+                    description: Alert classification
+                    example: "score_change"
+                    enum:
+                      - score_change
+                      - new_inquiry
+                      - new_account
+                      - delinquency
+                      - address_change
+                      - public_record
+                      - collection_filed
+                      - fraud_suspected
+                  severity:
+                    type: string
+                    description: Alert severity level
+                    example: "critical"
+                    enum:
+                      - critical
+                      - high
+                      - medium
+                      - low
+                      - informational
+                  title:
+                    type: string
+                    description: Alert title
+                    example: "Credit score decreased by 45 points"
+                  detail:
+                    type: string
+                    description: Detailed alert description
+                    example: "FICO 8 score dropped from 742 to 697 due to new 30-day late payment on Chase Visa account"
+                  status:
+                    type: string
+                    description: Alert acknowledgment status
+                    example: "new"
+                    enum:
+                      - new
+                      - acknowledged
+                      - dismissed
+                      - escalated
+                  source_bureau:
+                    type: string
+                    description: Bureau that reported the event
+                    example: "experian"
+                    enum:
+                      - experian
+                      - equifax
+                      - transunion
+                  detected_at:
+                    type: string
+                    description: When the event was detected
+                    format: date-time
+                    example: "2025-03-15T06:30:00Z"
+                required:
+                  - alert_id
+                  - alert_type
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateAlert
+      summary: Update alert status
+      description: >-
+        Acknowledge, dismiss, or escalate a credit monitoring alert. Dismissed alerts are retained for audit
+        but hidden from active views. Escalated alerts are routed to the fraud investigation team.
+      tags:
+        - Alerts
+      parameters:
+        - name: alert_id
+          in: path
+          required: true
+          description: Unique alert id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update alert status request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    status:
+                      type: string
+                      description: New status
+                      example: "acknowledged"
+                      enum:
+                        - acknowledged
+                        - dismissed
+                        - escalated
+                    notes:
+                      type: string
+                      description: Optional notes about the action taken
+                      example: "Verified with consumer - legitimate activity"
+              required:
+                - status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert_id:
+                    type: string
+                    description: Alert identifier
+                    format: uuid
+                    example: "malt-7a8b9c0d-e1f2-3456-abcd-789012345678"
+                  consumer_id:
+                    type: string
+                    description: Consumer being monitored
+                    format: uuid
+                    example: "con-8b3c4d5e"
+                  alert_type:
+                    type: string
+                    description: Alert classification
+                    example: "score_change"
+                    enum:
+                      - score_change
+                      - new_inquiry
+                      - new_account
+                      - delinquency
+                      - address_change
+                      - public_record
+                      - collection_filed
+                      - fraud_suspected
+                  severity:
+                    type: string
+                    description: Alert severity level
+                    example: "critical"
+                    enum:
+                      - critical
+                      - high
+                      - medium
+                      - low
+                      - informational
+                  title:
+                    type: string
+                    description: Alert title
+                    example: "Credit score decreased by 45 points"
+                  detail:
+                    type: string
+                    description: Detailed alert description
+                    example: "FICO 8 score dropped from 742 to 697 due to new 30-day late payment on Chase Visa account"
+                  status:
+                    type: string
+                    description: Alert acknowledgment status
+                    example: "new"
+                    enum:
+                      - new
+                      - acknowledged
+                      - dismissed
+                      - escalated
+                  source_bureau:
+                    type: string
+                    description: Bureau that reported the event
+                    example: "experian"
+                    enum:
+                      - experian
+                      - equifax
+                      - transunion
+                  detected_at:
+                    type: string
+                    description: When the event was detected
+                    format: date-time
+                    example: "2025-03-15T06:30:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /thresholds:
+    get:
+      operationId: listThresholds
+      summary: List threshold rules
+      description: >-
+        Retrieve configured monitoring threshold rules. Each threshold defines a metric, comparison
+        operator, trigger value, and notification channels.
+      tags:
+        - Thresholds
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: consumer_id
+          in: query
+          required: false
+          description: Filter by consumer
+          schema:
+            type: "string"
+        - name: metric
+          in: query
+          required: false
+          description: Filter by monitored metric
+          schema:
+            type: "string"
+        - name: is_active
+          in: query
+          required: false
+          description: Filter by active status
+          schema:
+            type: "boolean"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        threshold_id:
+                          type: string
+                          description: Threshold rule identifier
+                          format: uuid
+                          example: "thr-8b9c0d1e-f2a3-4567-bcde-890123456789"
+                        consumer_id:
+                          type: string
+                          description: Consumer this threshold applies to
+                          format: uuid
+                          example: "con-8b3c4d5e"
+                        metric:
+                          type: string
+                          description: Metric being monitored
+                          example: "credit_score"
+                          enum:
+                            - credit_score
+                            - utilization_pct
+                            - total_debt
+                            - inquiry_count
+                            - delinquency_count
+                        operator:
+                          type: string
+                          description: Comparison operator
+                          example: "greater_than"
+                          enum:
+                            - greater_than
+                            - less_than
+                            - equals
+                            - change_exceeds
+                        threshold_value:
+                          type: number
+                          description: Threshold trigger value
+                          example: 50.0
+                        notification_channels:
+                          type: array
+                          description: How to deliver alerts
+                          items:
+                            type: string
+                            example: "email"
+                        is_active:
+                          type: boolean
+                          description: Whether this threshold is active
+                          example: true
+                      required:
+                        - threshold_id
+                        - metric
+                        - is_active
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createThreshold
+      summary: Create threshold rule
+      description: >-
+        Create a new monitoring threshold rule for a consumer. When the specified metric crosses the
+        threshold value, an alert is generated and delivered via the configured notification channels.
+      tags:
+        - Thresholds
+      requestBody:
+        required: true
+        description: Create threshold rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    consumer_id:
+                      type: string
+                      description: Consumer to monitor
+                      format: uuid
+                      example: "con-8b3c4d5e"
+                    metric:
+                      type: string
+                      description: Metric to monitor
+                      example: "credit_score"
+                      enum:
+                        - credit_score
+                        - utilization_pct
+                        - total_debt
+                        - inquiry_count
+                    operator:
+                      type: string
+                      description: Comparison operator
+                      example: "greater_than"
+                      enum:
+                        - greater_than
+                        - less_than
+                        - change_exceeds
+                    threshold_value:
+                      type: number
+                      description: Trigger value
+                      example: 30.0
+                    notification_channels:
+                      type: array
+                      description: Notification channels
+                      items:
+                        type: string
+                        example: "email"
+              required:
+                - consumer_id
+                - metric
+                - operator
+                - threshold_value
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threshold_id:
+                    type: string
+                    description: Threshold rule identifier
+                    format: uuid
+                    example: "thr-8b9c0d1e-f2a3-4567-bcde-890123456789"
+                  consumer_id:
+                    type: string
+                    description: Consumer this threshold applies to
+                    format: uuid
+                    example: "con-8b3c4d5e"
+                  metric:
+                    type: string
+                    description: Metric being monitored
+                    example: "credit_score"
+                    enum:
+                      - credit_score
+                      - utilization_pct
+                      - total_debt
+                      - inquiry_count
+                      - delinquency_count
+                  operator:
+                    type: string
+                    description: Comparison operator
+                    example: "greater_than"
+                    enum:
+                      - greater_than
+                      - less_than
+                      - equals
+                      - change_exceeds
+                  threshold_value:
+                    type: number
+                    description: Threshold trigger value
+                    example: 50.0
+                  notification_channels:
+                    type: array
+                    description: How to deliver alerts
+                    items:
+                      type: string
+                      example: "email"
+                  is_active:
+                    type: boolean
+                    description: Whether this threshold is active
+                    example: true
+                required:
+                  - threshold_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /thresholds/{threshold_id}:
+    patch:
+      operationId: updateThreshold
+      summary: Update threshold rule
+      description: >-
+        Modify an existing threshold rule's trigger value, operator, or notification channels. Changes take
+        effect immediately for subsequent credit events.
+      tags:
+        - Thresholds
+      parameters:
+        - name: threshold_id
+          in: path
+          required: true
+          description: Unique threshold id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update threshold rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    threshold_value:
+                      type: number
+                      description: Updated trigger value
+                      example: 40.0
+                    operator:
+                      type: string
+                      description: Updated operator
+                      example: "greater_than"
+                      enum:
+                        - greater_than
+                        - less_than
+                        - change_exceeds
+                    notification_channels:
+                      type: array
+                      description: Updated channels
+                      items:
+                        type: string
+                        example: "sms"
+                    is_active:
+                      type: boolean
+                      description: Active status
+                      example: true
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threshold_id:
+                    type: string
+                    description: Threshold rule identifier
+                    format: uuid
+                    example: "thr-8b9c0d1e-f2a3-4567-bcde-890123456789"
+                  consumer_id:
+                    type: string
+                    description: Consumer this threshold applies to
+                    format: uuid
+                    example: "con-8b3c4d5e"
+                  metric:
+                    type: string
+                    description: Metric being monitored
+                    example: "credit_score"
+                    enum:
+                      - credit_score
+                      - utilization_pct
+                      - total_debt
+                      - inquiry_count
+                      - delinquency_count
+                  operator:
+                    type: string
+                    description: Comparison operator
+                    example: "greater_than"
+                    enum:
+                      - greater_than
+                      - less_than
+                      - equals
+                      - change_exceeds
+                  threshold_value:
+                    type: number
+                    description: Threshold trigger value
+                    example: 50.0
+                  notification_channels:
+                    type: array
+                    description: How to deliver alerts
+                    items:
+                      type: string
+                      example: "email"
+                  is_active:
+                    type: boolean
+                    description: Whether this threshold is active
+                    example: true
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteThreshold
+      summary: Delete threshold rule
+      description: >-
+        Remove a monitoring threshold rule. Active alerts previously generated by this rule are not
+        affected.
+      tags:
+        - Thresholds
+      parameters:
+        - name: threshold_id
+          in: path
+          required: true
+          description: Unique threshold id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /events:
+    get:
+      operationId: listCreditEvents
+      summary: List credit events
+      description: >-
+        Query raw credit events detected across all monitored consumers. Events represent atomic changes
+        reported by bureaus including new accounts, balance changes, inquiries, and derogatory marks. Events
+        that match threshold rules generate alerts automatically.
+      tags:
+        - Events
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: consumer_id
+          in: query
+          required: false
+          description: Filter by consumer
+          schema:
+            type: "string"
+        - name: event_type
+          in: query
+          required: false
+          description: Filter by event type
+          schema:
+            type: "string"
+        - name: bureau
+          in: query
+          required: false
+          description: Filter by bureau
+          schema:
+            type: "string"
+        - name: detected_after
+          in: query
+          required: false
+          description: Events detected after this timestamp
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event_id:
+                          type: string
+                          description: Event identifier
+                          format: uuid
+                          example: "evt-9c0d1e2f"
+                        consumer_id:
+                          type: string
+                          description: Consumer
+                          format: uuid
+                          example: "con-8b3c4d5e"
+                        event_type:
+                          type: string
+                          description: Event category
+                          example: "score_change"
+                          enum:
+                            - score_change
+                            - new_inquiry
+                            - new_account
+                            - balance_change
+                            - delinquency_reported
+                            - public_record_added
+                            - address_change
+                        bureau:
+                          type: string
+                          description: Reporting bureau
+                          example: "experian"
+                          enum:
+                            - experian
+                            - equifax
+                            - transunion
+                        previous_value:
+                          type: string
+                          description: Previous value (if applicable)
+                          example: "742"
+                        new_value:
+                          type: string
+                          description: New value
+                          example: "697"
+                        detected_at:
+                          type: string
+                          description: Detection timestamp
+                          format: date-time
+                          example: "2025-01-15T09:30:00Z"
+                        raw_payload:
+                          type: string
+                          description: Bureau-specific event payload reference
+                          example: "ref:exp-evt-20250315-001"
+                      required:
+                        - event_id
+                        - event_type
+                        - detected_at
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

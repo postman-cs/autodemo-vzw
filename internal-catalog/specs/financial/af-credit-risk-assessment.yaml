@@ -1,0 +1,1147 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Credit Risk Assessment API
+  description: >-
+    Evaluate credit risk at the individual, commercial, and portfolio level using advanced IRB (Internal Ratings-
+    Based) models. Supports probability of default (PD), loss given default (LGD), and exposure at default (EAD)
+    calculations aligned with Basel III/IV requirements. Includes stress testing capabilities for CCAR/DFAST
+    scenario analysis and portfolio concentration risk monitoring.
+  version: 3.0.1
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-credit-risk-assessment
+  x-acme-domain: credit
+servers:
+  - url: https://af-credit-risk-assessment.api.acmefin.com/v1
+    description: Production
+  - url: https://af-credit-risk-assessment.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Risk Evaluation
+    description: Assess credit risk for individual consumers, commercial entities, and portfolio segments
+  - name: Stress Testing
+    description: Run stress test scenarios to project portfolio losses under adverse economic conditions
+  - name: Portfolio Analysis
+    description: Analyze portfolio-level risk metrics including concentration and diversification
+paths:
+  /assessments:
+    get:
+      operationId: listAssessments
+      summary: List risk assessments
+      description: >-
+        Retrieve credit risk assessments with filtering by entity type, risk rating, and assessment date.
+        Expired assessments are flagged for re-evaluation.
+      tags:
+        - Risk Evaluation
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: entity_type
+          in: query
+          required: false
+          description: Filter by entity type
+          schema:
+            type: "string"
+            enum:
+              - consumer
+              - commercial
+              - portfolio_segment
+        - name: risk_rating
+          in: query
+          required: false
+          description: Filter by risk rating
+          schema:
+            type: "string"
+        - name: assessed_after
+          in: query
+          required: false
+          description: Assessments performed after this date
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        assessment_id:
+                          type: string
+                          description: Assessment identifier
+                          format: uuid
+                          example: "rsk-3a4b5c6d-e7f8-9012-abcd-345678901234"
+                        entity_type:
+                          type: string
+                          description: Type of entity assessed
+                          example: "consumer"
+                          enum:
+                            - consumer
+                            - commercial
+                            - portfolio_segment
+                        entity_id:
+                          type: string
+                          description: Identifier of the assessed entity
+                          example: "con-8b3c4d5e"
+                        risk_rating:
+                          type: string
+                          description: Overall risk rating
+                          example: "AAA"
+                          enum:
+                            - AAA
+                            - AA
+                            - A
+                            - BBB
+                            - BB
+                            - B
+                            - CCC
+                            - CC
+                            - C
+                            - D
+                        probability_of_default:
+                          type: number
+                          description: Estimated probability of default as a percentage
+                          example: 2.3
+                          minimum: 0
+                          maximum: 100
+                        loss_given_default:
+                          type: number
+                          description: Estimated loss given default as a percentage
+                          example: 45.0
+                          minimum: 0
+                          maximum: 100
+                        expected_loss:
+                          type: number
+                          description: Expected loss amount in USD
+                          example: 1035.0
+                        exposure_at_default:
+                          type: number
+                          description: Exposure at default in USD
+                          example: 23000.0
+                        assessment_model:
+                          type: string
+                          description: Risk model used
+                          example: "IRB-Advanced-v3.2"
+                        assessed_at:
+                          type: string
+                          description: Assessment timestamp
+                          format: date-time
+                          example: "2025-03-15T12:00:00Z"
+                        valid_until:
+                          type: string
+                          description: Assessment validity expiration
+                          format: date-time
+                          example: "2025-06-15T12:00:00Z"
+                      required:
+                        - assessment_id
+                        - risk_rating
+                        - probability_of_default
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: evaluateRisk
+      summary: Evaluate credit risk
+      description: >-
+        Perform a comprehensive credit risk evaluation for a consumer, commercial entity, or portfolio
+        segment. The assessment calculates PD, LGD, EAD, and expected loss using the institution's IRB-
+        approved models. Results are cached and valid for the period specified by regulatory policy.
+      tags:
+        - Risk Evaluation
+      requestBody:
+        required: true
+        description: Evaluate credit risk request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    entity_type:
+                      type: string
+                      description: Entity type
+                      example: "consumer"
+                      enum:
+                        - consumer
+                        - commercial
+                        - portfolio_segment
+                    entity_id:
+                      type: string
+                      description: Entity identifier
+                      example: "con-8b3c4d5e"
+                    assessment_model:
+                      type: string
+                      description: Risk model to use (or 'default' for regulatory default)
+                      example: "IRB-Advanced-v3.2"
+                    include_stress_overlay:
+                      type: boolean
+                      description: Include stress scenario overlay in results
+                      example: false
+              required:
+                - entity_type
+                - entity_id
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assessment_id:
+                    type: string
+                    description: Assessment identifier
+                    format: uuid
+                    example: "rsk-3a4b5c6d-e7f8-9012-abcd-345678901234"
+                  entity_type:
+                    type: string
+                    description: Type of entity assessed
+                    example: "consumer"
+                    enum:
+                      - consumer
+                      - commercial
+                      - portfolio_segment
+                  entity_id:
+                    type: string
+                    description: Identifier of the assessed entity
+                    example: "con-8b3c4d5e"
+                  risk_rating:
+                    type: string
+                    description: Overall risk rating
+                    example: "AAA"
+                    enum:
+                      - AAA
+                      - AA
+                      - A
+                      - BBB
+                      - BB
+                      - B
+                      - CCC
+                      - CC
+                      - C
+                      - D
+                  probability_of_default:
+                    type: number
+                    description: Estimated probability of default as a percentage
+                    example: 2.3
+                    minimum: 0
+                    maximum: 100
+                  loss_given_default:
+                    type: number
+                    description: Estimated loss given default as a percentage
+                    example: 45.0
+                    minimum: 0
+                    maximum: 100
+                  expected_loss:
+                    type: number
+                    description: Expected loss amount in USD
+                    example: 1035.0
+                  exposure_at_default:
+                    type: number
+                    description: Exposure at default in USD
+                    example: 23000.0
+                  assessment_model:
+                    type: string
+                    description: Risk model used
+                    example: "IRB-Advanced-v3.2"
+                  assessed_at:
+                    type: string
+                    description: Assessment timestamp
+                    format: date-time
+                    example: "2025-03-15T12:00:00Z"
+                  valid_until:
+                    type: string
+                    description: Assessment validity expiration
+                    format: date-time
+                    example: "2025-06-15T12:00:00Z"
+                required:
+                  - assessment_id
+                  - risk_rating
+                  - probability_of_default
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /assessments/{assessment_id}:
+    get:
+      operationId: getAssessment
+      summary: Get risk assessment
+      description: >-
+        Retrieve detailed results of a credit risk assessment including all risk parameters, model inputs,
+        and the assessment validity period.
+      tags:
+        - Risk Evaluation
+      parameters:
+        - name: assessment_id
+          in: path
+          required: true
+          description: Unique assessment id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assessment_id:
+                    type: string
+                    description: Assessment identifier
+                    format: uuid
+                    example: "rsk-3a4b5c6d-e7f8-9012-abcd-345678901234"
+                  entity_type:
+                    type: string
+                    description: Type of entity assessed
+                    example: "consumer"
+                    enum:
+                      - consumer
+                      - commercial
+                      - portfolio_segment
+                  entity_id:
+                    type: string
+                    description: Identifier of the assessed entity
+                    example: "con-8b3c4d5e"
+                  risk_rating:
+                    type: string
+                    description: Overall risk rating
+                    example: "AAA"
+                    enum:
+                      - AAA
+                      - AA
+                      - A
+                      - BBB
+                      - BB
+                      - B
+                      - CCC
+                      - CC
+                      - C
+                      - D
+                  probability_of_default:
+                    type: number
+                    description: Estimated probability of default as a percentage
+                    example: 2.3
+                    minimum: 0
+                    maximum: 100
+                  loss_given_default:
+                    type: number
+                    description: Estimated loss given default as a percentage
+                    example: 45.0
+                    minimum: 0
+                    maximum: 100
+                  expected_loss:
+                    type: number
+                    description: Expected loss amount in USD
+                    example: 1035.0
+                  exposure_at_default:
+                    type: number
+                    description: Exposure at default in USD
+                    example: 23000.0
+                  assessment_model:
+                    type: string
+                    description: Risk model used
+                    example: "IRB-Advanced-v3.2"
+                  assessed_at:
+                    type: string
+                    description: Assessment timestamp
+                    format: date-time
+                    example: "2025-03-15T12:00:00Z"
+                  valid_until:
+                    type: string
+                    description: Assessment validity expiration
+                    format: date-time
+                    example: "2025-06-15T12:00:00Z"
+                required:
+                  - assessment_id
+                  - risk_rating
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteAssessment
+      summary: Delete risk assessment
+      description: >-
+        Delete a risk assessment record. Active assessments referenced by open credit facilities cannot be
+        deleted until the facility is closed or a superseding assessment is recorded.
+      tags:
+        - Risk Evaluation
+      parameters:
+        - name: assessment_id
+          in: path
+          required: true
+          description: Unique assessment id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /assessments/{assessment_id}/factors:
+    get:
+      operationId: getAssessmentFactors
+      summary: Get risk factors
+      description: >-
+        Retrieve the factor-level breakdown of a risk assessment showing each variable's contribution to the
+        overall risk rating and PD estimate. Useful for model validation and explainability requirements.
+      tags:
+        - Risk Evaluation
+      parameters:
+        - name: assessment_id
+          in: path
+          required: true
+          description: Assessment identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        factor_name:
+                          type: string
+                          description: Risk factor name
+                          example: "Payment history severity"
+                        factor_category:
+                          type: string
+                          description: Factor category
+                          example: "financial"
+                          enum:
+                            - financial
+                            - behavioral
+                            - demographic
+                            - macroeconomic
+                        raw_value:
+                          type: string
+                          description: Raw input value
+                          example: "2 late payments in 24 months"
+                        contribution_to_pd:
+                          type: number
+                          description: Contribution to PD estimate in basis points
+                          example: 45.0
+                        direction:
+                          type: string
+                          description: Impact direction
+                          example: "risk_increasing"
+                          enum:
+                            - risk_increasing
+                            - risk_decreasing
+                            - neutral
+                      required:
+                        - factor_name
+                        - contribution_to_pd
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /stress-tests:
+    post:
+      operationId: runStressTest
+      summary: Run stress test
+      description: >-
+        Execute a portfolio stress test under a specified macroeconomic scenario. Stress tests project
+        credit losses, capital impacts, and risk rating migrations across the portfolio. Processing is
+        asynchronous for large portfolios; poll the test status endpoint for results.
+      tags:
+        - Stress Testing
+      requestBody:
+        required: true
+        description: Run stress test request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    scenario_name:
+                      type: string
+                      description: Scenario name
+                      example: "Severe Recession 2025"
+                    scenario_type:
+                      type: string
+                      description: Scenario type
+                      example: "baseline"
+                      enum:
+                        - baseline
+                        - adverse
+                        - severely_adverse
+                        - custom
+                    portfolio_segment:
+                      type: string
+                      description: Portfolio segment to stress
+                      example: "Consumer Unsecured"
+                    macroeconomic_assumptions:
+                      type: string
+                      description: Macro assumptions as JSON
+                      example: '{"unemployment": 10.5, "gdp_growth": -3.2, "housing_price_decline": 25.0}'
+                    time_horizon_quarters:
+                      type: integer
+                      description: Projection horizon in quarters
+                      example: 9
+                      minimum: 1
+                      maximum: 12
+              required:
+                - scenario_type
+                - portfolio_segment
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  test_id:
+                    type: string
+                    description: Stress test ID
+                    format: uuid
+                    example: "str-4b5c6d7e"
+                  status:
+                    type: string
+                    description: Execution status
+                    example: "running"
+                    enum:
+                      - running
+                      - completed
+                      - failed
+                  estimated_completion:
+                    type: string
+                    description: Estimated completion time
+                    format: date-time
+                    example: "2025-03-15T19:00:00Z"
+                required:
+                  - test_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /stress-tests/{test_id}:
+    get:
+      operationId: getStressTestResults
+      summary: Get stress test results
+      description: >-
+        Retrieve the results of a completed stress test including projected losses, capital impact, and risk
+        rating migration matrices for each quarter in the projection horizon.
+      tags:
+        - Stress Testing
+      parameters:
+        - name: test_id
+          in: path
+          required: true
+          description: Unique test id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  test_id:
+                    type: string
+                    description: Stress test identifier
+                    format: uuid
+                    example: "str-4b5c6d7e-f8a9-0123-bcde-456789012345"
+                  scenario_name:
+                    type: string
+                    description: Stress scenario name
+                    example: "Severe Recession 2025"
+                  scenario_type:
+                    type: string
+                    description: Scenario classification
+                    example: "baseline"
+                    enum:
+                      - baseline
+                      - adverse
+                      - severely_adverse
+                      - custom
+                  portfolio_segment:
+                    type: string
+                    description: Portfolio segment tested
+                    example: "Consumer Unsecured"
+                  total_exposure:
+                    type: number
+                    description: Total portfolio exposure in USD
+                    example: 2500000000.0
+                  projected_losses:
+                    type: number
+                    description: Projected losses under stress in USD
+                    example: 187500000.0
+                  loss_rate_pct:
+                    type: number
+                    description: Projected loss rate as a percentage
+                    example: 7.5
+                  capital_impact_pct:
+                    type: number
+                    description: Impact on capital ratio in basis points
+                    example: -85.0
+                  status:
+                    type: string
+                    description: Test execution status
+                    example: "running"
+                    enum:
+                      - running
+                      - completed
+                      - failed
+                  completed_at:
+                    type: string
+                    description: Test completion timestamp
+                    format: date-time
+                    example: "2025-03-15T18:00:00Z"
+                required:
+                  - test_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /portfolio/analysis:
+    post:
+      operationId: analyzePortfolio
+      summary: Analyze portfolio risk
+      description: >-
+        Run a comprehensive portfolio risk analysis computing aggregate risk metrics, rating distributions,
+        vintage curves, and sector/geographic diversification. Results are used for management reporting and
+        regulatory capital calculations.
+      tags:
+        - Portfolio Analysis
+      requestBody:
+        required: true
+        description: Analyze portfolio risk request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    portfolio_segment:
+                      type: string
+                      description: Segment to analyze
+                      example: "All Consumer"
+                    as_of_date:
+                      type: string
+                      description: Point-in-time date for analysis
+                      example: "2025-03-31"
+                    include_watch_list:
+                      type: boolean
+                      description: Include watch list accounts
+                      example: true
+                    group_by:
+                      type: array
+                      description: Dimensions to group by
+                      items:
+                        type: string
+                        example: "product_type"
+              required:
+                - portfolio_segment
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analysis_id:
+                    type: string
+                    description: Analysis record ID
+                    format: uuid
+                    example: "pan-5c6d7e8f"
+                  total_exposure:
+                    type: number
+                    description: Total portfolio exposure in USD
+                    example: 4200000000.0
+                  weighted_avg_pd:
+                    type: number
+                    description: Exposure-weighted average PD
+                    example: 3.1
+                  expected_loss_total:
+                    type: number
+                    description: Total expected loss
+                    example: 130200000.0
+                  rating_distribution:
+                    type: array
+                    description: Exposure by risk rating
+                    items:
+                      type: object
+                  concentration_metrics:
+                    type: array
+                    description: Top concentrations
+                    items:
+                      type: object
+                required:
+                  - analysis_id
+                  - total_exposure
+                  - weighted_avg_pd
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /portfolio/concentration:
+    get:
+      operationId: getConcentrationRisk
+      summary: Get concentration risk
+      description: >-
+        Retrieve portfolio concentration risk metrics across key dimensions including industry sector,
+        geographic region, single-name exposure, and product type. Concentrations exceeding regulatory
+        thresholds are flagged.
+      tags:
+        - Portfolio Analysis
+      parameters:
+        - name: dimension
+          in: query
+          required: false
+          description: Concentration dimension to analyze
+          schema:
+            type: "string"
+            enum:
+              - sector
+              - geography
+              - single_name
+              - product
+              - all
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of_date:
+                    type: string
+                    description: Analysis date
+                    example: "2025-03-31"
+                  top_sector_concentrations:
+                    type: array
+                    description: Largest sector exposures
+                    items:
+                      type: object
+                  top_geographic_concentrations:
+                    type: array
+                    description: Largest geographic exposures
+                    items:
+                      type: object
+                  single_name_exposures:
+                    type: array
+                    description: Largest single-name exposures
+                    items:
+                      type: object
+                  hhi_index:
+                    type: number
+                    description: Herfindahl-Hirschman Index for portfolio diversification
+                    example: 0.085
+                  threshold_breaches:
+                    type: array
+                    description: Concentration limits exceeded
+                    items:
+                      type: object
+                required:
+                  - hhi_index
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,1798 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Card Disputes API
+  description: >-
+    Manages the full lifecycle of card transaction disputes from initial filing through chargeback resolution.
+    Handles dispute case creation, evidence submission, provisional credit issuance, chargeback processing, and
+    merchant representment. Compliant with Visa Claims Resolution (VCR) and Mastercard Chargeback Monitoring
+    Program (MCMP) requirements. Supports all major reason codes for fraud, merchandise, and processing error
+    disputes.
+  version: 2.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-cards-disputes
+  x-acme-domain: cards
+servers:
+  - url: https://af-cards-disputes.api.acmefin.com/v1
+    description: Production
+  - url: https://af-cards-disputes.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Disputes
+    description: Dispute case management from filing through resolution
+  - name: Evidence
+    description: Supporting evidence and documentation for dispute cases
+  - name: Chargebacks
+    description: Chargeback processing and merchant representment
+paths:
+  /disputes:
+    get:
+      operationId: listDisputes
+      summary: List disputes
+      description: >-
+        Returns a paginated list of disputes filed by cardholders. Supports filtering by card, status,
+        reason code, and filing date range. Results include provisional credit amounts and resolution
+        deadlines. Use this for dispute queue management and reporting.
+      tags:
+        - Disputes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: card_id
+          in: query
+          required: false
+          description: Filter by card identifier
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by dispute status
+          schema:
+            type: "string"
+            enum:
+              - OPENED
+              - UNDER_REVIEW
+              - EVIDENCE_REQUESTED
+              - RESOLVED_WON
+              - RESOLVED_LOST
+        - name: from_date
+          in: query
+          required: false
+          description: Include disputes filed on or after this date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        dispute_id:
+                          type: string
+                          description: Unique dispute case identifier
+                          example: "dsp-7a2f9c01"
+                        card_id:
+                          type: string
+                          description: Unique card identifier
+                          example: "card-8a2f4b91"
+                        transaction_id:
+                          type: string
+                          description: Disputed transaction identifier
+                          example: "txn-8f3c92"
+                        amount:
+                          type: number
+                          description: Monetary amount
+                          format: double
+                          example: 250.0
+                        currency:
+                          type: string
+                          description: ISO 4217 currency code
+                          example: "USD"
+                          minLength: 3
+                          maxLength: 3
+                        reason_code:
+                          type: string
+                          description: Network reason code for the dispute
+                          example: "10.4"
+                        reason_description:
+                          type: string
+                          description: Human-readable reason for the dispute
+                          example: "Merchandise not received"
+                        status:
+                          type: string
+                          description: Current dispute lifecycle status
+                          example: "UNDER_REVIEW"
+                          enum:
+                            - OPENED
+                            - UNDER_REVIEW
+                            - EVIDENCE_REQUESTED
+                            - PROVISIONAL_CREDIT
+                            - RESOLVED_WON
+                            - RESOLVED_LOST
+                            - CLOSED
+                            - CANCELLED
+                        provisional_credit:
+                          type: number
+                          description: Provisional credit amount applied to the cardholder account
+                          format: double
+                          example: 250.0
+                        merchant_name:
+                          type: string
+                          description: Merchant name as registered with the acquirer
+                          example: "ACME Electronics Store"
+                        merchant_category_code:
+                          type: string
+                          description: ISO 18245 merchant category code
+                          example: "5411"
+                          pattern: '^[0-9]{4}$'
+                        filed_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        resolution_deadline:
+                          type: string
+                          description: Regulatory deadline for dispute resolution
+                          format: date
+                          example: "2025-09-15"
+                        resolved_at:
+                          type: string
+                          description: Timestamp when the dispute was resolved
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                          nullable: true
+                      required:
+                        - dispute_id
+                        - card_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: fileDispute
+      summary: File a new dispute
+      description: >-
+        Creates a new dispute case for a card transaction. The cardholder must provide the transaction
+        identifier, reason code, and description of the issue. A provisional credit is automatically applied
+        for qualifying disputes over $25 within one business day. The dispute enters the review queue for
+        investigation.
+      tags:
+        - Disputes
+      requestBody:
+        required: true
+        description: File a new dispute request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    card_id:
+                      type: string
+                      description: Unique card identifier
+                      example: "card-8a2f4b91"
+                    transaction_id:
+                      type: string
+                      description: Disputed transaction identifier
+                      example: "txn-8f3c92"
+                    reason_code:
+                      type: string
+                      description: Network reason code for the dispute
+                      example: "10.4"
+                    description:
+                      type: string
+                      description: Detailed description of the dispute reason
+                      example: "I ordered a laptop but received an empty box. Merchant has not responded to my emails."
+                    contact_email:
+                      type: string
+                      description: Cardholder contact email for dispute correspondence
+                      format: email
+                      example: "jane.doe@email.com"
+              required:
+                - card_id
+                - transaction_id
+                - reason_code
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Unique dispute case identifier
+                    example: "dsp-7a2f9c01"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  transaction_id:
+                    type: string
+                    description: Disputed transaction identifier
+                    example: "txn-8f3c92"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  reason_code:
+                    type: string
+                    description: Network reason code for the dispute
+                    example: "10.4"
+                  reason_description:
+                    type: string
+                    description: Human-readable reason for the dispute
+                    example: "Merchandise not received"
+                  status:
+                    type: string
+                    description: Current dispute lifecycle status
+                    example: "UNDER_REVIEW"
+                    enum:
+                      - OPENED
+                      - UNDER_REVIEW
+                      - EVIDENCE_REQUESTED
+                      - PROVISIONAL_CREDIT
+                      - RESOLVED_WON
+                      - RESOLVED_LOST
+                      - CLOSED
+                      - CANCELLED
+                  provisional_credit:
+                    type: number
+                    description: Provisional credit amount applied to the cardholder account
+                    format: double
+                    example: 250.0
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  filed_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: Regulatory deadline for dispute resolution
+                    format: date
+                    example: "2025-09-15"
+                  resolved_at:
+                    type: string
+                    description: Timestamp when the dispute was resolved
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                    nullable: true
+                required:
+                  - dispute_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /disputes/{dispute_id}:
+    get:
+      operationId: getDispute
+      summary: Get dispute details
+      description: >-
+        Retrieves the full details of a dispute case including its current status, reason code, provisional
+        credit, merchant information, evidence submissions, and resolution deadline. The response includes
+        the full timeline of status changes.
+      tags:
+        - Disputes
+      parameters:
+        - name: dispute_id
+          in: path
+          required: true
+          description: Unique dispute id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Unique dispute case identifier
+                    example: "dsp-7a2f9c01"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  transaction_id:
+                    type: string
+                    description: Disputed transaction identifier
+                    example: "txn-8f3c92"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  reason_code:
+                    type: string
+                    description: Network reason code for the dispute
+                    example: "10.4"
+                  reason_description:
+                    type: string
+                    description: Human-readable reason for the dispute
+                    example: "Merchandise not received"
+                  status:
+                    type: string
+                    description: Current dispute lifecycle status
+                    example: "UNDER_REVIEW"
+                    enum:
+                      - OPENED
+                      - UNDER_REVIEW
+                      - EVIDENCE_REQUESTED
+                      - PROVISIONAL_CREDIT
+                      - RESOLVED_WON
+                      - RESOLVED_LOST
+                      - CLOSED
+                      - CANCELLED
+                  provisional_credit:
+                    type: number
+                    description: Provisional credit amount applied to the cardholder account
+                    format: double
+                    example: 250.0
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  filed_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: Regulatory deadline for dispute resolution
+                    format: date
+                    example: "2025-09-15"
+                  resolved_at:
+                    type: string
+                    description: Timestamp when the dispute was resolved
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                    nullable: true
+                required:
+                  - dispute_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateDispute
+      summary: Update dispute information
+      description: >-
+        Updates a dispute case with additional information or corrected details. Only disputes in OPENED or
+        UNDER_REVIEW status can be updated. Changes to the dispute amount or reason code may affect
+        provisional credit eligibility and require re-review.
+      tags:
+        - Disputes
+      parameters:
+        - name: dispute_id
+          in: path
+          required: true
+          description: Unique dispute id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update dispute information request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason_code:
+                      type: string
+                      description: Network reason code for the dispute
+                      example: "10.4"
+                    description:
+                      type: string
+                      description: Updated dispute description
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Unique dispute case identifier
+                    example: "dsp-7a2f9c01"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  transaction_id:
+                    type: string
+                    description: Disputed transaction identifier
+                    example: "txn-8f3c92"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  reason_code:
+                    type: string
+                    description: Network reason code for the dispute
+                    example: "10.4"
+                  reason_description:
+                    type: string
+                    description: Human-readable reason for the dispute
+                    example: "Merchandise not received"
+                  status:
+                    type: string
+                    description: Current dispute lifecycle status
+                    example: "UNDER_REVIEW"
+                    enum:
+                      - OPENED
+                      - UNDER_REVIEW
+                      - EVIDENCE_REQUESTED
+                      - PROVISIONAL_CREDIT
+                      - RESOLVED_WON
+                      - RESOLVED_LOST
+                      - CLOSED
+                      - CANCELLED
+                  provisional_credit:
+                    type: number
+                    description: Provisional credit amount applied to the cardholder account
+                    format: double
+                    example: 250.0
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  filed_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: Regulatory deadline for dispute resolution
+                    format: date
+                    example: "2025-09-15"
+                  resolved_at:
+                    type: string
+                    description: Timestamp when the dispute was resolved
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                    nullable: true
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /disputes/{dispute_id}/cancel:
+    post:
+      operationId: cancelDispute
+      summary: Cancel a dispute
+      description: >-
+        Cancels an open dispute case at the cardholder's request. Any provisional credit applied is
+        reversed. The dispute transitions to CANCELLED status. Only disputes in OPENED or UNDER_REVIEW
+        status can be cancelled. This action is irreversible; a new dispute must be filed if needed.
+      tags:
+        - Disputes
+      parameters:
+        - name: dispute_id
+          in: path
+          required: true
+          description: Unique dispute id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Cancel a dispute request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    cancellation_reason:
+                      type: string
+                      description: Reason for cancelling the dispute
+                      example: "Resolved directly with merchant"
+              required:
+                - cancellation_reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispute_id:
+                    type: string
+                    description: Unique dispute case identifier
+                    example: "dsp-7a2f9c01"
+                  card_id:
+                    type: string
+                    description: Unique card identifier
+                    example: "card-8a2f4b91"
+                  transaction_id:
+                    type: string
+                    description: Disputed transaction identifier
+                    example: "txn-8f3c92"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  reason_code:
+                    type: string
+                    description: Network reason code for the dispute
+                    example: "10.4"
+                  reason_description:
+                    type: string
+                    description: Human-readable reason for the dispute
+                    example: "Merchandise not received"
+                  status:
+                    type: string
+                    description: Current dispute lifecycle status
+                    example: "UNDER_REVIEW"
+                    enum:
+                      - OPENED
+                      - UNDER_REVIEW
+                      - EVIDENCE_REQUESTED
+                      - PROVISIONAL_CREDIT
+                      - RESOLVED_WON
+                      - RESOLVED_LOST
+                      - CLOSED
+                      - CANCELLED
+                  provisional_credit:
+                    type: number
+                    description: Provisional credit amount applied to the cardholder account
+                    format: double
+                    example: 250.0
+                  merchant_name:
+                    type: string
+                    description: Merchant name as registered with the acquirer
+                    example: "ACME Electronics Store"
+                  merchant_category_code:
+                    type: string
+                    description: ISO 18245 merchant category code
+                    example: "5411"
+                    pattern: '^[0-9]{4}$'
+                  filed_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  resolution_deadline:
+                    type: string
+                    description: Regulatory deadline for dispute resolution
+                    format: date
+                    example: "2025-09-15"
+                  resolved_at:
+                    type: string
+                    description: Timestamp when the dispute was resolved
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                    nullable: true
+                required:
+                  - dispute_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /disputes/{dispute_id}/evidence:
+    post:
+      operationId: submitEvidence
+      summary: Submit evidence for a dispute
+      description: >-
+        Uploads supporting evidence for a dispute case. Accepted file types are PDF, JPEG, PNG, and TIFF
+        with a maximum size of 10 MB. Evidence can include receipts, correspondence with the merchant,
+        delivery tracking information, screenshots, and signed contracts. Multiple evidence files can be
+        submitted per dispute.
+      tags:
+        - Evidence
+      parameters:
+        - name: dispute_id
+          in: path
+          required: true
+          description: Unique dispute id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Submit evidence for a dispute request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    type:
+                      type: string
+                      description: Type of supporting evidence
+                      example: "RECEIPT"
+                      enum:
+                        - RECEIPT
+                        - CORRESPONDENCE
+                        - TRACKING_INFO
+                        - SCREENSHOT
+                        - SIGNED_CONTRACT
+                        - CANCELLATION_CONFIRMATION
+                        - OTHER
+                    description:
+                      type: string
+                      description: Description of the evidence provided
+                      example: "Original purchase receipt showing different amount"
+                    file_content_base64:
+                      type: string
+                      description: Base64-encoded file content
+                      example: "JVBERi0xLjQK..."
+                    file_name:
+                      type: string
+                      description: Original file name with extension
+                      example: "receipt-20250615.pdf"
+              required:
+                - type
+                - file_content_base64
+                - file_name
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  evidence_id:
+                    type: string
+                    description: Unique evidence document identifier
+                    example: "evd-3c8f21"
+                  dispute_id:
+                    type: string
+                    description: Unique dispute case identifier
+                    example: "dsp-7a2f9c01"
+                  type:
+                    type: string
+                    description: Type of supporting evidence
+                    example: "RECEIPT"
+                    enum:
+                      - RECEIPT
+                      - CORRESPONDENCE
+                      - TRACKING_INFO
+                      - SCREENSHOT
+                      - SIGNED_CONTRACT
+                      - CANCELLATION_CONFIRMATION
+                      - OTHER
+                  description:
+                    type: string
+                    description: Description of the evidence provided
+                    example: "Original purchase receipt showing different amount"
+                  file_url:
+                    type: string
+                    description: URL to the uploaded evidence file
+                    format: uri
+                    example: "https://docs.acmefin.com/evidence/evd-3c8f21.pdf"
+                  file_size_bytes:
+                    type: integer
+                    description: Size of the evidence file in bytes
+                    example: 184320
+                  submitted_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  submitted_by:
+                    type: string
+                    description: User who submitted the evidence
+                    example: "user-cardholder-789"
+                required:
+                  - evidence_id
+                  - type
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    get:
+      operationId: listEvidence
+      summary: List evidence for a dispute
+      description: >-
+        Returns all evidence documents submitted for a dispute case. Each entry includes the evidence type,
+        description, file URL, size, and submission details. Evidence files are retained for seven years
+        after dispute resolution.
+      tags:
+        - Evidence
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        evidence_id:
+                          type: string
+                          description: Unique evidence document identifier
+                          example: "evd-3c8f21"
+                        dispute_id:
+                          type: string
+                          description: Unique dispute case identifier
+                          example: "dsp-7a2f9c01"
+                        type:
+                          type: string
+                          description: Type of supporting evidence
+                          example: "RECEIPT"
+                          enum:
+                            - RECEIPT
+                            - CORRESPONDENCE
+                            - TRACKING_INFO
+                            - SCREENSHOT
+                            - SIGNED_CONTRACT
+                            - CANCELLATION_CONFIRMATION
+                            - OTHER
+                        description:
+                          type: string
+                          description: Description of the evidence provided
+                          example: "Original purchase receipt showing different amount"
+                        file_url:
+                          type: string
+                          description: URL to the uploaded evidence file
+                          format: uri
+                          example: "https://docs.acmefin.com/evidence/evd-3c8f21.pdf"
+                        file_size_bytes:
+                          type: integer
+                          description: Size of the evidence file in bytes
+                          example: 184320
+                        submitted_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        submitted_by:
+                          type: string
+                          description: User who submitted the evidence
+                          example: "user-cardholder-789"
+                      required:
+                        - evidence_id
+                        - type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /disputes/{dispute_id}/timeline:
+    get:
+      operationId: getDisputeTimeline
+      summary: Get dispute timeline
+      description: >-
+        Returns a chronological timeline of all events in a dispute case, including status changes, evidence
+        submissions, provisional credits, chargeback filings, and resolution actions. Each event includes a
+        timestamp, actor, and description. Useful for dispute case review and audit purposes.
+      tags:
+        - Disputes
+      parameters:
+        - name: dispute_id
+          in: path
+          required: true
+          description: Unique dispute id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    description: Timeline events in chronological order
+                    items:
+                      type: string
+                      example: "2025-06-15: Dispute filed by cardholder"
+                  total_events:
+                    type: integer
+                    description: Total number of timeline events
+                    example: 8
+                required:
+                  - events
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /chargebacks:
+    post:
+      operationId: processChargeback
+      summary: Initiate chargeback processing
+      description: >-
+        Submits a chargeback to the card network for a dispute case. The chargeback is filed with the
+        appropriate network (Visa, Mastercard, or Amex) using the dispute's reason code and supporting
+        evidence. The acquirer bank is notified and has a defined response window. Interchange fees are
+        applied to the chargeback amount.
+      tags:
+        - Chargebacks
+      requestBody:
+        required: true
+        description: Initiate chargeback processing request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    dispute_id:
+                      type: string
+                      description: Unique dispute case identifier
+                      example: "dsp-7a2f9c01"
+                    amount:
+                      type: number
+                      description: Monetary amount
+                      format: double
+                      example: 250.0
+                    currency:
+                      type: string
+                      description: ISO 4217 currency code
+                      example: "USD"
+                      minLength: 3
+                      maxLength: 3
+              required:
+                - dispute_id
+                - amount
+                - currency
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chargeback_id:
+                    type: string
+                    description: Unique chargeback identifier
+                    example: "cb-9d4e72"
+                  dispute_id:
+                    type: string
+                    description: Unique dispute case identifier
+                    example: "dsp-7a2f9c01"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  reason_code:
+                    type: string
+                    description: Network reason code for the dispute
+                    example: "10.4"
+                  network:
+                    type: string
+                    description: Card network processing the chargeback
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  status:
+                    type: string
+                    description: Chargeback processing status
+                    example: "SUBMITTED"
+                    enum:
+                      - INITIATED
+                      - SUBMITTED
+                      - ACCEPTED
+                      - REPRESENTMENT_FILED
+                      - ARBITRATION
+                      - RESOLVED
+                  acquirer_reference:
+                    type: string
+                    description: Acquirer reference number for the chargeback
+                    example: "ACQ-2025-789012"
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee associated with the chargeback
+                    format: double
+                    example: 25.0
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - chargeback_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /chargebacks/{chargeback_id}:
+    get:
+      operationId: getChargeback
+      summary: Get chargeback details
+      description: >-
+        Retrieves the full details of a chargeback including its network processing status, acquirer
+        reference, interchange fees, and any representment filed by the merchant. The response reflects the
+        latest status from the card network.
+      tags:
+        - Chargebacks
+      parameters:
+        - name: chargeback_id
+          in: path
+          required: true
+          description: Unique chargeback id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chargeback_id:
+                    type: string
+                    description: Unique chargeback identifier
+                    example: "cb-9d4e72"
+                  dispute_id:
+                    type: string
+                    description: Unique dispute case identifier
+                    example: "dsp-7a2f9c01"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  reason_code:
+                    type: string
+                    description: Network reason code for the dispute
+                    example: "10.4"
+                  network:
+                    type: string
+                    description: Card network processing the chargeback
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  status:
+                    type: string
+                    description: Chargeback processing status
+                    example: "SUBMITTED"
+                    enum:
+                      - INITIATED
+                      - SUBMITTED
+                      - ACCEPTED
+                      - REPRESENTMENT_FILED
+                      - ARBITRATION
+                      - RESOLVED
+                  acquirer_reference:
+                    type: string
+                    description: Acquirer reference number for the chargeback
+                    example: "ACQ-2025-789012"
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee associated with the chargeback
+                    format: double
+                    example: 25.0
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - chargeback_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /chargebacks/{chargeback_id}/representment:
+    post:
+      operationId: fileRepresentment
+      summary: File merchant representment
+      description: >-
+        Records a merchant representment response to a chargeback. The merchant's acquiring bank submits
+        evidence that the original transaction was valid. This updates the chargeback status and may lead to
+        arbitration if the issuer disagrees. Used by the dispute operations team during the chargeback
+        response process.
+      tags:
+        - Chargebacks
+      parameters:
+        - name: chargeback_id
+          in: path
+          required: true
+          description: Unique chargeback id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: File merchant representment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    representment_reason:
+                      type: string
+                      description: Merchant's reason for representment
+                      example: "Cardholder received merchandise per tracking confirmation"
+                    evidence_reference:
+                      type: string
+                      description: Reference to merchant's supporting evidence
+                      example: "TRACK-2025-789012"
+              required:
+                - representment_reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chargeback_id:
+                    type: string
+                    description: Unique chargeback identifier
+                    example: "cb-9d4e72"
+                  dispute_id:
+                    type: string
+                    description: Unique dispute case identifier
+                    example: "dsp-7a2f9c01"
+                  amount:
+                    type: number
+                    description: Monetary amount
+                    format: double
+                    example: 250.0
+                  currency:
+                    type: string
+                    description: ISO 4217 currency code
+                    example: "USD"
+                    minLength: 3
+                    maxLength: 3
+                  reason_code:
+                    type: string
+                    description: Network reason code for the dispute
+                    example: "10.4"
+                  network:
+                    type: string
+                    description: Card network processing the chargeback
+                    example: "VISA"
+                    enum:
+                      - VISA
+                      - MASTERCARD
+                      - AMEX
+                      - DISCOVER
+                  status:
+                    type: string
+                    description: Chargeback processing status
+                    example: "SUBMITTED"
+                    enum:
+                      - INITIATED
+                      - SUBMITTED
+                      - ACCEPTED
+                      - REPRESENTMENT_FILED
+                      - ARBITRATION
+                      - RESOLVED
+                  acquirer_reference:
+                    type: string
+                    description: Acquirer reference number for the chargeback
+                    example: "ACQ-2025-789012"
+                  interchange_fee:
+                    type: number
+                    description: Interchange fee associated with the chargeback
+                    format: double
+                    example: 25.0
+                  created_at:
+                    type: string
+                    description: ISO 8601 timestamp
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - chargeback_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /reason-codes:
+    get:
+      operationId: listReasonCodes
+      summary: List dispute reason codes
+      description: >-
+        Returns the complete list of supported dispute reason codes across all card networks. Each code
+        includes the network, category, description, required evidence types, and typical resolution
+        timeframe. Use this to guide cardholders through the dispute filing process.
+      tags:
+        - Disputes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                          description: Reason code identifier
+                          example: "10.4"
+                        network:
+                          type: string
+                          description: Card network
+                          example: "VISA"
+                        category:
+                          type: string
+                          description: Dispute category
+                          example: "Fraud"
+                        description:
+                          type: string
+                          description: Reason code description
+                          example: "Other Fraud - Card Absent Environment"
+                        required_evidence:
+                          type: array
+                          description: Evidence types required for this reason code
+                          items:
+                            type: string
+                            example: "POLICE_REPORT"
+                      required:
+                        - code
+                        - network
+                        - description
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /disputes/{dispute_id}/correspondence:
+    get:
+      operationId: listCorrespondence
+      summary: List dispute correspondence
+      description: >-
+        Returns all correspondence related to a dispute case, including letters sent to the cardholder,
+        merchant responses, and network communications. Correspondence is generated at key lifecycle
+        transitions and when evidence is received. Each entry includes the direction (inbound/outbound),
+        channel, and content summary.
+      tags:
+        - Disputes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        correspondence_id:
+                          type: string
+                          description: Correspondence record identifier
+                          example: "cor-2f9a31"
+                        direction:
+                          type: string
+                          description: Direction of the correspondence
+                          example: "OUTBOUND"
+                          enum:
+                            - INBOUND
+                            - OUTBOUND
+                        channel:
+                          type: string
+                          description: Delivery channel
+                          example: "EMAIL"
+                          enum:
+                            - EMAIL
+                            - LETTER
+                            - IN_APP
+                            - NETWORK
+                        subject:
+                          type: string
+                          description: Correspondence subject line
+                          example: "Dispute Status Update - Case dsp-7a2f9c01"
+                        sent_at:
+                          type: string
+                          description: ISO 8601 timestamp
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - correspondence_id
+                        - direction
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

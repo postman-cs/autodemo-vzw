@@ -1,0 +1,1141 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Search Service API
+  description: >-
+    Full-text search engine built on Elasticsearch providing index management, document indexing, multi-field
+    querying with relevance scoring, autocomplete suggestions, synonym management, and relevance tuning. Supports
+    structured queries, fuzzy matching, faceted search, and geo-spatial queries for location-aware applications.
+  version: 2.5.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-platform-search
+  x-acme-domain: platform
+servers:
+  - url: https://af-platform-search.api.acmefin.com/v1
+    description: Production
+  - url: https://af-platform-search.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Search Operations
+    description: Full-text search, autocomplete, and synonym management
+  - name: Index Management
+    description: Index creation, document management, and relevance tuning
+paths:
+  /indices:
+    get:
+      operationId: listIndices
+      summary: List search indices
+      description: List all search indices with document counts, storage size, and health status.
+      tags:
+        - Index Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index_name:
+                          type: string
+                          description: "Index name"
+                          example: "products"
+                        document_count:
+                          type: integer
+                          description: "Total documents"
+                          example: 125430
+                        storage_size_mb:
+                          type: number
+                          description: "Index size in MB"
+                          format: double
+                          example: 456.7
+                        status:
+                          type: string
+                          description: "Index health"
+                          example: "green"
+                          enum:
+                            - green
+                            - yellow
+                            - red
+                        replicas:
+                          type: integer
+                          description: "Replica count"
+                          example: 1
+                        created_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - index_name
+                        - document_count
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createIndex
+      summary: Create search index
+      description: >-
+        Create a new search index with field mappings, analyzers, and replica configuration.
+      tags:
+        - Index Management
+      requestBody:
+        required: true
+        description: Create search index request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Index name (lowercase, hyphens)"
+                      example: "customer-profiles"
+                    mappings:
+                      type: object
+                      description: "Field type mappings"
+                    settings:
+                      type: object
+                      description: "Index settings (replicas, analyzers)"
+                    replicas:
+                      type: integer
+                      description: "Replica count"
+                      example: 1
+              required:
+                - name
+                - mappings
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index_name:
+                    type: string
+                    description: "Created index"
+                    example: "customer-profiles"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "green"
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - index_name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /indices/{index_name}:
+    get:
+      operationId: getIndex
+      summary: Get index details
+      description: Retrieve index configuration, mappings, and statistics.
+      tags:
+        - Index Management
+      parameters:
+        - name: index_name
+          in: path
+          required: true
+          description: "Unique index name"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index_name:
+                    type: string
+                    description: "Name"
+                    example: "products"
+                  document_count:
+                    type: integer
+                    description: "Docs"
+                    example: 125430
+                  storage_size_mb:
+                    type: number
+                    description: "Size"
+                    format: double
+                    example: 456.7
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "green"
+                  mappings:
+                    type: object
+                    description: "Field mappings"
+                required:
+                  - index_name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteIndex
+      summary: Delete search index
+      description: Delete an index and all its documents. This action is irreversible.
+      tags:
+        - Index Management
+      parameters:
+        - name: index_name
+          in: path
+          required: true
+          description: "Unique index name"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /indices/{index_name}/documents:
+    post:
+      operationId: indexDocument
+      summary: Index a document
+      description: >-
+        Add or update a document in the search index. Documents are available for search within 1 second
+        (near real-time).
+      tags:
+        - Index Management
+      parameters:
+        - name: index_name
+          in: path
+          required: true
+          description: "Unique index name"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Index a document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    id:
+                      type: string
+                      description: "Document ID (auto-generated if omitted)"
+                      example: "doc-12345"
+                    body:
+                      type: object
+                      description: "Document fields to index"
+              required:
+                - body
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: "Document ID"
+                    example: "doc-12345"
+                  index:
+                    type: string
+                    description: "Index"
+                    example: "products"
+                  version:
+                    type: integer
+                    description: "Document version"
+                    example: 1
+                  result:
+                    type: string
+                    description: "Index result"
+                    example: "created"
+                    enum:
+                      - created
+                      - updated
+                required:
+                  - id
+                  - result
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    put:
+      operationId: bulkIndexDocuments
+      summary: Bulk index documents
+      description: >-
+        Index multiple documents in a single request for efficient batch operations. Supports up to 5000
+        documents per request.
+      tags:
+        - Index Management
+      parameters:
+        - name: index_name
+          in: path
+          required: true
+          description: "Index name"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Bulk index documents request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    documents:
+                      type: array
+                      description: "Documents to index"
+                      items:
+                        type: object
+              required:
+                - documents
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  indexed:
+                    type: integer
+                    description: "Documents indexed"
+                    example: 500
+                  failed:
+                    type: integer
+                    description: "Documents failed"
+                    example: 0
+                  took_ms:
+                    type: integer
+                    description: "Indexing time"
+                    example: 234
+                required:
+                  - indexed
+                  - failed
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteDocument
+      summary: Delete document
+      description: Delete a document from the index by ID.
+      tags:
+        - Index Management
+      parameters:
+        - name: index_name
+          in: path
+          required: true
+          description: "Index name"
+          schema:
+            type: "string"
+        - name: doc_id
+          in: query
+          required: true
+          description: "Document ID to delete"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Document deleted
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /search:
+    post:
+      operationId: search
+      summary: Search documents
+      description: >-
+        Execute a full-text search query across one or more indices. Supports multi-field matching,
+        boosting, fuzzy queries, phrase matching, range filters, faceted aggregations, and result
+        highlighting.
+      tags:
+        - Search Operations
+      requestBody:
+        required: true
+        description: Search documents request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    indices:
+                      type: array
+                      description: "Index names to search"
+                      items:
+                        type: string
+                    query:
+                      type: string
+                      description: "Search query string"
+                      example: "premium savings account"
+                    filters:
+                      type: object
+                      description: "Structured filters (term, range, geo)"
+                    facets:
+                      type: array
+                      description: "Fields to aggregate for faceted navigation"
+                      items:
+                        type: string
+                    highlight_fields:
+                      type: array
+                      description: "Fields to highlight matches in"
+                      items:
+                        type: string
+                    from:
+                      type: integer
+                      description: "Result offset"
+                      example: 0
+                    size:
+                      type: integer
+                      description: "Max results"
+                      example: 20
+                    sort:
+                      type: array
+                      description: "Sort criteria"
+                      items:
+                        type: object
+                    min_score:
+                      type: number
+                      description: "Minimum relevance score threshold"
+                      format: double
+                      example: 0.5
+              required:
+                - indices
+                - query
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_hits:
+                    type: integer
+                    description: "Total matching documents"
+                    example: 1523
+                  hits:
+                    type: array
+                    description: "Search results with relevance scores"
+                    items:
+                      type: object
+                  facets:
+                    type: object
+                    description: "Facet aggregation results"
+                  took_ms:
+                    type: integer
+                    description: "Search time"
+                    example: 12
+                  max_score:
+                    type: number
+                    description: "Highest relevance score"
+                    format: double
+                    example: 15.42
+                required:
+                  - total_hits
+                  - hits
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /suggest:
+    post:
+      operationId: suggest
+      summary: Get search suggestions
+      description: >-
+        Generate autocomplete suggestions based on partial input. Uses completion suggesters for fast prefix
+        matching and phrase suggesters for did-you-mean corrections.
+      tags:
+        - Search Operations
+      requestBody:
+        required: true
+        description: Get search suggestions request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    index:
+                      type: string
+                      description: "Index to suggest from"
+                      example: "products"
+                    text:
+                      type: string
+                      description: "Partial input text"
+                      example: "sav acc"
+                    field:
+                      type: string
+                      description: "Suggestion field"
+                      example: "name"
+                    size:
+                      type: integer
+                      description: "Max suggestions"
+                      example: 5
+                    fuzzy:
+                      type: boolean
+                      description: "Enable fuzzy matching for typo tolerance"
+                      example: true
+              required:
+                - index
+                - text
+                - field
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    description: "Completion suggestions"
+                    items:
+                      type: object
+                  corrections:
+                    type: array
+                    description: "Did-you-mean corrections"
+                    items:
+                      type: object
+                required:
+                  - suggestions
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /synonyms:
+    get:
+      operationId: listSynonyms
+      summary: List synonym sets
+      description: List all synonym sets configured for search query expansion.
+      tags:
+        - Search Operations
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  synonym_sets:
+                    type: array
+                    description: "Synonym group definitions"
+                    items:
+                      type: object
+                  total_sets:
+                    type: integer
+                    description: "Total synonym sets"
+                    example: 15
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: addSynonyms
+      summary: Add synonym set
+      description: >-
+        Add a synonym set for automatic query expansion. Synonyms are applied at query time; no re-indexing
+        required.
+      tags:
+        - Search Operations
+      requestBody:
+        required: true
+        description: Add synonym set request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    synonyms:
+                      type: array
+                      description: "Comma-separated synonym groups, e.g. 'savings,deposit,cd'"
+                      items:
+                        type: string
+                    index:
+                      type: string
+                      description: "Target index"
+                      example: "products"
+              required:
+                - synonyms
+                - index
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added_count:
+                    type: integer
+                    description: "Synonym sets added"
+                    example: 3
+                  total_sets:
+                    type: integer
+                    description: "Total sets"
+                    example: 18
+                required:
+                  - added_count
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: removeSynonyms
+      summary: Remove synonym set
+      description: Remove a synonym set from an index.
+      tags:
+        - Search Operations
+      requestBody:
+        required: true
+        description: Remove synonym set request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    synonyms:
+                      type: array
+                      description: "Synonym groups to remove"
+                      items:
+                        type: string
+                    index:
+                      type: string
+                      description: "Index"
+                      example: "products"
+              required:
+                - synonyms
+                - index
+      responses:
+        "204":
+          description: Synonym set removed
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /indices/{index_name}/relevance:
+    get:
+      operationId: getRelevanceTuning
+      summary: Get relevance tuning
+      description: >-
+        Retrieve the relevance tuning configuration for an index including field boosts, function scores,
+        and decay functions.
+      tags:
+        - Index Management
+      parameters:
+        - name: index_name
+          in: path
+          required: true
+          description: "Unique index name"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index_name:
+                    type: string
+                    description: "Index"
+                    example: "products"
+                  field_boosts:
+                    type: object
+                    description: "Per-field relevance boost factors"
+                  function_scores:
+                    type: array
+                    description: "Custom scoring functions"
+                    items:
+                      type: object
+                required:
+                  - index_name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: updateRelevanceTuning
+      summary: Update relevance tuning
+      description: >-
+        Configure field boosts and custom scoring functions for an index. Changes apply immediately to all
+        subsequent searches.
+      tags:
+        - Index Management
+      parameters:
+        - name: index_name
+          in: path
+          required: true
+          description: "Index name"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update relevance tuning request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    field_boosts:
+                      type: object
+                      description: "Field boost factors: {name: 3.0, description: 1.5}"
+                    function_scores:
+                      type: array
+                      description: "Scoring functions"
+                      items:
+                        type: object
+              required:
+                - field_boosts
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index_name:
+                    type: string
+                    description: "Index"
+                    example: "products"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - index_name
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

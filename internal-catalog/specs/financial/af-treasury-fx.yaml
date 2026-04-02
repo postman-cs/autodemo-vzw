@@ -1,0 +1,1893 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Foreign Exchange Trading API
+  description: >-
+    Institutional FX trading platform supporting spot and forward currency transactions with real-time streaming
+    quotes, automated trade execution, bilateral netting for settlement efficiency, CLS and PvP settlement
+    integration, real-time position management with P&L attribution, mark-to-market valuation, and live market
+    rate feeds from major FX data providers (Bloomberg, Reuters, ECB).
+  version: 4.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-treasury-fx
+  x-acme-domain: treasury
+servers:
+  - url: https://af-treasury-fx.api.acmefin.com/v1
+    description: Production
+  - url: https://af-treasury-fx.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: FX Trading
+    description: Request quotes and execute spot and forward FX trades
+  - name: Settlement & Netting
+    description: Bilateral netting, settlement instructions, and CLS integration
+  - name: Position Management
+    description: FX position tracking, mark-to-market, and live rate feeds
+paths:
+  /quotes/spot:
+    post:
+      operationId: getSpotQuote
+      summary: Get spot FX quote
+      description: >-
+        Request a real-time spot FX quote for a currency pair with indicative or firm pricing. Firm quotes
+        are valid for 15 seconds.
+      tags:
+        - FX Trading
+      requestBody:
+        required: true
+        description: Get spot FX quote request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    currency_pair:
+                      type: string
+                      description: "Currency pair (ISO 4217)"
+                      example: "EUR/USD"
+                    side:
+                      type: string
+                      description: "Trade side"
+                      example: "buy"
+                      enum:
+                        - buy
+                        - sell
+                    amount:
+                      type: number
+                      description: "Notional amount in base currency"
+                      format: double
+                      example: 1000000.0
+                    quote_type:
+                      type: string
+                      description: "Quote type"
+                      example: "indicative"
+                      enum:
+                        - indicative
+                        - firm
+              required:
+                - currency_pair
+                - side
+                - amount
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                    description: "Quote ID"
+                    format: uuid
+                    example: "qt-3a4b5c6d"
+                  currency_pair:
+                    type: string
+                    description: "Pair"
+                    example: "EUR/USD"
+                  side:
+                    type: string
+                    description: "Side"
+                    example: "buy"
+                  rate:
+                    type: number
+                    description: "Quoted rate"
+                    format: double
+                    example: 1.0845
+                  inverse_rate:
+                    type: number
+                    description: "Inverse rate"
+                    format: double
+                    example: 0.9221
+                  amount:
+                    type: number
+                    description: "Base amount"
+                    format: double
+                    example: 1000000.0
+                  counter_amount:
+                    type: number
+                    description: "Counter amount"
+                    format: double
+                    example: 1084500.0
+                  valid_until:
+                    type: string
+                    description: "Quote expiry"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  value_date:
+                    type: string
+                    description: "Settlement date"
+                    example: "2025-06-17"
+                required:
+                  - quote_id
+                  - rate
+                  - valid_until
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /quotes/forward:
+    post:
+      operationId: getForwardQuote
+      summary: Get forward FX quote
+      description: >-
+        Request a forward FX quote for a specific value date or tenor. Includes forward points and all-in
+        rate.
+      tags:
+        - FX Trading
+      requestBody:
+        required: true
+        description: Get forward FX quote request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    currency_pair:
+                      type: string
+                      description: "Currency pair"
+                      example: "GBP/USD"
+                    side:
+                      type: string
+                      description: "Side"
+                      example: "buy"
+                      enum:
+                        - buy
+                        - sell
+                    amount:
+                      type: number
+                      description: "Notional"
+                      format: double
+                      example: 5000000.0
+                    value_date:
+                      type: string
+                      description: "Forward value date"
+                      example: "2025-12-17"
+                    tenor:
+                      type: string
+                      description: "Alternative: tenor code"
+                      example: "6M"
+                    quote_type:
+                      type: string
+                      description: "Quote type"
+                      example: "indicative"
+                      enum:
+                        - indicative
+                        - firm
+              required:
+                - currency_pair
+                - side
+                - amount
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                    description: "Quote ID"
+                    format: uuid
+                    example: "qt-7a8b9c0d"
+                  currency_pair:
+                    type: string
+                    description: "Pair"
+                    example: "GBP/USD"
+                  spot_rate:
+                    type: number
+                    description: "Current spot"
+                    format: double
+                    example: 1.265
+                  forward_points:
+                    type: number
+                    description: "Forward points"
+                    format: double
+                    example: -32.5
+                  all_in_rate:
+                    type: number
+                    description: "All-in forward rate"
+                    format: double
+                    example: 1.2618
+                  amount:
+                    type: number
+                    description: "Base"
+                    format: double
+                    example: 5000000.0
+                  counter_amount:
+                    type: number
+                    description: "Counter"
+                    format: double
+                    example: 6309000.0
+                  value_date:
+                    type: string
+                    description: "Value date"
+                    example: "2025-12-17"
+                  valid_until:
+                    type: string
+                    description: "Expiry"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - quote_id
+                  - all_in_rate
+                  - forward_points
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /trades:
+    get:
+      operationId: listFxTrades
+      summary: List FX trades
+      description: >-
+        List all FX trades with filtering by currency pair, status, trade date, and counterparty.
+      tags:
+        - FX Trading
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: currency_pair
+          in: query
+          required: false
+          description: "Filter by pair"
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: "Filter by status"
+          schema:
+            type: "string"
+        - name: trade_type
+          in: query
+          required: false
+          description: "Filter by type"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        trade_id:
+                          type: string
+                          description: "Trade ID"
+                          format: uuid
+                          example: "fxt-5a6b7c8d-9e0f"
+                        currency_pair:
+                          type: string
+                          description: "Currency pair"
+                          example: "EUR/USD"
+                        side:
+                          type: string
+                          description: "Trade side"
+                          example: "buy"
+                          enum:
+                            - buy
+                            - sell
+                        trade_type:
+                          type: string
+                          description: "Instrument type"
+                          example: "spot"
+                          enum:
+                            - spot
+                            - forward
+                            - swap
+                            - ndf
+                        amount:
+                          type: number
+                          description: "Notional amount"
+                          format: double
+                          example: 1000000.0
+                        rate:
+                          type: number
+                          description: "Execution rate"
+                          format: double
+                          example: 1.0845
+                        counter_amount:
+                          type: number
+                          description: "Counter currency amount"
+                          format: double
+                          example: 1084500.0
+                        status:
+                          type: string
+                          description: "Trade status"
+                          example: "pending"
+                          enum:
+                            - pending
+                            - confirmed
+                            - settled
+                            - cancelled
+                            - failed
+                        trade_date:
+                          type: string
+                          description: "Trade date"
+                          example: "2025-06-15"
+                        value_date:
+                          type: string
+                          description: "Settlement date"
+                          example: "2025-06-17"
+                        counterparty:
+                          type: string
+                          description: "Counterparty"
+                          example: "Deutsche Bank"
+                      required:
+                        - trade_id
+                        - currency_pair
+                        - amount
+                        - rate
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: executeFxTrade
+      summary: Execute FX trade
+      description: >-
+        Execute an FX trade by accepting a firm quote. The quote must be valid (not expired). Returns the
+        confirmed trade with settlement details.
+      tags:
+        - FX Trading
+      requestBody:
+        required: true
+        description: Execute FX trade request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    quote_id:
+                      type: string
+                      description: "Quote to execute"
+                      format: uuid
+                      example: "qt-3a4b5c6d"
+                    counterparty_id:
+                      type: string
+                      description: "Counterparty"
+                      format: uuid
+                      example: "cpty-4a5b6c7d"
+                    settlement_instructions:
+                      type: string
+                      description: "SSI reference"
+                      example: "ssi-usd-jpm-001"
+                    internal_reference:
+                      type: string
+                      description: "Internal booking reference"
+                      example: "FX-2025-06-0456"
+              required:
+                - quote_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trade_id:
+                    type: string
+                    description: "Trade ID"
+                    format: uuid
+                    example: "fxt-5a6b7c8d"
+                  currency_pair:
+                    type: string
+                    description: "Pair"
+                    example: "EUR/USD"
+                  rate:
+                    type: number
+                    description: "Execution rate"
+                    format: double
+                    example: 1.0845
+                  amount:
+                    type: number
+                    description: "Base amount"
+                    format: double
+                    example: 1000000.0
+                  counter_amount:
+                    type: number
+                    description: "Counter"
+                    format: double
+                    example: 1084500.0
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "confirmed"
+                  value_date:
+                    type: string
+                    description: "Value date"
+                    example: "2025-06-17"
+                required:
+                  - trade_id
+                  - rate
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /trades/{trade_id}:
+    get:
+      operationId: getFxTrade
+      summary: Get FX trade
+      description: >-
+        Retrieve full trade details including execution info, settlement status, and P&L.
+      tags:
+        - FX Trading
+      parameters:
+        - name: trade_id
+          in: path
+          required: true
+          description: "Unique trade id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trade_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fxt-5a6b7c8d"
+                  currency_pair:
+                    type: string
+                    description: "Pair"
+                    example: "EUR/USD"
+                  side:
+                    type: string
+                    description: "Side"
+                    example: "buy"
+                  amount:
+                    type: number
+                    description: "Amount"
+                    format: double
+                    example: 1000000.0
+                  rate:
+                    type: number
+                    description: "Rate"
+                    format: double
+                    example: 1.0845
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "confirmed"
+                  mtm_value:
+                    type: number
+                    description: "Current MTM"
+                    format: double
+                    example: 12500.0
+                required:
+                  - trade_id
+                  - currency_pair
+                  - rate
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /trades/{trade_id}/confirm:
+    post:
+      operationId: confirmFxTrade
+      summary: Confirm FX trade
+      description: Send or acknowledge trade confirmation with the counterparty.
+      tags:
+        - FX Trading
+      parameters:
+        - name: trade_id
+          in: path
+          required: true
+          description: "Unique trade id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Confirm FX trade request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    confirmation_method:
+                      type: string
+                      description: "Confirmation method"
+                      example: "swift"
+                      enum:
+                        - swift
+                        - email
+                        - platform
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trade_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fxt-5a6b7c8d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "confirmed"
+                  confirmed_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - trade_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /trades/{trade_id}/cancel:
+    post:
+      operationId: cancelFxTrade
+      summary: Cancel FX trade
+      description: >-
+        Cancel an unconfirmed or pending trade. Confirmed trades require mutual agreement to cancel.
+      tags:
+        - FX Trading
+      parameters:
+        - name: trade_id
+          in: path
+          required: true
+          description: "Unique trade id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Cancel FX trade request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: "Cancellation reason"
+                      example: "Duplicate trade entry"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trade_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fxt-5a6b7c8d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "cancelled"
+                  cancelled_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - trade_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /trades/{trade_id}/settle:
+    post:
+      operationId: settleFxTrade
+      summary: Settle FX trade
+      description: >-
+        Initiate settlement of a confirmed trade. Generates payment instructions and submits to the
+        settlement system (CLS or bilateral).
+      tags:
+        - Settlement & Netting
+      parameters:
+        - name: trade_id
+          in: path
+          required: true
+          description: "Unique trade id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Settle FX trade request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    settlement_method:
+                      type: string
+                      description: "Settlement mechanism"
+                      example: "cls"
+                      enum:
+                        - cls
+                        - bilateral
+                        - pvp
+                    ssi_reference:
+                      type: string
+                      description: "SSI reference"
+                      example: "ssi-usd-jpm-001"
+              required:
+                - settlement_method
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trade_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fxt-5a6b7c8d"
+                  settlement_id:
+                    type: string
+                    description: "Settlement reference"
+                    format: uuid
+                    example: "stl-1a2b3c4d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "settling"
+                  expected_settlement:
+                    type: string
+                    description: "Expected settlement time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - trade_id
+                  - settlement_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /netting:
+    get:
+      operationId: listNettingSets
+      summary: List FX netting sets
+      description: >-
+        List bilateral netting sets grouping trades for net settlement to reduce gross settlement flows.
+      tags:
+        - Settlement & Netting
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        netting_id:
+                          type: string
+                          description: "Netting set ID"
+                          format: uuid
+                          example: "nts-6a7b8c9d"
+                        counterparty:
+                          type: string
+                          description: "Counterparty"
+                          example: "Deutsche Bank"
+                        value_date:
+                          type: string
+                          description: "Settlement date"
+                          example: "2025-06-17"
+                        gross_payments:
+                          type: number
+                          description: "Gross payment total"
+                          format: double
+                          example: 25000000.0
+                        net_amount:
+                          type: number
+                          description: "Net settlement amount"
+                          format: double
+                          example: 3500000.0
+                        savings_percent:
+                          type: number
+                          description: "Netting savings"
+                          format: double
+                          example: 86.0
+                        trade_count:
+                          type: integer
+                          description: "Trades in set"
+                          example: 15
+                        status:
+                          type: string
+                          description: "Netting status"
+                          example: "proposed"
+                          enum:
+                            - proposed
+                            - agreed
+                            - settled
+                      required:
+                        - netting_id
+                        - counterparty
+                        - net_amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createNettingSet
+      summary: Create netting set
+      description: >-
+        Propose a netting set for a counterparty and value date. Automatically identifies eligible
+        offsetting trades.
+      tags:
+        - Settlement & Netting
+      requestBody:
+        required: true
+        description: Create netting set request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    counterparty_id:
+                      type: string
+                      description: "Counterparty"
+                      format: uuid
+                      example: "cpty-4a5b6c7d"
+                    value_date:
+                      type: string
+                      description: "Value date"
+                      example: "2025-06-17"
+                    currencies:
+                      type: array
+                      description: "Currencies to include in netting"
+                      items:
+                        type: string
+              required:
+                - counterparty_id
+                - value_date
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  netting_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "nts-6a7b8c9d"
+                  trade_count:
+                    type: integer
+                    description: "Trades netted"
+                    example: 15
+                  gross_amount:
+                    type: number
+                    description: "Gross"
+                    format: double
+                    example: 25000000.0
+                  net_amount:
+                    type: number
+                    description: "Net"
+                    format: double
+                    example: 3500000.0
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "proposed"
+                required:
+                  - netting_id
+                  - net_amount
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /netting/{netting_id}:
+    get:
+      operationId: getNettingSet
+      summary: Get netting set
+      description: Retrieve netting set details with individual trade breakdown.
+      tags:
+        - Settlement & Netting
+      parameters:
+        - name: netting_id
+          in: path
+          required: true
+          description: "Unique netting id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  netting_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "nts-6a7b8c9d"
+                  counterparty:
+                    type: string
+                    description: "Counterparty"
+                    example: "Deutsche Bank"
+                  net_amount:
+                    type: number
+                    description: "Net"
+                    format: double
+                    example: 3500000.0
+                  trades:
+                    type: array
+                    description: "Netted trades"
+                    items:
+                      type: object
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "proposed"
+                required:
+                  - netting_id
+                  - net_amount
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /netting/{netting_id}/execute:
+    post:
+      operationId: executeNetting
+      summary: Execute netting settlement
+      description: >-
+        Execute the netting set — generate net payment instructions and submit for settlement.
+      tags:
+        - Settlement & Netting
+      parameters:
+        - name: netting_id
+          in: path
+          required: true
+          description: "Unique netting id"
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  netting_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "nts-6a7b8c9d"
+                  settlement_id:
+                    type: string
+                    description: "Settlement ref"
+                    format: uuid
+                    example: "stl-5a6b7c8d"
+                  net_amount:
+                    type: number
+                    description: "Net amount settled"
+                    format: double
+                    example: 3500000.0
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "settling"
+                required:
+                  - netting_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /settlements:
+    get:
+      operationId: listFxSettlements
+      summary: List FX settlements
+      description: List all FX settlement instructions with their processing status.
+      tags:
+        - Settlement & Netting
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        settlement_id:
+                          type: string
+                          description: "Settlement ID"
+                          format: uuid
+                          example: "stl-1a2b3c4d"
+                        trade_id:
+                          type: string
+                          description: "Trade"
+                          format: uuid
+                          example: "fxt-5a6b7c8d"
+                        counterparty:
+                          type: string
+                          description: "Counterparty"
+                          example: "Deutsche Bank"
+                        pay_currency:
+                          type: string
+                          description: "Pay currency"
+                          example: "USD"
+                        pay_amount:
+                          type: number
+                          description: "Payment amount"
+                          format: double
+                          example: 1084500.0
+                        receive_currency:
+                          type: string
+                          description: "Receive currency"
+                          example: "EUR"
+                        receive_amount:
+                          type: number
+                          description: "Receive amount"
+                          format: double
+                          example: 1000000.0
+                        status:
+                          type: string
+                          description: "Settlement status"
+                          example: "pending"
+                          enum:
+                            - pending
+                            - matched
+                            - settled
+                            - failed
+                        value_date:
+                          type: string
+                          description: "Value date"
+                          example: "2025-06-17"
+                      required:
+                        - settlement_id
+                        - pay_amount
+                        - receive_amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /settlements/{settlement_id}:
+    get:
+      operationId: getFxSettlement
+      summary: Get settlement details
+      description: Retrieve settlement instruction details with payment status.
+      tags:
+        - Settlement & Netting
+      parameters:
+        - name: settlement_id
+          in: path
+          required: true
+          description: "Unique settlement id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settlement_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "stl-1a2b3c4d"
+                  trade_id:
+                    type: string
+                    description: "Trade"
+                    format: uuid
+                    example: "fxt-5a6b7c8d"
+                  pay_amount:
+                    type: number
+                    description: "Pay"
+                    format: double
+                    example: 1084500.0
+                  receive_amount:
+                    type: number
+                    description: "Receive"
+                    format: double
+                    example: 1000000.0
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "settled"
+                required:
+                  - settlement_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /positions:
+    get:
+      operationId: listFxPositions
+      summary: List FX positions
+      description: List net FX positions by currency pair with P&L attribution.
+      tags:
+        - Position Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        currency_pair:
+                          type: string
+                          description: "Currency pair"
+                          example: "EUR/USD"
+                        net_position:
+                          type: number
+                          description: "Net position in base currency"
+                          format: double
+                          example: 5000000.0
+                        average_rate:
+                          type: number
+                          description: "Weighted average rate"
+                          format: double
+                          example: 1.0832
+                        current_rate:
+                          type: number
+                          description: "Current market rate"
+                          format: double
+                          example: 1.0845
+                        unrealized_pnl:
+                          type: number
+                          description: "Unrealized P&L"
+                          format: double
+                          example: 6500.0
+                        realized_pnl:
+                          type: number
+                          description: "Realized P&L (settled trades)"
+                          format: double
+                          example: 45000.0
+                        open_trade_count:
+                          type: integer
+                          description: "Open trades"
+                          example: 8
+                      required:
+                        - currency_pair
+                        - net_position
+                        - unrealized_pnl
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /positions/{currency_pair}:
+    get:
+      operationId: getFxPosition
+      summary: Get FX position
+      description: >-
+        Retrieve detailed FX position for a specific currency pair with trade-level breakdown.
+      tags:
+        - Position Management
+      parameters:
+        - name: currency_pair
+          in: path
+          required: true
+          description: "Unique currency pair"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currency_pair:
+                    type: string
+                    description: "Pair"
+                    example: "EUR/USD"
+                  net_position:
+                    type: number
+                    description: "Net position"
+                    format: double
+                    example: 5000000.0
+                  average_rate:
+                    type: number
+                    description: "Avg rate"
+                    format: double
+                    example: 1.0832
+                  unrealized_pnl:
+                    type: number
+                    description: "Unrealized P&L"
+                    format: double
+                    example: 6500.0
+                  trades:
+                    type: array
+                    description: "Open trades contributing to position"
+                    items:
+                      type: object
+                required:
+                  - currency_pair
+                  - net_position
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /mtm:
+    get:
+      operationId: getFxMtm
+      summary: Get portfolio MTM
+      description: >-
+        Get mark-to-market valuation for the entire FX portfolio with currency breakdown and risk metrics.
+      tags:
+        - Position Management
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_mtm:
+                    type: number
+                    description: "Total portfolio MTM value"
+                    format: double
+                    example: 125000.0
+                  by_currency_pair:
+                    type: object
+                    description: "MTM by currency pair"
+                  var_1d_95:
+                    type: number
+                    description: "1-day 95% Value at Risk"
+                    format: double
+                    example: 45000.0
+                  var_10d_99:
+                    type: number
+                    description: "10-day 99% VaR"
+                    format: double
+                    example: 210000.0
+                  as_of:
+                    type: string
+                    description: "Valuation timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - total_mtm
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /mtm/{trade_id}:
+    get:
+      operationId: getTradeMtm
+      summary: Get trade MTM
+      description: Get mark-to-market valuation for a specific trade.
+      tags:
+        - Position Management
+      parameters:
+        - name: trade_id
+          in: path
+          required: true
+          description: "Unique trade id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trade_id:
+                    type: string
+                    description: "Trade"
+                    format: uuid
+                    example: "fxt-5a6b7c8d"
+                  currency_pair:
+                    type: string
+                    description: "Pair"
+                    example: "EUR/USD"
+                  notional:
+                    type: number
+                    description: "Notional"
+                    format: double
+                    example: 1000000.0
+                  trade_rate:
+                    type: number
+                    description: "Original rate"
+                    format: double
+                    example: 1.0845
+                  current_rate:
+                    type: number
+                    description: "Current rate"
+                    format: double
+                    example: 1.089
+                  mtm_value:
+                    type: number
+                    description: "MTM value"
+                    format: double
+                    example: 4150.0
+                  days_to_maturity:
+                    type: integer
+                    description: "Days until value date"
+                    example: 2
+                  as_of:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - trade_id
+                  - mtm_value
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /rates/live:
+    get:
+      operationId: getLiveRates
+      summary: Get live FX rates
+      description: >-
+        Retrieve live FX rates for major currency pairs from multiple data providers with bid/ask spreads.
+      tags:
+        - Position Management
+      parameters:
+        - name: pairs
+          in: query
+          required: false
+          description: "Comma-separated currency pairs (e.g., EUR/USD,GBP/USD)"
+          schema:
+            type: "string"
+        - name: provider
+          in: query
+          required: false
+          description: "Data provider preference"
+          schema:
+            type: "string"
+            enum:
+              - bloomberg
+              - reuters
+              - ecb
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rates:
+                    type: array
+                    description: "Live rates by currency pair"
+                    items:
+                      type: object
+                  provider:
+                    type: string
+                    description: "Primary data provider"
+                    example: "bloomberg"
+                  as_of:
+                    type: string
+                    description: "Rate timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - rates
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

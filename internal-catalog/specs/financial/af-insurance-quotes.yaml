@@ -1,0 +1,1583 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Insurance Quotes API
+  description: Generate, customize, compare, and bind insurance quotes across all personal and commercial lines of business.
+    Supports real-time premium indication with configurable coverage options, multi-quote comparison for competitive analysis,
+    quote-to-bind workflow with binder issuance, and automated expiration management. Integrates with third-party data prefill
+    services for address verification, loss history, and credit-based insurance scoring.
+  version: 3.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-insurance-quotes
+  x-acme-domain: insurance
+servers:
+- url: https://af-insurance-quotes.api.acmefin.com/v1
+  description: Production
+- url: https://af-insurance-quotes.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Quote Management
+  description: Quote creation, retrieval, customization, and lifecycle management
+- name: Comparison
+  description: Multi-quote comparison, coverage option analysis, and competitive positioning
+- name: Binding
+  description: Quote-to-bind conversion, binder issuance, and premium collection
+paths:
+  /quotes:
+    get:
+      operationId: listQuotes
+      summary: List quotes
+      description: Retrieve a paginated list of insurance quotes. Filter by product line, status, agent, applicant name, or
+        date range. Results include premium summary and expiration status.
+      tags:
+      - Quote Management
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: product_line
+        in: query
+        required: false
+        description: Filter by product line
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        description: Filter by quote status
+        schema:
+          type: string
+          enum:
+          - DRAFT
+          - QUOTED
+          - PRESENTED
+          - BOUND
+          - DECLINED
+          - EXPIRED
+          - WITHDRAWN
+      - name: agent_id
+        in: query
+        required: false
+        description: Filter by quoting agent
+        schema:
+          type: string
+      - name: applicant_name
+        in: query
+        required: false
+        description: Filter by applicant name (partial match)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        quote_id:
+                          type: string
+                          description: Unique quote identifier
+                          example: QUO-2024-00482917
+                        applicant_name:
+                          type: string
+                          example: Thomas P. Martinez
+                        product_line:
+                          type: string
+                          example: HOMEOWNERS
+                          enum:
+                          - PERSONAL_AUTO
+                          - HOMEOWNERS
+                          - RENTERS
+                          - LIFE_TERM
+                          - LIFE_WHOLE
+                          - COMMERCIAL_PROPERTY
+                          - GENERAL_LIABILITY
+                          - UMBRELLA
+                          - BOP
+                          - WORKERS_COMP
+                        quoted_premium:
+                          type: number
+                          description: Quoted annual premium
+                          format: double
+                          example: 2150.0
+                        effective_date:
+                          type: string
+                          format: date
+                          example: '2024-10-01'
+                        valid_until:
+                          type: string
+                          description: Quote expiration date (typically 30 days)
+                          format: date
+                          example: '2024-10-31'
+                        status:
+                          type: string
+                          example: QUOTED
+                          enum:
+                          - DRAFT
+                          - QUOTED
+                          - PRESENTED
+                          - BOUND
+                          - DECLINED
+                          - EXPIRED
+                          - WITHDRAWN
+                        agent_id:
+                          type: string
+                          description: Quoting agent
+                          example: AGT-00482193
+                        coverage_summary:
+                          type: object
+                          description: Summary of selected coverages and limits
+                        discount_applied_pct:
+                          type: number
+                          description: Total discount percentage applied
+                          format: double
+                          example: 15.0
+                        created_at:
+                          type: string
+                          format: date-time
+                      required:
+                      - quote_id
+                      - applicant_name
+                      - product_line
+                      - status
+                      - quoted_premium
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createQuote
+      summary: Request insurance quote
+      description: Generate a new insurance quote based on applicant information, desired coverages, and risk characteristics.
+        The system performs real-time rating using filed rates, applies eligible discounts, and returns a premium indication.
+        Third-party data prefill automatically retrieves loss history, credit score, and property data when available.
+      tags:
+      - Quote Management
+      requestBody:
+        required: true
+        description: Request insurance quote request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                applicant_name:
+                  type: string
+                  example: Thomas P. Martinez
+                product_line:
+                  type: string
+                  example: HOMEOWNERS
+                  enum:
+                  - PERSONAL_AUTO
+                  - HOMEOWNERS
+                  - RENTERS
+                  - LIFE_TERM
+                  - LIFE_WHOLE
+                  - COMMERCIAL_PROPERTY
+                  - GENERAL_LIABILITY
+                  - UMBRELLA
+                  - BOP
+                  - WORKERS_COMP
+                effective_date:
+                  type: string
+                  format: date
+                  example: '2024-10-01'
+                risk_data:
+                  type: object
+                  description: Risk-specific data (varies by product line)
+                desired_coverages:
+                  type: object
+                  description: Requested coverage selections and limits
+                agent_id:
+                  type: string
+                  description: Quoting agent
+                  example: AGT-00482193
+              required:
+              - applicant_name
+              - product_line
+              - effective_date
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                    description: Unique quote identifier
+                    example: QUO-2024-00482917
+                  applicant_name:
+                    type: string
+                    example: Thomas P. Martinez
+                  product_line:
+                    type: string
+                    example: HOMEOWNERS
+                    enum:
+                    - PERSONAL_AUTO
+                    - HOMEOWNERS
+                    - RENTERS
+                    - LIFE_TERM
+                    - LIFE_WHOLE
+                    - COMMERCIAL_PROPERTY
+                    - GENERAL_LIABILITY
+                    - UMBRELLA
+                    - BOP
+                    - WORKERS_COMP
+                  quoted_premium:
+                    type: number
+                    description: Quoted annual premium
+                    format: double
+                    example: 2150.0
+                  effective_date:
+                    type: string
+                    format: date
+                    example: '2024-10-01'
+                  valid_until:
+                    type: string
+                    description: Quote expiration date (typically 30 days)
+                    format: date
+                    example: '2024-10-31'
+                  status:
+                    type: string
+                    example: QUOTED
+                    enum:
+                    - DRAFT
+                    - QUOTED
+                    - PRESENTED
+                    - BOUND
+                    - DECLINED
+                    - EXPIRED
+                    - WITHDRAWN
+                  agent_id:
+                    type: string
+                    description: Quoting agent
+                    example: AGT-00482193
+                  coverage_summary:
+                    type: object
+                    description: Summary of selected coverages and limits
+                  discount_applied_pct:
+                    type: number
+                    description: Total discount percentage applied
+                    format: double
+                    example: 15.0
+                  created_at:
+                    type: string
+                    format: date-time
+                required:
+                - quote_id
+                - quoted_premium
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /quotes/{quote_id}:
+    get:
+      operationId: getQuote
+      summary: Retrieve quote details
+      description: Fetch complete quote details including applicant information, coverage selections, premium breakdown by
+        coverage, applied discounts, rating factors, and quote status.
+      tags:
+      - Quote Management
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Unique quote id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                    description: Unique quote identifier
+                    example: QUO-2024-00482917
+                  applicant_name:
+                    type: string
+                    example: Thomas P. Martinez
+                  product_line:
+                    type: string
+                    example: HOMEOWNERS
+                    enum:
+                    - PERSONAL_AUTO
+                    - HOMEOWNERS
+                    - RENTERS
+                    - LIFE_TERM
+                    - LIFE_WHOLE
+                    - COMMERCIAL_PROPERTY
+                    - GENERAL_LIABILITY
+                    - UMBRELLA
+                    - BOP
+                    - WORKERS_COMP
+                  quoted_premium:
+                    type: number
+                    description: Quoted annual premium
+                    format: double
+                    example: 2150.0
+                  effective_date:
+                    type: string
+                    format: date
+                    example: '2024-10-01'
+                  valid_until:
+                    type: string
+                    description: Quote expiration date (typically 30 days)
+                    format: date
+                    example: '2024-10-31'
+                  status:
+                    type: string
+                    example: QUOTED
+                    enum:
+                    - DRAFT
+                    - QUOTED
+                    - PRESENTED
+                    - BOUND
+                    - DECLINED
+                    - EXPIRED
+                    - WITHDRAWN
+                  agent_id:
+                    type: string
+                    description: Quoting agent
+                    example: AGT-00482193
+                  coverage_summary:
+                    type: object
+                    description: Summary of selected coverages and limits
+                  discount_applied_pct:
+                    type: number
+                    description: Total discount percentage applied
+                    format: double
+                    example: 15.0
+                  created_at:
+                    type: string
+                    format: date-time
+                required:
+                - quote_id
+                - status
+                - quoted_premium
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateQuote
+      summary: Update quote details
+      description: Modify applicant information or administrative details on a quote. Coverage changes should use the customize
+        endpoint to trigger re-rating.
+      tags:
+      - Quote Management
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Unique quote id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update quote details request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                applicant_name:
+                  type: string
+                  example: Thomas P. Martinez
+                effective_date:
+                  type: string
+                  format: date
+                  example: '2024-10-01'
+                agent_id:
+                  type: string
+                  description: Quoting agent
+                  example: AGT-00482193
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                    description: Unique quote identifier
+                    example: QUO-2024-00482917
+                  applicant_name:
+                    type: string
+                    example: Thomas P. Martinez
+                  product_line:
+                    type: string
+                    example: HOMEOWNERS
+                    enum:
+                    - PERSONAL_AUTO
+                    - HOMEOWNERS
+                    - RENTERS
+                    - LIFE_TERM
+                    - LIFE_WHOLE
+                    - COMMERCIAL_PROPERTY
+                    - GENERAL_LIABILITY
+                    - UMBRELLA
+                    - BOP
+                    - WORKERS_COMP
+                  quoted_premium:
+                    type: number
+                    description: Quoted annual premium
+                    format: double
+                    example: 2150.0
+                  effective_date:
+                    type: string
+                    format: date
+                    example: '2024-10-01'
+                  valid_until:
+                    type: string
+                    description: Quote expiration date (typically 30 days)
+                    format: date
+                    example: '2024-10-31'
+                  status:
+                    type: string
+                    example: QUOTED
+                    enum:
+                    - DRAFT
+                    - QUOTED
+                    - PRESENTED
+                    - BOUND
+                    - DECLINED
+                    - EXPIRED
+                    - WITHDRAWN
+                  agent_id:
+                    type: string
+                    description: Quoting agent
+                    example: AGT-00482193
+                  coverage_summary:
+                    type: object
+                    description: Summary of selected coverages and limits
+                  discount_applied_pct:
+                    type: number
+                    description: Total discount percentage applied
+                    format: double
+                    example: 15.0
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /quotes/{quote_id}/compare:
+    get:
+      operationId: compareQuoteCoverages
+      summary: Compare coverage options
+      description: Generate a side-by-side comparison of the current quote against alternative coverage configurations. Shows
+        how changing limits, deductibles, or adding/removing coverages affects the premium. Useful for presenting options
+        to the applicant during the sales process.
+      tags:
+      - Comparison
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Quote identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  base_quote:
+                    type: object
+                    description: Current quote configuration
+                  alternatives:
+                    type: array
+                    description: Alternative coverage configurations with premium impact
+                    items:
+                      type: object
+                  savings_range:
+                    type: object
+                    description: Min/max potential savings across alternatives
+                    properties:
+                      min_savings:
+                        type: number
+                        format: double
+                      max_savings:
+                        type: number
+                        format: double
+                required:
+                - base_quote
+                - alternatives
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /quotes/{quote_id}/customize:
+    patch:
+      operationId: customizeQuoteCoverage
+      summary: Customize coverage selections
+      description: Modify coverage selections, limits, or deductibles on an existing quote. The premium is recalculated in
+        real-time reflecting the coverage changes. The quote remains in QUOTED status with an updated valid_until date.
+      tags:
+      - Quote Management
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Quote identifier
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Customize coverage selections request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                coverages:
+                  type: object
+                  description: Updated coverage selections
+                deductible:
+                  type: number
+                  description: New deductible amount
+                  format: double
+                add_endorsements:
+                  type: array
+                  description: Endorsements to add
+                  items:
+                    type: string
+                remove_endorsements:
+                  type: array
+                  description: Endorsements to remove
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                  new_premium:
+                    type: number
+                    format: double
+                  premium_change:
+                    type: number
+                    format: double
+                  valid_until:
+                    type: string
+                    format: date
+                required:
+                - quote_id
+                - new_premium
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /quotes/{quote_id}/bind:
+    post:
+      operationId: bindQuote
+      summary: Bind quote to policy
+      description: Convert a quoted insurance proposal into a bound policy. Binding creates a binder of insurance effective
+        immediately or on the specified date. The applicant must provide payment information and sign the application. A binder
+        provides temporary proof of insurance until the formal policy is issued.
+      tags:
+      - Binding
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Unique quote id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Bind quote to policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payment_method:
+                  type: string
+                  example: ACH
+                  enum:
+                  - CREDIT_CARD
+                  - ACH
+                  - CHECK
+                  - MORTGAGEE_BILL
+                payment_plan:
+                  type: string
+                  example: MONTHLY
+                  enum:
+                  - PAID_IN_FULL
+                  - MONTHLY
+                  - QUARTERLY
+                  - SEMI_ANNUAL
+                down_payment_amount:
+                  type: number
+                  description: Initial down payment amount
+                  format: double
+                  example: 215.0
+                application_signed:
+                  type: boolean
+                  description: Whether the application has been signed
+                  example: true
+              required:
+              - payment_method
+              - application_signed
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Newly created policy number
+                    example: POL-10029385
+                  binder_number:
+                    type: string
+                    description: Temporary binder number
+                    example: BND-2024-00482917
+                  effective_date:
+                    type: string
+                    format: date
+                  first_installment_amount:
+                    type: number
+                    format: double
+                  status:
+                    type: string
+                    example: BOUND
+                    enum:
+                    - BOUND
+                    - PENDING_PAYMENT
+                required:
+                - policy_id
+                - binder_number
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /quotes/{quote_id}/decline:
+    post:
+      operationId: declineQuote
+      summary: Decline quote
+      description: Record that an applicant has declined the quoted coverage. Captures the decline reason for sales analytics
+        and competitive intelligence. Declined quotes are retained for 90 days for re- solicitation.
+      tags:
+      - Quote Management
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Unique quote id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Decline quote request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decline_reason:
+                  type: string
+                  example: FOUND_BETTER_RATE
+                  enum:
+                  - PRICE_TOO_HIGH
+                  - FOUND_BETTER_RATE
+                  - NOT_NEEDED
+                  - COVERAGE_INADEQUATE
+                  - SWITCHING_CARRIERS
+                  - OTHER
+                competitor_name:
+                  type: string
+                  description: Competitor carrier if switching
+                  example: National Mutual Insurance
+                  nullable: true
+                competitor_premium:
+                  type: number
+                  description: Competitor quoted premium if known
+                  format: double
+                  example: 1890.0
+                  nullable: true
+              required:
+              - decline_reason
+      responses:
+        '202':
+          description: Action accepted for processing
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /quotes/{quote_id}/documents:
+    get:
+      operationId: listQuoteDocuments
+      summary: List quote documents
+      description: Retrieve documents generated for a quote, including the quote proposal letter, coverage summary, and any
+        attached supporting documents.
+      tags:
+      - Quote Management
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                        document_type:
+                          type: string
+                          enum:
+                          - PROPOSAL_LETTER
+                          - COVERAGE_SUMMARY
+                          - APPLICATION
+                          - SUPPORTING
+                        filename:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                      required:
+                      - document_id
+                      - document_type
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /quotes/{quote_id}/pricing-breakdown:
+    get:
+      operationId: getQuotePricingBreakdown
+      summary: Get pricing breakdown
+      description: Retrieve a detailed premium pricing breakdown for a quote showing base rate, each applied rating factor
+        and its impact, surcharges, discounts, and final premium by coverage type. Used for rate justification and agent presentation.
+      tags:
+      - Comparison
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Quote identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  base_rate:
+                    type: number
+                    format: double
+                  territory_factor:
+                    type: number
+                    format: double
+                  coverage_premiums:
+                    type: array
+                    description: Premium by coverage type
+                    items:
+                      type: object
+                  surcharges:
+                    type: array
+                    items:
+                      type: object
+                  discounts:
+                    type: array
+                    items:
+                      type: object
+                  total_discounts:
+                    type: number
+                    format: double
+                  final_premium:
+                    type: number
+                    format: double
+                  monthly_installment:
+                    type: number
+                    format: double
+                required:
+                - base_rate
+                - final_premium
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /quotes/bulk:
+    post:
+      operationId: createBulkQuotes
+      summary: Create bulk quotes
+      description: Generate multiple quotes simultaneously for different coverage configurations or product lines. Used for
+        presenting the applicant with a range of options or for batch quoting during commercial account solicitation.
+      tags:
+      - Quote Management
+      requestBody:
+        required: true
+        description: Create bulk quotes request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                applicant_name:
+                  type: string
+                  example: Thomas P. Martinez
+                product_lines:
+                  type: array
+                  description: Product lines to quote
+                  items:
+                    type: string
+                effective_date:
+                  type: string
+                  format: date
+                risk_data:
+                  type: object
+              required:
+              - applicant_name
+              - product_lines
+              - effective_date
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quotes:
+                    type: array
+                    description: Generated quotes
+                    items:
+                      type: object
+                  total_generated:
+                    type: integer
+                    example: 3
+                  total_premium_range:
+                    type: object
+                    properties:
+                      min:
+                        type: number
+                        format: double
+                      max:
+                        type: number
+                        format: double
+                required:
+                - quotes
+                - total_generated
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /quotes/{quote_id}/extend:
+    post:
+      operationId: extendQuoteValidity
+      summary: Extend quote validity
+      description: Extend the expiration date of an active quote. Standard extension is 15 days. Quotes can be extended a
+        maximum of twice before requiring re-rating due to potential rate changes.
+      tags:
+      - Quote Management
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Unique quote id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Extend quote validity request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                extension_days:
+                  type: integer
+                  description: Number of days to extend (max 30)
+                  example: 15
+                  minimum: 1
+                  maximum: 30
+              required:
+              - extension_days
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                  new_valid_until:
+                    type: string
+                    format: date
+                  extensions_remaining:
+                    type: integer
+                    description: Remaining allowed extensions
+                    example: 1
+                  re_rate_required:
+                    type: boolean
+                    description: Whether re-rating is needed due to elapsed time
+                    example: false
+                required:
+                - quote_id
+                - new_valid_until
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /quotes/{quote_id}/coverage-options:
+    get:
+      operationId: getQuoteCoverageOptions
+      summary: Get available coverage options
+      description: Retrieve all available coverage options and endorsements for the quoted product line in the applicable
+        state. Shows available limits, deductible options, optional endorsements, and their premium impact.
+      tags:
+      - Comparison
+      parameters:
+      - name: quote_id
+        in: path
+        required: true
+        description: Quote identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available_coverages:
+                    type: array
+                    items:
+                      type: object
+                  available_endorsements:
+                    type: array
+                    items:
+                      type: object
+                  deductible_options:
+                    type: array
+                    items:
+                      type: integer
+                  state_mandated_coverages:
+                    type: array
+                    description: Coverages required by state law
+                    items:
+                      type: string
+                required:
+                - available_coverages
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /quotes/expired:
+    get:
+      operationId: listExpiredQuotes
+      summary: List expired quotes
+      description: Retrieve quotes that have passed their valid_until date without being bound. Used for re- solicitation
+        campaigns and win-back outreach. Includes decline reason if the applicant explicitly declined.
+      tags:
+      - Quote Management
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: expired_after
+        in: query
+        required: false
+        description: Show quotes expired after this date
+        schema:
+          type: string
+          format: date
+      - name: product_line
+        in: query
+        required: false
+        description: Filter by product line
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        quote_id:
+                          type: string
+                          description: Unique quote identifier
+                          example: QUO-2024-00482917
+                        applicant_name:
+                          type: string
+                          example: Thomas P. Martinez
+                        product_line:
+                          type: string
+                          example: HOMEOWNERS
+                          enum:
+                          - PERSONAL_AUTO
+                          - HOMEOWNERS
+                          - RENTERS
+                          - LIFE_TERM
+                          - LIFE_WHOLE
+                          - COMMERCIAL_PROPERTY
+                          - GENERAL_LIABILITY
+                          - UMBRELLA
+                          - BOP
+                          - WORKERS_COMP
+                        quoted_premium:
+                          type: number
+                          description: Quoted annual premium
+                          format: double
+                          example: 2150.0
+                        valid_until:
+                          type: string
+                          description: Quote expiration date (typically 30 days)
+                          format: date
+                          example: '2024-10-31'
+                        status:
+                          type: string
+                          example: QUOTED
+                          enum:
+                          - DRAFT
+                          - QUOTED
+                          - PRESENTED
+                          - BOUND
+                          - DECLINED
+                          - EXPIRED
+                          - WITHDRAWN
+                        agent_id:
+                          type: string
+                          description: Quoting agent
+                          example: AGT-00482193
+                      required:
+                      - quote_id
+                      - applicant_name
+                      - quoted_premium
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

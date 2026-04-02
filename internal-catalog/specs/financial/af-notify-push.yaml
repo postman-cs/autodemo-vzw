@@ -1,0 +1,1172 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Push Notifications API
+  description: >-
+    Multi-platform push notification delivery via FCM (Android) and APNs (iOS). Manages device token registration,
+    topic-based subscriptions, rich media payloads with action buttons, silent data pushes for background sync,
+    and token lifecycle management with automatic cleanup of stale registrations.
+  version: 2.0.3
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-notify-push
+  x-acme-domain: notify
+servers:
+  - url: https://af-notify-push.api.acmefin.com/v1
+    description: Production
+  - url: https://af-notify-push.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Push Delivery
+    description: Send push notifications with rich media, silent pushes, and topic targeting
+  - name: Device Management
+    description: Register and manage device tokens and topic subscriptions
+paths:
+  /devices:
+    get:
+      operationId: listDevices
+      summary: List registered devices
+      description: >-
+        Retrieve all devices registered for push notifications by the authenticated user. Includes platform
+        info, token status, and last active timestamp.
+      tags:
+        - Device Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        device_id:
+                          type: string
+                          description: "Device registration ID"
+                          format: uuid
+                          example: "dev-8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d"
+                        platform:
+                          type: string
+                          description: "Device platform"
+                          example: "ios"
+                          enum:
+                            - ios
+                            - android
+                            - web
+                        token:
+                          type: string
+                          description: "Push token (masked)"
+                          example: "fcm:****abc123"
+                        device_name:
+                          type: string
+                          description: "User-friendly device name"
+                          example: "iPhone 15 Pro"
+                        app_version:
+                          type: string
+                          description: "App version at registration"
+                          example: "4.2.1"
+                        last_active_at:
+                          type: string
+                          description: "Last push interaction"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        status:
+                          type: string
+                          description: "Token status"
+                          example: "active"
+                          enum:
+                            - active
+                            - inactive
+                            - expired
+                      required:
+                        - device_id
+                        - platform
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: registerDevice
+      summary: Register a device
+      description: >-
+        Register a new device for push notifications. If a device with the same token already exists, it is
+        updated with the latest metadata. Returns the device registration with assigned ID.
+      tags:
+        - Device Management
+      requestBody:
+        required: true
+        description: Register a device request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    platform:
+                      type: string
+                      description: "Device platform"
+                      example: "ios"
+                      enum:
+                        - ios
+                        - android
+                        - web
+                    token:
+                      type: string
+                      description: "FCM or APNs device token"
+                      example: "fcm:dGhpcyBpcyBhIHRlc3QgdG9rZW4..."
+                    device_name:
+                      type: string
+                      description: "Device name"
+                      example: "Pixel 8"
+                    app_version:
+                      type: string
+                      description: "Current app version"
+                      example: "4.2.1"
+                    os_version:
+                      type: string
+                      description: "OS version"
+                      example: "Android 14"
+              required:
+                - platform
+                - token
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: "Assigned ID"
+                    format: uuid
+                    example: "dev-8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d"
+                  platform:
+                    type: string
+                    description: "Platform"
+                    example: "android"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - device_id
+                  - platform
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /devices/{device_id}:
+    get:
+      operationId: getDevice
+      summary: Get device details
+      description: >-
+        Retrieve full details for a registered device including push token, platform metadata, topic
+        subscriptions, and delivery statistics.
+      tags:
+        - Device Management
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: "Unique device id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: "Device ID"
+                    format: uuid
+                    example: "dev-8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d"
+                  platform:
+                    type: string
+                    description: "Platform"
+                    example: "ios"
+                  device_name:
+                    type: string
+                    description: "Device name"
+                    example: "iPhone 15 Pro"
+                  status:
+                    type: string
+                    description: "Token status"
+                    example: "active"
+                  subscribed_topics:
+                    type: array
+                    description: "Topic subscriptions"
+                    items:
+                      type: string
+                  push_count:
+                    type: integer
+                    description: "Total pushes sent to device"
+                    example: 142
+                  last_active_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - device_id
+                  - platform
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: unregisterDevice
+      summary: Unregister a device
+      description: >-
+        Remove a device registration and invalidate its push token. The device will no longer receive push
+        notifications.
+      tags:
+        - Device Management
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: "Unique device id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /push:
+    post:
+      operationId: sendPush
+      summary: Send push notification
+      description: >-
+        Send a push notification to one or more devices or topic subscribers. Supports rich content with
+        images, action buttons, custom sounds, and badge updates. Delivery is asynchronous via FCM/APNs.
+      tags:
+        - Push Delivery
+      requestBody:
+        required: true
+        description: Send push notification request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    device_ids:
+                      type: array
+                      description: "Target device IDs (max 500)"
+                      items:
+                        type: string
+                    topic:
+                      type: string
+                      description: "Topic name for broadcast (alternative to device_ids)"
+                      example: "account-alerts"
+                    title:
+                      type: string
+                      description: "Notification title"
+                      example: "Payment Received"
+                    body:
+                      type: string
+                      description: "Notification body"
+                      example: "You received $1,250 from ACME Corp"
+                    image_url:
+                      type: string
+                      description: "Rich media image URL"
+                      example: "https://cdn.acmefin.com/icons/payment.png"
+                    action_url:
+                      type: string
+                      description: "Deep link on tap"
+                      example: "acmefin://payments/txn-123"
+                    data:
+                      type: object
+                      description: "Custom key-value data payload for app processing"
+                    silent:
+                      type: boolean
+                      description: "Send as silent push (no UI, background sync only)"
+                      example: false
+                    badge_count:
+                      type: integer
+                      description: "Badge number to display"
+                      example: 3
+                    sound:
+                      type: string
+                      description: "Notification sound name"
+                      example: "payment.wav"
+                    ttl_seconds:
+                      type: integer
+                      description: "Time-to-live in seconds (default 86400)"
+                      example: 86400
+                    priority:
+                      type: string
+                      description: "Delivery priority"
+                      example: "normal"
+                      enum:
+                        - normal
+                        - high
+              required:
+                - title
+                - body
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  push_id:
+                    type: string
+                    description: "Push notification ID"
+                    format: uuid
+                    example: "psh-2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d"
+                  devices_targeted:
+                    type: integer
+                    description: "Number of devices targeted"
+                    example: 3
+                  status:
+                    type: string
+                    description: "Dispatch status"
+                    example: "sent"
+                required:
+                  - push_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /push/{push_id}:
+    get:
+      operationId: getPush
+      summary: Get push details
+      description: >-
+        Retrieve delivery details for a specific push notification including per-device delivery status,
+        FCM/APNs response codes, and engagement metrics.
+      tags:
+        - Push Delivery
+      parameters:
+        - name: push_id
+          in: path
+          required: true
+          description: "Unique push id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  push_id:
+                    type: string
+                    description: "Push ID"
+                    format: uuid
+                    example: "psh-2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d"
+                  title:
+                    type: string
+                    description: "Title"
+                    example: "Payment Received"
+                  body:
+                    type: string
+                    description: "Body"
+                    example: "You received $1,250"
+                  devices_targeted:
+                    type: integer
+                    description: "Devices targeted"
+                    example: 3
+                  devices_delivered:
+                    type: integer
+                    description: "Devices delivered to"
+                    example: 2
+                  devices_failed:
+                    type: integer
+                    description: "Devices that failed"
+                    example: 1
+                  sent_at:
+                    type: string
+                    description: "Dispatch time"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  delivery_details:
+                    type: array
+                    description: "Per-device delivery breakdown"
+                    items:
+                      type: object
+                required:
+                  - push_id
+                  - title
+                  - devices_targeted
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /topics:
+    get:
+      operationId: listTopics
+      summary: List push topics
+      description: >-
+        List all available push notification topics that devices can subscribe to. Topics enable broadcast
+        messaging to all subscribed devices without tracking individual device IDs.
+      tags:
+        - Push Delivery
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        topic_id:
+                          type: string
+                          description: "Topic ID"
+                          format: uuid
+                          example: "top-5a6b7c8d-9e0f-1a2b-3c4d-5e6f7a8b9c0d"
+                        name:
+                          type: string
+                          description: "Topic name"
+                          example: "account-alerts"
+                        description:
+                          type: string
+                          description: "Topic description"
+                          example: "Account balance and transaction alerts"
+                        subscriber_count:
+                          type: integer
+                          description: "Number of subscribed devices"
+                          example: 15420
+                        created_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - topic_id
+                        - name
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTopic
+      summary: Create a topic
+      description: >-
+        Create a new push notification topic. Once created, devices can subscribe to receive all
+        notifications published to this topic.
+      tags:
+        - Push Delivery
+      requestBody:
+        required: true
+        description: Create a topic request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Topic name (alphanumeric, hyphens)"
+                      example: "fraud-alerts"
+                    description:
+                      type: string
+                      description: "Human-readable description"
+                      example: "Real-time fraud detection alerts"
+              required:
+                - name
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topic_id:
+                    type: string
+                    description: "Created topic ID"
+                    format: uuid
+                    example: "top-5a6b7c8d-9e0f-1a2b-3c4d-5e6f7a8b9c0d"
+                  name:
+                    type: string
+                    description: "Topic name"
+                    example: "fraud-alerts"
+                  subscriber_count:
+                    type: integer
+                    description: "Initial subscriber count"
+                    example: 0
+                required:
+                  - topic_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /topics/{topic_id}/subscribe:
+    post:
+      operationId: subscribeToTopic
+      summary: Subscribe device to topic
+      description: >-
+        Subscribe one or more devices to a push notification topic. Subscribed devices will receive all
+        future notifications published to this topic.
+      tags:
+        - Device Management
+      parameters:
+        - name: topic_id
+          in: path
+          required: true
+          description: "Unique topic id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Subscribe device to topic request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    device_ids:
+                      type: array
+                      description: "Device IDs to subscribe"
+                      items:
+                        type: string
+              required:
+                - device_ids
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topic_id:
+                    type: string
+                    description: "Topic"
+                    format: uuid
+                    example: "top-5a6b7c8d-9e0f-1a2b-3c4d-5e6f7a8b9c0d"
+                  subscribed_count:
+                    type: integer
+                    description: "Devices subscribed"
+                    example: 3
+                  total_subscribers:
+                    type: integer
+                    description: "Total topic subscribers"
+                    example: 15423
+                required:
+                  - topic_id
+                  - subscribed_count
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /push/tokens:
+    get:
+      operationId: listPushTokens
+      summary: List push tokens
+      description: >-
+        Retrieve all push tokens for the authenticated user with their validity status. Includes automatic
+        detection of stale or expired tokens based on platform feedback.
+      tags:
+        - Device Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        token_id:
+                          type: string
+                          description: "Token record ID"
+                          format: uuid
+                          example: "tok-9a0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d"
+                        device_id:
+                          type: string
+                          description: "Associated device ID"
+                          format: uuid
+                          example: "dev-8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d"
+                        platform:
+                          type: string
+                          description: "Token platform"
+                          example: "ios"
+                          enum:
+                            - ios
+                            - android
+                            - web
+                        status:
+                          type: string
+                          description: "Token validity"
+                          example: "valid"
+                          enum:
+                            - valid
+                            - expired
+                            - revoked
+                        last_validated_at:
+                          type: string
+                          description: "Last successful validation"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - token_id
+                        - device_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: refreshPushToken
+      summary: Refresh push token
+      description: >-
+        Submit an updated push token for an existing device registration. Used when the platform rotates
+        tokens (FCM token refresh, APNs token update). The old token is automatically invalidated.
+      tags:
+        - Device Management
+      requestBody:
+        required: true
+        description: Refresh push token request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    device_id:
+                      type: string
+                      description: "Device ID"
+                      format: uuid
+                      example: "dev-8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d"
+                    new_token:
+                      type: string
+                      description: "Updated push token"
+                      example: "fcm:bmV3dG9rZW5kYXRh..."
+                    platform:
+                      type: string
+                      description: "Platform"
+                      example: "ios"
+                      enum:
+                        - ios
+                        - android
+                        - web
+              required:
+                - device_id
+                - new_token
+                - platform
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token_id:
+                    type: string
+                    description: "New token ID"
+                    format: uuid
+                    example: "tok-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  status:
+                    type: string
+                    description: "Token status"
+                    example: "valid"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - token_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

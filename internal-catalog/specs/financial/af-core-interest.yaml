@@ -1,0 +1,1056 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Core Interest API
+  description: >-
+    Manages interest accrual, posting, and rate configuration for deposit products. Supports daily balance,
+    average daily balance, and tiered accrual methods with configurable compounding frequencies. Handles rate
+    changes, promotional rate management, and Truth in Savings (Regulation DD) APY disclosures. Interest is
+    accrued daily and posted per the product's cycle schedule (monthly, quarterly, or at maturity for CDs).
+  version: 2.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-core-interest
+  x-acme-domain: core
+servers:
+  - url: https://af-core-interest.api.acmefin.com/v1
+    description: Production
+  - url: https://af-core-interest.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Interest
+    description: Interest accrual and posting operations
+  - name: Interest Rates
+    description: Interest rate configuration and tier management
+paths:
+  /interest/accruals:
+    get:
+      operationId: listAccruals
+      summary: List interest accruals
+      description: >-
+        Retrieve daily interest accrual records for an account over a specified date range. Each record
+        shows the daily accrual amount, rate applied, and the balance used in the calculation. Use for
+        interest income verification and regulatory reporting.
+      tags:
+        - Interest
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: account_id
+          in: query
+          required: false
+          description: Filter by account
+          schema:
+            type: "string"
+        - name: from_date
+          in: query
+          required: false
+          description: Accrual start date
+          schema:
+            type: "string"
+            format: "date"
+        - name: to_date
+          in: query
+          required: false
+          description: Accrual end date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        accrual_id:
+                          type: string
+                          description: Unique accrual record identifier
+                          example: "acc-71002"
+                        account_id:
+                          type: string
+                          description: Account earning interest
+                          example: "acct-10045892"
+                        accrual_date:
+                          type: string
+                          description: Date interest was accrued
+                          format: date
+                          example: "2025-06-10"
+                        daily_accrual:
+                          type: number
+                          description: Interest accrued for this day
+                          format: double
+                          example: 1.37
+                        mtd_accrual:
+                          type: number
+                          description: Month-to-date accrued interest
+                          format: double
+                          example: 13.7
+                        ytd_accrual:
+                          type: number
+                          description: Year-to-date accrued interest
+                          format: double
+                          example: 221.45
+                        rate_applied:
+                          type: number
+                          description: Annual rate used for accrual calculation (as decimal)
+                          format: double
+                          example: 0.0425
+                        daily_balance:
+                          type: number
+                          description: Average daily balance used in calculation
+                          format: double
+                          example: 24589.47
+                        accrual_method:
+                          type: string
+                          description: Calculation method
+                          enum:
+                            - DAILY_BALANCE
+                            - AVERAGE_DAILY_BALANCE
+                            - TIERED
+                      required:
+                        - accrual_id
+                        - account_id
+                        - accrual_date
+                        - daily_accrual
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /interest/accruals/{accrual_id}:
+    get:
+      operationId: getAccrual
+      summary: Get accrual details
+      description: >-
+        Retrieve a specific daily accrual record with full calculation details including the balance tier
+        used, rate applied, and accrual method. Useful for auditing interest calculations and responding to
+        customer inquiries about earned interest.
+      tags:
+        - Interest
+      parameters:
+        - name: accrual_id
+          in: path
+          required: true
+          description: Unique accrual id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accrual_id:
+                    type: string
+                    description: Unique accrual record identifier
+                    example: "acc-71002"
+                  account_id:
+                    type: string
+                    description: Account earning interest
+                    example: "acct-10045892"
+                  accrual_date:
+                    type: string
+                    description: Date interest was accrued
+                    format: date
+                    example: "2025-06-10"
+                  daily_accrual:
+                    type: number
+                    description: Interest accrued for this day
+                    format: double
+                    example: 1.37
+                  mtd_accrual:
+                    type: number
+                    description: Month-to-date accrued interest
+                    format: double
+                    example: 13.7
+                  ytd_accrual:
+                    type: number
+                    description: Year-to-date accrued interest
+                    format: double
+                    example: 221.45
+                  rate_applied:
+                    type: number
+                    description: Annual rate used for accrual calculation (as decimal)
+                    format: double
+                    example: 0.0425
+                  daily_balance:
+                    type: number
+                    description: Average daily balance used in calculation
+                    format: double
+                    example: 24589.47
+                  accrual_method:
+                    type: string
+                    description: Calculation method
+                    enum:
+                      - DAILY_BALANCE
+                      - AVERAGE_DAILY_BALANCE
+                      - TIERED
+                required:
+                  - accrual_id
+                  - account_id
+                  - daily_accrual
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /interest/accrue:
+    post:
+      operationId: triggerAccrual
+      summary: Trigger interest accrual
+      description: >-
+        Manually trigger interest accrual for a specific account or all eligible accounts. Normally accrual
+        runs automatically during end-of-day processing, but this endpoint supports ad-hoc accrual for
+        account corrections, audit recalculations, or catch-up processing after system outages.
+      tags:
+        - Interest
+      requestBody:
+        required: true
+        description: Trigger interest accrual request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    account_id:
+                      type: string
+                      description: Account to accrue (omit for batch accrual)
+                      example: "acct-10045892"
+                    accrual_date:
+                      type: string
+                      description: Date to accrue for
+                      format: date
+                      example: "2025-06-10"
+              required:
+                - accrual_date
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts_processed:
+                    type: integer
+                    description: Number of accounts accrued
+                    example: 1
+                  total_accrued:
+                    type: number
+                    description: Total interest accrued
+                    format: double
+                    example: 1.37
+                required:
+                  - accounts_processed
+                  - total_accrued
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /interest/post:
+    post:
+      operationId: postInterest
+      summary: Post accrued interest
+      description: >-
+        Post accumulated accrued interest to account balances. Interest is typically posted on the product's
+        cycle date (monthly for savings, quarterly for checking, at maturity for CDs). This creates a credit
+        transaction in the Transactions service and triggers 1099-INT reporting for amounts exceeding $10.
+      tags:
+        - Interest
+      requestBody:
+        required: true
+        description: Post accrued interest request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    account_id:
+                      type: string
+                      description: Account to post interest for (omit for batch posting)
+                      example: "acct-10045892"
+                    posting_date:
+                      type: string
+                      description: Effective date of the posting
+                      format: date
+                      example: "2025-06-30"
+              required:
+                - posting_date
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts_posted:
+                    type: integer
+                    description: Number of accounts with interest posted
+                    example: 1
+                  total_posted:
+                    type: number
+                    description: Total interest posted
+                    format: double
+                    example: 41.1
+                  transaction_refs:
+                    type: array
+                    description: Transaction references for posted interest
+                    items:
+                      type: string
+                required:
+                  - accounts_posted
+                  - total_posted
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /interest/projections:
+    post:
+      operationId: projectInterest
+      summary: Project interest earnings
+      description: >-
+        Calculate projected interest earnings for an account over a future period based on current balances
+        and applicable rates. Projections factor in known rate changes and promotional rate expirations.
+        Useful for customer-facing yield estimates and CD maturity value calculations.
+      tags:
+        - Interest
+      requestBody:
+        required: true
+        description: Project interest earnings request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    account_id:
+                      type: string
+                      description: Account to project for
+                      example: "acct-10045892"
+                    projection_months:
+                      type: integer
+                      description: Months to project forward
+                      example: 12
+                      minimum: 1
+                      maximum: 60
+                    assumed_balance:
+                      type: number
+                      description: Assumed constant balance (defaults to current)
+                      format: double
+                      example: 25000.0
+              required:
+                - account_id
+                - projection_months
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Account identifier
+                    example: "acct-10045892"
+                  projected_interest:
+                    type: number
+                    description: Total projected interest earnings
+                    format: double
+                    example: 1062.5
+                  effective_apy:
+                    type: number
+                    description: Effective APY over the projection period
+                    format: double
+                    example: 4.34
+                  monthly_breakdown:
+                    type: array
+                    description: Month-by-month interest projection
+                    items:
+                      type: object
+                required:
+                  - account_id
+                  - projected_interest
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /interest/rates:
+    get:
+      operationId: listInterestRates
+      summary: List interest rates
+      description: >-
+        Retrieve current interest rate configurations for all deposit products. Each rate entry includes the
+        APR, APY, tier boundaries, and effective date. Historical rates can be retrieved by specifying an
+        as_of_date filter.
+      tags:
+        - Interest Rates
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: product_type
+          in: query
+          required: false
+          description: Filter by product type
+          schema:
+            type: "string"
+        - name: rate_type
+          in: query
+          required: false
+          description: Filter by rate type
+          schema:
+            type: "string"
+            enum:
+              - FIXED
+              - VARIABLE
+              - TIERED
+              - PROMOTIONAL
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rate_id:
+                          type: string
+                          description: Rate configuration identifier
+                          example: "rate-savings-standard"
+                        product_type:
+                          type: string
+                          description: Account product this rate applies to
+                          example: "SAVINGS"
+                        rate_type:
+                          type: string
+                          description: Type of interest rate
+                          enum:
+                            - FIXED
+                            - VARIABLE
+                            - TIERED
+                            - PROMOTIONAL
+                        annual_rate:
+                          type: number
+                          description: Annual percentage rate (APR)
+                          format: double
+                          example: 4.25
+                        apy:
+                          type: number
+                          description: Annual percentage yield (APY) reflecting compounding
+                          format: double
+                          example: 4.34
+                        effective_date:
+                          type: string
+                          description: Date this rate became effective
+                          format: date
+                          example: "2025-04-01"
+                        tier_minimum:
+                          type: number
+                          description: Minimum balance for this tier (tiered rates only)
+                          format: double
+                          example: 10000.0
+                        tier_maximum:
+                          type: number
+                          description: Maximum balance for this tier
+                          format: double
+                          example: 49999.99
+                      required:
+                        - rate_id
+                        - product_type
+                        - annual_rate
+                        - apy
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /interest/rates/{rate_id}:
+    get:
+      operationId: getInterestRate
+      summary: Get interest rate details
+      description: >-
+        Retrieve a specific rate configuration with full tier details, effective dates, and the product
+        types it applies to. For promotional rates, includes the promotion expiration date and the fallback
+        standard rate.
+      tags:
+        - Interest Rates
+      parameters:
+        - name: rate_id
+          in: path
+          required: true
+          description: Unique rate id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rate_id:
+                    type: string
+                    description: Rate configuration identifier
+                    example: "rate-savings-standard"
+                  product_type:
+                    type: string
+                    description: Account product this rate applies to
+                    example: "SAVINGS"
+                  rate_type:
+                    type: string
+                    description: Type of interest rate
+                    enum:
+                      - FIXED
+                      - VARIABLE
+                      - TIERED
+                      - PROMOTIONAL
+                  annual_rate:
+                    type: number
+                    description: Annual percentage rate (APR)
+                    format: double
+                    example: 4.25
+                  apy:
+                    type: number
+                    description: Annual percentage yield (APY) reflecting compounding
+                    format: double
+                    example: 4.34
+                  effective_date:
+                    type: string
+                    description: Date this rate became effective
+                    format: date
+                    example: "2025-04-01"
+                  tier_minimum:
+                    type: number
+                    description: Minimum balance for this tier (tiered rates only)
+                    format: double
+                    example: 10000.0
+                  tier_maximum:
+                    type: number
+                    description: Maximum balance for this tier
+                    format: double
+                    example: 49999.99
+                required:
+                  - rate_id
+                  - product_type
+                  - annual_rate
+                  - apy
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateInterestRate
+      summary: Update interest rate
+      description: >-
+        Update an interest rate configuration. Rate changes take effect on the specified effective_date and
+        are applied during the next accrual run. Rate change notifications are sent to affected account
+        holders per Regulation DD requirements.
+      tags:
+        - Interest Rates
+      parameters:
+        - name: rate_id
+          in: path
+          required: true
+          description: Unique rate id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update interest rate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    annual_rate:
+                      type: number
+                      description: Annual percentage rate (APR)
+                      format: double
+                      example: 4.25
+                    apy:
+                      type: number
+                      description: Annual percentage yield (APY) reflecting compounding
+                      format: double
+                      example: 4.34
+                    effective_date:
+                      type: string
+                      description: Date this rate became effective
+                      format: date
+                      example: "2025-04-01"
+                    tier_minimum:
+                      type: number
+                      description: Minimum balance for this tier (tiered rates only)
+                      format: double
+                      example: 10000.0
+                    tier_maximum:
+                      type: number
+                      description: Maximum balance for this tier
+                      format: double
+                      example: 49999.99
+              required:
+                - annual_rate
+                - apy
+                - effective_date
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rate_id:
+                    type: string
+                    description: Rate configuration identifier
+                    example: "rate-savings-standard"
+                  product_type:
+                    type: string
+                    description: Account product this rate applies to
+                    example: "SAVINGS"
+                  rate_type:
+                    type: string
+                    description: Type of interest rate
+                    enum:
+                      - FIXED
+                      - VARIABLE
+                      - TIERED
+                      - PROMOTIONAL
+                  annual_rate:
+                    type: number
+                    description: Annual percentage rate (APR)
+                    format: double
+                    example: 4.25
+                  apy:
+                    type: number
+                    description: Annual percentage yield (APY) reflecting compounding
+                    format: double
+                    example: 4.34
+                  effective_date:
+                    type: string
+                    description: Date this rate became effective
+                    format: date
+                    example: "2025-04-01"
+                  tier_minimum:
+                    type: number
+                    description: Minimum balance for this tier (tiered rates only)
+                    format: double
+                    example: 10000.0
+                  tier_maximum:
+                    type: number
+                    description: Maximum balance for this tier
+                    format: double
+                    example: 49999.99
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

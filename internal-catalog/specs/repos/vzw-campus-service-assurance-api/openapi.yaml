@@ -1,0 +1,1900 @@
+openapi: 3.0.3
+info:
+  title: VZW Campus Service Assurance API
+  description: >-
+    Provides service assurance capabilities for Verizon campus workloads, including service-level objective (SLO)
+    lifecycle management, burn-rate monitoring, incident creation, root-cause correlation across telemetry domains,
+    and campus-wide service health scorecards. This API is intended for SRE and NOC automation where rapid
+    detection, triage, and mitigation of service degradation are required.
+  version: 1.0.0
+  contact:
+    name: Verizon Service Assurance Platform Team
+    email: service-assurance-api@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/legal/terms
+  x-verizon-catalog-id: vzw-campus-service-assurance-api
+  x-verizon-domain: assurance
+servers:
+  - url: https://vzw-campus-service-assurance-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-campus-service-assurance-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: SLOs
+    description: SLO definition lifecycle and burn-rate observability
+  - name: Incidents
+    description: Service incident creation and listing for assurance operations
+  - name: Service Health
+    description: Campus and slice-level health scorecards
+  - name: Correlation
+    description: Event correlation and root-cause enrichment for active incidents
+paths:
+  /slos:
+    get:
+      operationId: listSlos
+      summary: List SLO definitions by slice or application tier
+      description: >-
+        Returns SLO definitions scoped by campus, network slice, service, or application tier. The response includes
+        error budget posture, current burn metrics, and linkage metadata used by incident automation.
+      tags:
+        - SLOs
+      parameters:
+        - $ref: "#/components/parameters/campusId"
+        - $ref: "#/components/parameters/sliceIdQuery"
+        - $ref: "#/components/parameters/applicationTier"
+        - $ref: "#/components/parameters/serviceName"
+        - $ref: "#/components/parameters/sloStatus"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/perPage"
+      responses:
+        "200":
+          description: SLO definitions retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SloListResponse"
+              example:
+                data:
+                  - slo_id: slo-camp-west-voice-latency
+                    name: Campus Voice API P95 Latency
+                    campus_id: camp-west-01
+                    slice_id: slice-gold-voice
+                    service_name: voice-routing-api
+                    application_tier: edge
+                    objective_type: LATENCY
+                    target:
+                      metric: request_latency_ms_p95
+                      comparator: LTE
+                      threshold: 120
+                      unit: ms
+                    measurement_window: 28d
+                    burn_rate_windows:
+                      - window: 1h
+                        threshold: 8.0
+                      - window: 6h
+                        threshold: 4.0
+                      - window: 24h
+                        threshold: 2.0
+                    error_budget_total_minutes: 403.2
+                    error_budget_remaining_minutes: 355.4
+                    error_budget_remaining_pct: 88.14
+                    burn_rate_1h: 1.7
+                    burn_rate_6h: 1.2
+                    burn_rate_24h: 0.9
+                    forecast_breach_at: "2026-04-10T18:45:00Z"
+                    status: HEALTHY
+                    owner:
+                      team: edge-voice-sre
+                      pagerduty_service_id: PDX9A1
+                      slack_channel: "#sre-edge-voice"
+                    created_at: "2026-03-05T10:20:30Z"
+                    updated_at: "2026-03-27T08:11:42Z"
+                  - slo_id: slo-camp-west-auth-availability
+                    name: Campus Auth Availability
+                    campus_id: camp-west-01
+                    slice_id: slice-enterprise-core
+                    service_name: campus-auth-service
+                    application_tier: core
+                    objective_type: AVAILABILITY
+                    target:
+                      metric: availability_pct
+                      comparator: GTE
+                      threshold: 99.95
+                      unit: pct
+                    measurement_window: 28d
+                    burn_rate_windows:
+                      - window: 1h
+                        threshold: 10.0
+                      - window: 6h
+                        threshold: 5.0
+                    error_budget_total_minutes: 20.16
+                    error_budget_remaining_minutes: 17.02
+                    error_budget_remaining_pct: 84.42
+                    burn_rate_1h: 2.1
+                    burn_rate_6h: 1.5
+                    burn_rate_24h: 1.1
+                    forecast_breach_at: "2026-03-31T02:15:00Z"
+                    status: WARNING
+                    owner:
+                      team: identity-sre
+                      pagerduty_service_id: P8K2MQ
+                      slack_channel: "#sre-identity"
+                    created_at: "2026-02-11T12:04:17Z"
+                    updated_at: "2026-03-27T09:03:14Z"
+                meta:
+                  page: 1
+                  per_page: 20
+                  total_items: 2
+                  total_pages: 1
+                  request_id: 77931be6-e95e-4f90-b032-d3b5839ef7e9
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSlo
+      summary: Create SLO with thresholds and burn-rate windows
+      description: >-
+        Creates a new SLO definition for a campus service. The SLO includes objective target, error budget policy,
+        and multi-window burn-rate alert thresholds used by SRE automation and incident workflows.
+      tags:
+        - SLOs
+      requestBody:
+        required: true
+        description: SLO definition payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSloRequest"
+            example:
+              name: Campus Edge Video Availability
+              campus_id: camp-west-01
+              slice_id: slice-video-priority
+              service_name: edge-video-gateway
+              application_tier: edge
+              objective_type: AVAILABILITY
+              target:
+                metric: availability_pct
+                comparator: GTE
+                threshold: 99.9
+                unit: pct
+              measurement_window: 28d
+              burn_rate_windows:
+                - window: 1h
+                  threshold: 9.0
+                - window: 6h
+                  threshold: 4.5
+                - window: 24h
+                  threshold: 2.0
+              alert_policy:
+                page_on_call_on_breach: true
+                auto_create_incident: true
+                minimum_breach_duration_minutes: 10
+              owner:
+                team: edge-video-sre
+                pagerduty_service_id: P66YTQ
+                slack_channel: "#sre-edge-video"
+      responses:
+        "201":
+          description: SLO created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SloResponse"
+              example:
+                data:
+                  slo_id: slo-camp-west-video-availability
+                  name: Campus Edge Video Availability
+                  campus_id: camp-west-01
+                  slice_id: slice-video-priority
+                  service_name: edge-video-gateway
+                  application_tier: edge
+                  objective_type: AVAILABILITY
+                  target:
+                    metric: availability_pct
+                    comparator: GTE
+                    threshold: 99.9
+                    unit: pct
+                  measurement_window: 28d
+                  burn_rate_windows:
+                    - window: 1h
+                      threshold: 9.0
+                    - window: 6h
+                      threshold: 4.5
+                    - window: 24h
+                      threshold: 2.0
+                  error_budget_total_minutes: 40.32
+                  error_budget_remaining_minutes: 40.32
+                  error_budget_remaining_pct: 100
+                  burn_rate_1h: 0.0
+                  burn_rate_6h: 0.0
+                  burn_rate_24h: 0.0
+                  forecast_breach_at: null
+                  status: HEALTHY
+                  owner:
+                    team: edge-video-sre
+                    pagerduty_service_id: P66YTQ
+                    slack_channel: "#sre-edge-video"
+                  alert_policy:
+                    page_on_call_on_breach: true
+                    auto_create_incident: true
+                    minimum_breach_duration_minutes: 10
+                  created_at: "2026-03-27T10:01:01Z"
+                  updated_at: "2026-03-27T10:01:01Z"
+                meta:
+                  request_id: e6523e2c-75e0-4fe7-9f02-33667c18f2a0
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /slos/{sloId}/burn-rate:
+    get:
+      operationId: getSloBurnRate
+      summary: Get current burn metrics and forecast breach time
+      description: >-
+        Retrieves live burn-rate indicators and error budget trajectory for a specific SLO. Includes short-window,
+        medium-window, and long-window burn signals, plus forecasted breach timestamp when projected consumption
+        exceeds the configured error budget policy.
+      tags:
+        - SLOs
+      parameters:
+        - $ref: "#/components/parameters/sloIdPath"
+        - $ref: "#/components/parameters/lookbackMinutes"
+      responses:
+        "200":
+          description: Burn-rate details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SloBurnRateResponse"
+              example:
+                data:
+                  slo_id: slo-camp-west-auth-availability
+                  measured_at: "2026-03-27T10:08:40Z"
+                  objective_type: AVAILABILITY
+                  measurement_window: 28d
+                  error_budget_total_minutes: 20.16
+                  error_budget_consumed_minutes: 3.14
+                  error_budget_remaining_minutes: 17.02
+                  error_budget_remaining_pct: 84.42
+                  burn_rate_1h: 2.1
+                  burn_rate_6h: 1.5
+                  burn_rate_24h: 1.1
+                  current_violation_duration_minutes: 6
+                  forecast_breach_at: "2026-03-31T02:15:00Z"
+                  projected_exhaustion_probability_pct: 73.2
+                  recommended_action: Increase auth replica count in west edge zone
+                  sample_count: 360
+                  status: WARNING
+                  timeline:
+                    - timestamp: "2026-03-27T09:10:00Z"
+                      burn_rate_1h: 1.2
+                      error_budget_remaining_pct: 85.7
+                    - timestamp: "2026-03-27T09:40:00Z"
+                      burn_rate_1h: 1.6
+                      error_budget_remaining_pct: 85.0
+                    - timestamp: "2026-03-27T10:08:40Z"
+                      burn_rate_1h: 2.1
+                      error_budget_remaining_pct: 84.42
+                meta:
+                  request_id: 5f96a356-9657-471d-a718-f5f723511693
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /incidents:
+    post:
+      operationId: createIncident
+      summary: Open service incident from SLO breach
+      description: >-
+        Opens a service incident manually or from automated SLO-breach workflows. The incident captures affected
+        service and slice scope, customer impact level, and initial diagnostics to accelerate triage.
+      tags:
+        - Incidents
+      requestBody:
+        required: true
+        description: Incident creation payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIncidentRequest"
+            example:
+              source: SLO_BREACH
+              title: Elevated auth failures on west campus
+              campus_id: camp-west-01
+              slice_id: slice-enterprise-core
+              service_name: campus-auth-service
+              severity: SEV2
+              status: OPEN
+              impact:
+                impacted_users_estimate: 4200
+                impacted_sites:
+                  - west-campus-hq
+                  - west-campus-retail-zone
+                symptom: Users unable to establish secure session
+              linked_slo_id: slo-camp-west-auth-availability
+              opened_by: auto-remediator
+              initial_findings:
+                probable_domains:
+                  - POLICY
+                  - EDGE_COMPUTE
+                notes: Error rate spiked after policy bundle rollout version 2026.03.27.1
+      responses:
+        "201":
+          description: Incident opened successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentResponse"
+              example:
+                data:
+                  incident_id: inc-20260327-00421
+                  source: SLO_BREACH
+                  title: Elevated auth failures on west campus
+                  campus_id: camp-west-01
+                  slice_id: slice-enterprise-core
+                  service_name: campus-auth-service
+                  severity: SEV2
+                  status: OPEN
+                  impact:
+                    impacted_users_estimate: 4200
+                    impacted_sites:
+                      - west-campus-hq
+                      - west-campus-retail-zone
+                    symptom: Users unable to establish secure session
+                  linked_slo_id: slo-camp-west-auth-availability
+                  opened_by: auto-remediator
+                  owning_team: identity-sre
+                  mttr_target_minutes: 90
+                  created_at: "2026-03-27T10:12:00Z"
+                  updated_at: "2026-03-27T10:12:00Z"
+                meta:
+                  request_id: f3ca7f16-82ca-42f2-a4d5-0782114c1e77
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    get:
+      operationId: listIncidents
+      summary: List incidents with pagination and status or severity filters
+      description: >-
+        Returns incidents for assurance operations with optional filters for status, severity, campus scope,
+        and service. Results are sorted by recency to support shift handoff and incident command workflows.
+      tags:
+        - Incidents
+      parameters:
+        - $ref: "#/components/parameters/campusId"
+        - $ref: "#/components/parameters/sliceIdQuery"
+        - $ref: "#/components/parameters/serviceName"
+        - $ref: "#/components/parameters/incidentStatus"
+        - $ref: "#/components/parameters/severity"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/perPage"
+      responses:
+        "200":
+          description: Incident list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentListResponse"
+              example:
+                data:
+                  - incident_id: inc-20260327-00421
+                    source: SLO_BREACH
+                    title: Elevated auth failures on west campus
+                    campus_id: camp-west-01
+                    slice_id: slice-enterprise-core
+                    service_name: campus-auth-service
+                    severity: SEV2
+                    status: INVESTIGATING
+                    linked_slo_id: slo-camp-west-auth-availability
+                    owning_team: identity-sre
+                    started_at: "2026-03-27T10:12:00Z"
+                    acknowledged_at: "2026-03-27T10:15:13Z"
+                    updated_at: "2026-03-27T10:26:44Z"
+                  - incident_id: inc-20260327-00418
+                    source: OPERATOR_REPORT
+                    title: Packet loss increase on slice-gold-voice
+                    campus_id: camp-west-01
+                    slice_id: slice-gold-voice
+                    service_name: voice-routing-api
+                    severity: SEV3
+                    status: OPEN
+                    linked_slo_id: slo-camp-west-voice-latency
+                    owning_team: edge-voice-sre
+                    started_at: "2026-03-27T09:47:20Z"
+                    acknowledged_at: "2026-03-27T09:49:03Z"
+                    updated_at: "2026-03-27T10:07:55Z"
+                meta:
+                  page: 1
+                  per_page: 20
+                  total_items: 2
+                  total_pages: 1
+                  request_id: 842f5b5c-ec20-4a14-a3e7-73f2f72a6eb2
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /incidents/{incidentId}:correlate:
+    post:
+      operationId: correlateIncidentSignals
+      summary: Correlate incident with RAN, policy, and slice change events
+      description: >-
+        Enriches an active incident by correlating observability and change events across RAN, policy control,
+        network slicing, and edge workload domains. Returns ranked hypotheses and supporting evidence links used
+        by incident commanders and remediation automation.
+      tags:
+        - Correlation
+        - Incidents
+      parameters:
+        - $ref: "#/components/parameters/incidentIdPath"
+      requestBody:
+        required: true
+        description: Correlation analysis request
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorrelateIncidentRequest"
+            example:
+              include_domains:
+                - RAN
+                - POLICY
+                - SLICE_CHANGE
+                - EDGE_COMPUTE
+              analysis_window:
+                start_at: "2026-03-27T09:30:00Z"
+                end_at: "2026-03-27T10:20:00Z"
+              max_events_per_domain: 100
+              require_confidence_gte: 0.7
+      responses:
+        "200":
+          description: Correlation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentCorrelationResponse"
+              example:
+                data:
+                  incident_id: inc-20260327-00421
+                  analyzed_at: "2026-03-27T10:21:34Z"
+                  confidence_score: 0.86
+                  primary_hypothesis: Policy rollout introduced stale JWT validation rule
+                  correlated_domains:
+                    - POLICY
+                    - EDGE_COMPUTE
+                    - SLICE_CHANGE
+                  hypotheses:
+                    - rank: 1
+                      statement: Policy rollout 2026.03.27.1 increased token rejection rate
+                      confidence_score: 0.86
+                      supporting_signals:
+                        - domain: POLICY
+                          event_id: pol-evt-009182
+                          occurred_at: "2026-03-27T09:56:11Z"
+                          summary: New auth decision tree deployed to west campus
+                        - domain: EDGE_COMPUTE
+                          event_id: edge-evt-11983
+                          occurred_at: "2026-03-27T10:02:03Z"
+                          summary: Spike in 401 responses from edge auth service
+                    - rank: 2
+                      statement: Slice route rebalance increased auth backend latency
+                      confidence_score: 0.58
+                      supporting_signals:
+                        - domain: SLICE_CHANGE
+                          event_id: slice-evt-2241
+                          occurred_at: "2026-03-27T09:59:30Z"
+                          summary: Path rebalance applied to slice-enterprise-core
+                  recommended_mitigations:
+                    - Roll back policy bundle 2026.03.27.1
+                    - Pin auth traffic to previous slice route profile
+                    - Increase edge auth pod count by 30 percent
+                  evidence_links:
+                    - type: DASHBOARD
+                      url: https://observability.verizon.com/dashboards/auth-west-campus
+                    - type: CHANGELOG
+                      url: https://changes.verizon.com/policy/2026.03.27.1
+                meta:
+                  request_id: 4f2b6f66-8f27-4f3f-8b4b-857f24c6f60a
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /service-health:
+    get:
+      operationId: getServiceHealthScorecards
+      summary: Get campus-wide service health scorecards
+      description: >-
+        Returns campus assurance scorecards spanning service availability, latency posture, incident pressure,
+        and error budget health. Results can be grouped by campus, slice, or application tier to support
+        operational review and executive reporting.
+      tags:
+        - Service Health
+      parameters:
+        - $ref: "#/components/parameters/campusId"
+        - $ref: "#/components/parameters/sliceIdQuery"
+        - $ref: "#/components/parameters/applicationTier"
+        - $ref: "#/components/parameters/healthWindow"
+      responses:
+        "200":
+          description: Service health scorecards retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceHealthResponse"
+              example:
+                data:
+                  generated_at: "2026-03-27T10:25:00Z"
+                  health_window: 24h
+                  overall_health_score: 78
+                  posture: DEGRADED
+                  scorecards:
+                    - campus_id: camp-west-01
+                      slice_id: slice-enterprise-core
+                      application_tier: core
+                      service_name: campus-auth-service
+                      health_score: 68
+                      posture: DEGRADED
+                      availability_pct: 99.71
+                      latency_p95_ms: 184
+                      error_rate_pct: 1.9
+                      open_incidents: 1
+                      sev1_or_sev2_open_incidents: 1
+                      burn_rate_1h: 2.1
+                      error_budget_remaining_pct: 84.42
+                      forecast_breach_at: "2026-03-31T02:15:00Z"
+                    - campus_id: camp-west-01
+                      slice_id: slice-gold-voice
+                      application_tier: edge
+                      service_name: voice-routing-api
+                      health_score: 87
+                      posture: HEALTHY
+                      availability_pct: 99.96
+                      latency_p95_ms: 102
+                      error_rate_pct: 0.3
+                      open_incidents: 1
+                      sev1_or_sev2_open_incidents: 0
+                      burn_rate_1h: 1.2
+                      error_budget_remaining_pct: 88.14
+                      forecast_breach_at: "2026-04-10T18:45:00Z"
+                meta:
+                  request_id: e8b6b3c0-63bd-4dc0-a5a9-058482786c4d
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  parameters:
+    campusId:
+      name: campus_id
+      in: query
+      required: false
+      description: Filter by unique campus identifier
+      schema:
+        type: string
+      example: camp-west-01
+    sliceIdQuery:
+      name: slice_id
+      in: query
+      required: false
+      description: Filter by network slice identifier
+      schema:
+        type: string
+      example: slice-enterprise-core
+    applicationTier:
+      name: application_tier
+      in: query
+      required: false
+      description: Filter by application tier
+      schema:
+        $ref: "#/components/schemas/ApplicationTier"
+    serviceName:
+      name: service_name
+      in: query
+      required: false
+      description: Filter by service name
+      schema:
+        type: string
+      example: campus-auth-service
+    sloStatus:
+      name: status
+      in: query
+      required: false
+      description: Filter SLOs by health status
+      schema:
+        $ref: "#/components/schemas/SloStatus"
+    incidentStatus:
+      name: status
+      in: query
+      required: false
+      description: Filter incidents by lifecycle status
+      schema:
+        $ref: "#/components/schemas/IncidentStatus"
+    severity:
+      name: severity
+      in: query
+      required: false
+      description: Filter incidents by severity class
+      schema:
+        $ref: "#/components/schemas/Severity"
+    page:
+      name: page
+      in: query
+      required: false
+      description: Page number (1-based)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      example: 1
+    perPage:
+      name: per_page
+      in: query
+      required: false
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      example: 20
+    sloIdPath:
+      name: sloId
+      in: path
+      required: true
+      description: Unique SLO identifier
+      schema:
+        type: string
+      example: slo-camp-west-auth-availability
+    incidentIdPath:
+      name: incidentId
+      in: path
+      required: true
+      description: Unique incident identifier
+      schema:
+        type: string
+      example: inc-20260327-00421
+    lookbackMinutes:
+      name: lookback_minutes
+      in: query
+      required: false
+      description: Time horizon for burn-rate timeline sampling
+      schema:
+        type: integer
+        minimum: 15
+        maximum: 10080
+        default: 120
+      example: 120
+    healthWindow:
+      name: health_window
+      in: query
+      required: false
+      description: Aggregation window for health scorecards
+      schema:
+        type: string
+        enum:
+          - 1h
+          - 6h
+          - 24h
+          - 7d
+        default: 24h
+      example: 24h
+  schemas:
+    SloListResponse:
+      type: object
+      description: Paginated list response for SLO resources
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Slo"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+    SloResponse:
+      type: object
+      description: Single SLO response wrapper
+      properties:
+        data:
+          $ref: "#/components/schemas/Slo"
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+      required:
+        - data
+        - meta
+    CreateSloRequest:
+      type: object
+      description: Request payload for creating an SLO
+      properties:
+        name:
+          type: string
+          description: Human-readable SLO name
+          minLength: 3
+          maxLength: 120
+          example: Campus Edge Video Availability
+        campus_id:
+          type: string
+          description: Campus identifier where the SLO is enforced
+          example: camp-west-01
+        slice_id:
+          type: string
+          description: Network slice tied to this objective
+          example: slice-video-priority
+        service_name:
+          type: string
+          description: Service for which objective is measured
+          example: edge-video-gateway
+        application_tier:
+          $ref: "#/components/schemas/ApplicationTier"
+        objective_type:
+          $ref: "#/components/schemas/SloObjectiveType"
+        target:
+          $ref: "#/components/schemas/SloTarget"
+        measurement_window:
+          type: string
+          description: Rolling window used for objective measurement
+          enum:
+            - 1d
+            - 7d
+            - 14d
+            - 28d
+          example: 28d
+        burn_rate_windows:
+          type: array
+          description: Burn-rate thresholds by alerting window
+          minItems: 1
+          maxItems: 6
+          items:
+            $ref: "#/components/schemas/BurnRateWindow"
+        alert_policy:
+          $ref: "#/components/schemas/AlertPolicy"
+        owner:
+          $ref: "#/components/schemas/OwnerRef"
+      required:
+        - name
+        - campus_id
+        - slice_id
+        - service_name
+        - application_tier
+        - objective_type
+        - target
+        - measurement_window
+        - burn_rate_windows
+        - owner
+    Slo:
+      type: object
+      description: Service level objective with observability and governance metadata
+      properties:
+        slo_id:
+          type: string
+          description: Unique SLO identifier
+          example: slo-camp-west-auth-availability
+        name:
+          type: string
+          description: Human-readable SLO name
+          example: Campus Auth Availability
+        campus_id:
+          type: string
+          description: Campus identifier
+          example: camp-west-01
+        slice_id:
+          type: string
+          description: Slice identifier
+          example: slice-enterprise-core
+        service_name:
+          type: string
+          description: Service under SLO governance
+          example: campus-auth-service
+        application_tier:
+          $ref: "#/components/schemas/ApplicationTier"
+        objective_type:
+          $ref: "#/components/schemas/SloObjectiveType"
+        target:
+          $ref: "#/components/schemas/SloTarget"
+        measurement_window:
+          type: string
+          description: Rolling window used to evaluate compliance
+          example: 28d
+        burn_rate_windows:
+          type: array
+          items:
+            $ref: "#/components/schemas/BurnRateWindow"
+        error_budget_total_minutes:
+          type: number
+          format: double
+          description: Total error budget in minutes for current window
+          example: 20.16
+        error_budget_remaining_minutes:
+          type: number
+          format: double
+          description: Remaining error budget in minutes
+          example: 17.02
+        error_budget_remaining_pct:
+          type: number
+          format: double
+          description: Remaining error budget percentage
+          example: 84.42
+        burn_rate_1h:
+          type: number
+          format: double
+          description: Burn rate over last 1 hour
+          example: 2.1
+        burn_rate_6h:
+          type: number
+          format: double
+          description: Burn rate over last 6 hours
+          example: 1.5
+        burn_rate_24h:
+          type: number
+          format: double
+          description: Burn rate over last 24 hours
+          example: 1.1
+        forecast_breach_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Predicted timestamp when SLO will breach if current trend persists
+          example: "2026-03-31T02:15:00Z"
+        status:
+          $ref: "#/components/schemas/SloStatus"
+        owner:
+          $ref: "#/components/schemas/OwnerRef"
+        alert_policy:
+          $ref: "#/components/schemas/AlertPolicy"
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-02-11T12:04:17Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-03-27T09:03:14Z"
+      required:
+        - slo_id
+        - name
+        - campus_id
+        - slice_id
+        - service_name
+        - application_tier
+        - objective_type
+        - target
+        - measurement_window
+        - burn_rate_windows
+        - error_budget_total_minutes
+        - error_budget_remaining_minutes
+        - error_budget_remaining_pct
+        - burn_rate_1h
+        - burn_rate_6h
+        - burn_rate_24h
+        - status
+        - owner
+        - created_at
+        - updated_at
+    SloBurnRateResponse:
+      type: object
+      description: Burn-rate and error-budget projection response
+      properties:
+        data:
+          $ref: "#/components/schemas/SloBurnRate"
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+      required:
+        - data
+        - meta
+    SloBurnRate:
+      type: object
+      description: Live burn-rate telemetry for an SLO
+      properties:
+        slo_id:
+          type: string
+          description: SLO identifier
+          example: slo-camp-west-auth-availability
+        measured_at:
+          type: string
+          format: date-time
+          description: Timestamp when burn metrics were computed
+          example: "2026-03-27T10:08:40Z"
+        objective_type:
+          $ref: "#/components/schemas/SloObjectiveType"
+        measurement_window:
+          type: string
+          example: 28d
+        error_budget_total_minutes:
+          type: number
+          format: double
+          example: 20.16
+        error_budget_consumed_minutes:
+          type: number
+          format: double
+          example: 3.14
+        error_budget_remaining_minutes:
+          type: number
+          format: double
+          example: 17.02
+        error_budget_remaining_pct:
+          type: number
+          format: double
+          example: 84.42
+        burn_rate_1h:
+          type: number
+          format: double
+          example: 2.1
+        burn_rate_6h:
+          type: number
+          format: double
+          example: 1.5
+        burn_rate_24h:
+          type: number
+          format: double
+          example: 1.1
+        current_violation_duration_minutes:
+          type: integer
+          description: Continuous duration the SLO has remained in violation
+          example: 6
+        forecast_breach_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-03-31T02:15:00Z"
+        projected_exhaustion_probability_pct:
+          type: number
+          format: double
+          description: Probability that error budget is exhausted before window end
+          example: 73.2
+        recommended_action:
+          type: string
+          description: Suggested mitigation generated by assurance policy
+          example: Increase auth replica count in west edge zone
+        sample_count:
+          type: integer
+          description: Number of measurements used for current forecast
+          example: 360
+        status:
+          $ref: "#/components/schemas/SloStatus"
+        timeline:
+          type: array
+          description: Burn-rate trend points over query horizon
+          items:
+            $ref: "#/components/schemas/BurnTimelinePoint"
+      required:
+        - slo_id
+        - measured_at
+        - objective_type
+        - measurement_window
+        - error_budget_total_minutes
+        - error_budget_consumed_minutes
+        - error_budget_remaining_minutes
+        - error_budget_remaining_pct
+        - burn_rate_1h
+        - burn_rate_6h
+        - burn_rate_24h
+        - sample_count
+        - status
+        - timeline
+    CreateIncidentRequest:
+      type: object
+      description: Request payload to open a service incident
+      properties:
+        source:
+          $ref: "#/components/schemas/IncidentSource"
+        title:
+          type: string
+          minLength: 5
+          maxLength: 180
+          description: Incident title
+          example: Elevated auth failures on west campus
+        campus_id:
+          type: string
+          description: Impacted campus identifier
+          example: camp-west-01
+        slice_id:
+          type: string
+          description: Impacted slice identifier
+          example: slice-enterprise-core
+        service_name:
+          type: string
+          description: Impacted service
+          example: campus-auth-service
+        severity:
+          $ref: "#/components/schemas/Severity"
+        status:
+          $ref: "#/components/schemas/IncidentStatus"
+        impact:
+          $ref: "#/components/schemas/IncidentImpact"
+        linked_slo_id:
+          type: string
+          description: Source SLO identifier when incident originates from SLO breach
+          example: slo-camp-west-auth-availability
+        opened_by:
+          type: string
+          description: User or automation actor opening the incident
+          example: auto-remediator
+        initial_findings:
+          $ref: "#/components/schemas/InitialFindings"
+      required:
+        - source
+        - title
+        - campus_id
+        - slice_id
+        - service_name
+        - severity
+        - impact
+        - opened_by
+    IncidentResponse:
+      type: object
+      description: Single incident response wrapper
+      properties:
+        data:
+          $ref: "#/components/schemas/Incident"
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+      required:
+        - data
+        - meta
+    IncidentListResponse:
+      type: object
+      description: Paginated incident list response
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentSummary"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+    Incident:
+      type: object
+      description: Incident record with impact and ownership metadata
+      allOf:
+        - $ref: "#/components/schemas/IncidentSummary"
+        - type: object
+          properties:
+            impact:
+              $ref: "#/components/schemas/IncidentImpact"
+            opened_by:
+              type: string
+              description: Creator of incident
+              example: auto-remediator
+            mttr_target_minutes:
+              type: integer
+              description: Mean-time-to-recovery target
+              example: 90
+            created_at:
+              type: string
+              format: date-time
+              example: "2026-03-27T10:12:00Z"
+            updated_at:
+              type: string
+              format: date-time
+              example: "2026-03-27T10:12:00Z"
+          required:
+            - impact
+            - opened_by
+            - mttr_target_minutes
+            - created_at
+            - updated_at
+    IncidentSummary:
+      type: object
+      description: Incident summary fields for list and linkage payloads
+      properties:
+        incident_id:
+          type: string
+          description: Incident identifier
+          example: inc-20260327-00421
+        source:
+          $ref: "#/components/schemas/IncidentSource"
+        title:
+          type: string
+          description: Incident title
+          example: Elevated auth failures on west campus
+        campus_id:
+          type: string
+          description: Campus identifier
+          example: camp-west-01
+        slice_id:
+          type: string
+          description: Slice identifier
+          example: slice-enterprise-core
+        service_name:
+          type: string
+          description: Service identifier
+          example: campus-auth-service
+        severity:
+          $ref: "#/components/schemas/Severity"
+        status:
+          $ref: "#/components/schemas/IncidentStatus"
+        linked_slo_id:
+          type: string
+          nullable: true
+          description: Linked source SLO identifier
+          example: slo-camp-west-auth-availability
+        owning_team:
+          type: string
+          description: Team accountable for mitigation
+          example: identity-sre
+        started_at:
+          type: string
+          format: date-time
+          description: Incident start timestamp
+          example: "2026-03-27T10:12:00Z"
+        acknowledged_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Acknowledgement timestamp
+          example: "2026-03-27T10:15:13Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-03-27T10:26:44Z"
+      required:
+        - incident_id
+        - source
+        - title
+        - campus_id
+        - slice_id
+        - service_name
+        - severity
+        - status
+        - owning_team
+        - started_at
+        - updated_at
+    CorrelateIncidentRequest:
+      type: object
+      description: Request parameters for incident event correlation
+      properties:
+        include_domains:
+          type: array
+          description: Domains to include in the correlation run
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CorrelationDomain"
+        analysis_window:
+          $ref: "#/components/schemas/TimeWindow"
+        max_events_per_domain:
+          type: integer
+          minimum: 10
+          maximum: 500
+          default: 100
+          description: Upper bound for events considered per domain
+          example: 100
+        require_confidence_gte:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          default: 0.6
+          description: Minimum confidence threshold for returned hypotheses
+          example: 0.7
+      required:
+        - include_domains
+        - analysis_window
+    IncidentCorrelationResponse:
+      type: object
+      description: Incident correlation response wrapper
+      properties:
+        data:
+          $ref: "#/components/schemas/IncidentCorrelation"
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+      required:
+        - data
+        - meta
+    IncidentCorrelation:
+      type: object
+      description: Root-cause correlation result with ranked hypotheses
+      properties:
+        incident_id:
+          type: string
+          example: inc-20260327-00421
+        analyzed_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:21:34Z"
+        confidence_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.86
+        primary_hypothesis:
+          type: string
+          example: Policy rollout introduced stale JWT validation rule
+        correlated_domains:
+          type: array
+          items:
+            $ref: "#/components/schemas/CorrelationDomain"
+        hypotheses:
+          type: array
+          items:
+            $ref: "#/components/schemas/CorrelationHypothesis"
+        recommended_mitigations:
+          type: array
+          items:
+            type: string
+          example:
+            - Roll back policy bundle 2026.03.27.1
+            - Pin auth traffic to previous slice route profile
+        evidence_links:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceLink"
+      required:
+        - incident_id
+        - analyzed_at
+        - confidence_score
+        - correlated_domains
+        - hypotheses
+        - recommended_mitigations
+        - evidence_links
+    ServiceHealthResponse:
+      type: object
+      description: Service health scorecard response wrapper
+      properties:
+        data:
+          $ref: "#/components/schemas/ServiceHealth"
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+      required:
+        - data
+        - meta
+    ServiceHealth:
+      type: object
+      description: Campus-wide health summary and scorecards
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          description: Timestamp when scorecards were generated
+          example: "2026-03-27T10:25:00Z"
+        health_window:
+          type: string
+          description: Aggregation window used to build scorecards
+          example: 24h
+        overall_health_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Overall campus service assurance score
+          example: 78
+        posture:
+          $ref: "#/components/schemas/HealthPosture"
+        scorecards:
+          type: array
+          items:
+            $ref: "#/components/schemas/HealthScorecard"
+      required:
+        - generated_at
+        - health_window
+        - overall_health_score
+        - posture
+        - scorecards
+    HealthScorecard:
+      type: object
+      description: Health scorecard for a service and slice scope
+      properties:
+        campus_id:
+          type: string
+          example: camp-west-01
+        slice_id:
+          type: string
+          example: slice-enterprise-core
+        application_tier:
+          $ref: "#/components/schemas/ApplicationTier"
+        service_name:
+          type: string
+          example: campus-auth-service
+        health_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 68
+        posture:
+          $ref: "#/components/schemas/HealthPosture"
+        availability_pct:
+          type: number
+          format: double
+          example: 99.71
+        latency_p95_ms:
+          type: number
+          format: double
+          example: 184
+        error_rate_pct:
+          type: number
+          format: double
+          example: 1.9
+        open_incidents:
+          type: integer
+          example: 1
+        sev1_or_sev2_open_incidents:
+          type: integer
+          example: 1
+        burn_rate_1h:
+          type: number
+          format: double
+          example: 2.1
+        error_budget_remaining_pct:
+          type: number
+          format: double
+          example: 84.42
+        forecast_breach_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-03-31T02:15:00Z"
+      required:
+        - campus_id
+        - slice_id
+        - application_tier
+        - service_name
+        - health_score
+        - posture
+        - availability_pct
+        - latency_p95_ms
+        - error_rate_pct
+        - open_incidents
+        - sev1_or_sev2_open_incidents
+        - burn_rate_1h
+        - error_budget_remaining_pct
+    SloTarget:
+      type: object
+      description: Objective threshold definition
+      properties:
+        metric:
+          type: string
+          description: Metric name used for objective
+          example: availability_pct
+        comparator:
+          type: string
+          enum:
+            - GTE
+            - LTE
+          description: Comparator applied against threshold
+          example: GTE
+        threshold:
+          type: number
+          format: double
+          description: Threshold value for objective metric
+          example: 99.95
+        unit:
+          type: string
+          enum:
+            - pct
+            - ms
+            - rps
+          description: Unit for objective metric
+          example: pct
+      required:
+        - metric
+        - comparator
+        - threshold
+        - unit
+    BurnRateWindow:
+      type: object
+      description: Burn-rate threshold for a specific evaluation window
+      properties:
+        window:
+          type: string
+          enum:
+            - 5m
+            - 15m
+            - 30m
+            - 1h
+            - 6h
+            - 24h
+          description: Burn-rate calculation window
+          example: 1h
+        threshold:
+          type: number
+          format: double
+          minimum: 0
+          description: Burn threshold triggering alert logic
+          example: 8.0
+      required:
+        - window
+        - threshold
+    BurnTimelinePoint:
+      type: object
+      description: Point-in-time burn-rate trend sample
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-03-27T10:08:40Z"
+        burn_rate_1h:
+          type: number
+          format: double
+          example: 2.1
+        error_budget_remaining_pct:
+          type: number
+          format: double
+          example: 84.42
+      required:
+        - timestamp
+        - burn_rate_1h
+        - error_budget_remaining_pct
+    AlertPolicy:
+      type: object
+      description: Alerting and automation policy associated with an SLO
+      properties:
+        page_on_call_on_breach:
+          type: boolean
+          description: Whether to page on-call when SLO breach is detected
+          example: true
+        auto_create_incident:
+          type: boolean
+          description: Whether to create an incident automatically when breach criteria are met
+          example: true
+        minimum_breach_duration_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          description: Continuous breach duration required before triggering escalation
+          example: 10
+      required:
+        - page_on_call_on_breach
+        - auto_create_incident
+    OwnerRef:
+      type: object
+      description: Team ownership for SLO and incident routing
+      properties:
+        team:
+          type: string
+          description: Owning engineering or operations team
+          example: identity-sre
+        pagerduty_service_id:
+          type: string
+          description: PagerDuty service identifier for escalation
+          example: P8K2MQ
+        slack_channel:
+          type: string
+          description: Slack channel used for operational coordination
+          example: "#sre-identity"
+      required:
+        - team
+    IncidentImpact:
+      type: object
+      description: Incident impact assessment details
+      properties:
+        impacted_users_estimate:
+          type: integer
+          minimum: 0
+          description: Estimated number of impacted users
+          example: 4200
+        impacted_sites:
+          type: array
+          description: Campus sites impacted by incident
+          items:
+            type: string
+          example:
+            - west-campus-hq
+            - west-campus-retail-zone
+        symptom:
+          type: string
+          description: Primary user-visible symptom
+          example: Users unable to establish secure session
+      required:
+        - impacted_users_estimate
+        - symptom
+    InitialFindings:
+      type: object
+      description: Initial triage findings captured at incident creation
+      properties:
+        probable_domains:
+          type: array
+          items:
+            $ref: "#/components/schemas/CorrelationDomain"
+        notes:
+          type: string
+          description: Additional triage context from operator or automation
+          example: Error rate spiked after policy bundle rollout version 2026.03.27.1
+    CorrelationHypothesis:
+      type: object
+      description: Ranked root-cause hypothesis with supporting signals
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+          description: Relative ranking (1 is highest confidence)
+          example: 1
+        statement:
+          type: string
+          description: Hypothesis statement
+          example: Policy rollout 2026.03.27.1 increased token rejection rate
+        confidence_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.86
+        supporting_signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupportingSignal"
+      required:
+        - rank
+        - statement
+        - confidence_score
+        - supporting_signals
+    SupportingSignal:
+      type: object
+      description: Correlated domain event supporting a hypothesis
+      properties:
+        domain:
+          $ref: "#/components/schemas/CorrelationDomain"
+        event_id:
+          type: string
+          description: Source event identifier
+          example: pol-evt-009182
+        occurred_at:
+          type: string
+          format: date-time
+          description: Event timestamp
+          example: "2026-03-27T09:56:11Z"
+        summary:
+          type: string
+          description: Event summary
+          example: New auth decision tree deployed to west campus
+      required:
+        - domain
+        - event_id
+        - occurred_at
+        - summary
+    EvidenceLink:
+      type: object
+      description: Link to external evidence artifact
+      properties:
+        type:
+          type: string
+          enum:
+            - DASHBOARD
+            - CHANGELOG
+            - TRACE
+            - LOG_QUERY
+            - TICKET
+          description: Evidence artifact type
+          example: DASHBOARD
+        url:
+          type: string
+          format: uri
+          description: URL to artifact
+          example: https://observability.verizon.com/dashboards/auth-west-campus
+      required:
+        - type
+        - url
+    TimeWindow:
+      type: object
+      description: Absolute time bounds for analysis operations
+      properties:
+        start_at:
+          type: string
+          format: date-time
+          description: Inclusive window start
+          example: "2026-03-27T09:30:00Z"
+        end_at:
+          type: string
+          format: date-time
+          description: Inclusive window end
+          example: "2026-03-27T10:20:00Z"
+      required:
+        - start_at
+        - end_at
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total resources matching filters
+          example: 2
+        total_pages:
+          type: integer
+          description: Total number of pages available
+          example: 1
+        request_id:
+          type: string
+          format: uuid
+          description: Request correlation identifier
+          example: 842f5b5c-ec20-4a14-a3e7-73f2f72a6eb2
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+        - request_id
+    RequestMeta:
+      type: object
+      description: Non-paginated response metadata
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Request correlation identifier
+          example: 4f2b6f66-8f27-4f3f-8b4b-857f24c6f60a
+      required:
+        - request_id
+    Error:
+      type: object
+      description: Standard API error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: One or more request parameters are invalid.
+            details:
+              type: array
+              description: Field-level validation or policy errors
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: Field in violation
+                    example: burn_rate_windows[0].threshold
+                  reason:
+                    type: string
+                    description: Validation failure detail
+                    example: Must be greater than zero.
+            request_id:
+              type: string
+              format: uuid
+              description: Correlation ID for support and traceability
+              example: eec1513f-0cb6-4768-bf68-ab4e244b8cd0
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    SloObjectiveType:
+      type: string
+      description: Type of objective being enforced
+      enum:
+        - AVAILABILITY
+        - LATENCY
+        - ERROR_RATE
+      example: AVAILABILITY
+    SloStatus:
+      type: string
+      description: Current health status of an SLO
+      enum:
+        - HEALTHY
+        - WARNING
+        - BREACHING
+        - SILENCED
+      example: WARNING
+    IncidentSource:
+      type: string
+      description: Source that originated the incident
+      enum:
+        - SLO_BREACH
+        - OPERATOR_REPORT
+        - SYNTHETIC_CHECK
+        - EXTERNAL_ALERT
+      example: SLO_BREACH
+    IncidentStatus:
+      type: string
+      description: Incident lifecycle state
+      enum:
+        - OPEN
+        - INVESTIGATING
+        - MITIGATING
+        - MONITORING
+        - RESOLVED
+        - CLOSED
+      example: INVESTIGATING
+    Severity:
+      type: string
+      description: Incident severity classification
+      enum:
+        - SEV1
+        - SEV2
+        - SEV3
+        - SEV4
+      example: SEV2
+    CorrelationDomain:
+      type: string
+      description: Domain included in root-cause correlation
+      enum:
+        - RAN
+        - POLICY
+        - SLICE_CHANGE
+        - EDGE_COMPUTE
+        - TRANSPORT
+        - DNS
+      example: POLICY
+    ApplicationTier:
+      type: string
+      description: Application placement tier
+      enum:
+        - EDGE
+        - CORE
+        - CONTROL_PLANE
+      example: EDGE
+    HealthPosture:
+      type: string
+      description: Derived health posture from score and assurance indicators
+      enum:
+        - HEALTHY
+        - DEGRADED
+        - CRITICAL
+      example: DEGRADED
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT bearer token issued by Verizon enterprise identity platform
+  responses:
+    "400":
+      description: Bad Request - Request parameters or body are invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: One or more request parameters are invalid.
+              details:
+                - field: burn_rate_windows[0].threshold
+                  reason: Must be greater than zero.
+              request_id: 4678625a-d9ad-465b-857f-a51f8907b8b9
+    "401":
+      description: Unauthorized - Missing or invalid authentication credentials.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired bearer token.
+              request_id: 53121126-f5c4-4f64-b0bd-d3f5f756f997
+    "403":
+      description: Forbidden - Caller lacks required access to this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: Access denied for requested campus scope.
+              request_id: e66ec677-52b0-4f8a-94f2-ec9ec4fdd2a3
+    "404":
+      description: Not Found - Requested resource could not be located.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: Incident inc-20260327-00421 was not found.
+              request_id: 77a8d7a7-d7f6-46bb-a6f6-81f15a0650da
+    "409":
+      description: Conflict - Request conflicts with current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: An incident for this SLO breach is already open.
+              request_id: 276bc74c-5289-45a8-9ec6-a12e14ca8924
+    "422":
+      description: Unprocessable Entity - Request is syntactically valid but violates domain rules.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Burn-rate windows must include at least one short and one long horizon.
+              request_id: f8c6f4e6-e16e-44cc-b729-06d099e4cf82
+    "429":
+      description: Too Many Requests - Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Retry after 30 seconds.
+              request_id: 927da9c7-2106-4fe3-a7fd-bb3f6488c1fc
+    "500":
+      description: Internal Server Error - Unexpected platform error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Unexpected failure while evaluating correlation graph.
+              request_id: ba34ff35-65f9-4dfc-bb73-f5ecbbfd946d

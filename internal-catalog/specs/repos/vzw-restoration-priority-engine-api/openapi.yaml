@@ -1,0 +1,1502 @@
+openapi: 3.0.3
+info:
+  title: VZW Restoration Priority Engine API
+  description: >-
+    Computes and manages outage restoration priorities across network incidents
+    using impact severity, critical infrastructure dependencies, operational risk,
+    and regulatory weighting. The API supports bulk score computation,
+    queue retrieval, score breakdown inspection, manual overrides with audit
+    justification, and scoring rule transparency.
+  version: 1.0.0
+  contact:
+    name: Verizon Partner Platform API Team
+    email: api-support@verizon.example.com
+    url: https://developer.verizon.example.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/legal
+  x-catalog-id: vzw-restoration-priority-engine-api
+  x-domain: restoration-priority
+servers:
+  - url: https://vzw-restoration-priority-engine-api.verizon.com
+    description: Production
+  - url: https://vzw-restoration-priority-engine-api.staging.verizon.com
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Priorities
+    description: Compute, inspect, and manage outage restoration priorities
+  - name: Critical Facilities
+    description: Discover critical facilities that influence priority boosts
+  - name: Rules
+    description: Inspect active priority scoring rules and effective weights
+paths:
+  /v1/priorities/compute:
+    post:
+      operationId: computeRestorationPriorities
+      summary: Compute restoration priorities for outage set
+      description: >-
+        Computes priority scores for one or more outage records. The engine
+        applies current rules, outage severity, affected customer impact,
+        critical facility dependencies, and regulatory weighting to produce
+        ranked restoration recommendations.
+      tags:
+        - Priorities
+      requestBody:
+        required: true
+        description: Outages and execution options for batch priority computation
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComputePrioritiesRequest"
+            examples:
+              metro-multi-outage:
+                summary: Multi-outage compute request for metro region
+                value:
+                  request_id: "req-44a1c6fd"
+                  region: "NORTHEAST"
+                  include_factor_breakdown: true
+                  outages:
+                    - outage_id: "out-nyc-10091"
+                      started_at: "2026-03-27T03:35:00Z"
+                      outage_type: "FIBER_BACKHAUL"
+                      impact_severity: "SEVERE"
+                      impacted_customers: 12840
+                      customer_segments:
+                        enterprise: 640
+                        consumer: 12100
+                      critical_facility_ids:
+                        - "fac-nyc-hosp-22"
+                        - "fac-nyc-fire-14"
+                      regulatory_zone: "NERC_CRITICAL"
+                      sla_tier: "PLATINUM"
+                      saidi_contribution_minutes: 56.2
+                    - outage_id: "out-nj-7792"
+                      started_at: "2026-03-27T03:41:00Z"
+                      outage_type: "POWER_FEED_LOSS"
+                      impact_severity: "HIGH"
+                      impacted_customers: 3410
+                      customer_segments:
+                        enterprise: 190
+                        consumer: 3220
+                      critical_facility_ids:
+                        - "fac-nj-water-03"
+                      regulatory_zone: "STATE_MANDATE"
+                      sla_tier: "GOLD"
+                      saidi_contribution_minutes: 22.8
+      responses:
+        "200":
+          description: Priority scores computed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComputePrioritiesResponse"
+              examples:
+                computed-batch:
+                  summary: Ranked results with factor breakdown
+                  value:
+                    request_id: "req-44a1c6fd"
+                    computed_at: "2026-03-27T03:42:33Z"
+                    total_outages_processed: 2
+                    queue_version: 319
+                    priorities:
+                      - outage_id: "out-nyc-10091"
+                        rank: 1
+                        priority_score: 97.4
+                        priority_tier: "P1"
+                        impacted_customers: 12840
+                        critical_facility_count: 2
+                        saidi_contribution_minutes: 56.2
+                        contributing_factors:
+                          - factor: "IMPACT_SEVERITY"
+                            raw_value: 0.97
+                            weight: 0.34
+                            weighted_score: 33.0
+                          - factor: "CRITICAL_INFRASTRUCTURE"
+                            raw_value: 0.92
+                            weight: 0.28
+                            weighted_score: 25.8
+                          - factor: "REGULATORY_WEIGHT"
+                            raw_value: 0.88
+                            weight: 0.2
+                            weighted_score: 17.6
+                      - outage_id: "out-nj-7792"
+                        rank: 2
+                        priority_score: 81.6
+                        priority_tier: "P1"
+                        impacted_customers: 3410
+                        critical_facility_count: 1
+                        saidi_contribution_minutes: 22.8
+                        contributing_factors:
+                          - factor: "IMPACT_SEVERITY"
+                            raw_value: 0.8
+                            weight: 0.34
+                            weighted_score: 27.2
+                          - factor: "CRITICAL_INFRASTRUCTURE"
+                            raw_value: 0.74
+                            weight: 0.28
+                            weighted_score: 20.7
+                          - factor: "REGULATORY_WEIGHT"
+                            raw_value: 0.71
+                            weight: 0.2
+                            weighted_score: 14.2
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "503":
+          $ref: "#/components/responses/503"
+
+  /v1/priorities/{outageId}:
+    get:
+      operationId: getOutagePriorityBreakdown
+      summary: Get priority score and contributing factors for outage
+      description: >-
+        Retrieves the latest restoration priority score for a single outage,
+        including factor-level contributions, effective rule set metadata,
+        and override state if one exists.
+      tags:
+        - Priorities
+      parameters:
+        - $ref: "#/components/parameters/OutageId"
+        - name: include_history
+          in: query
+          required: false
+          description: Include recent score history snapshots for trend analysis
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Outage priority breakdown retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriorityBreakdownResponse"
+              examples:
+                outage-breakdown:
+                  summary: Full score breakdown with override metadata
+                  value:
+                    outage_id: "out-nyc-10091"
+                    queue_version: 319
+                    priority_score: 97.4
+                    priority_tier: "P1"
+                    rank: 1
+                    impacted_customers: 12840
+                    critical_facility_count: 2
+                    saidi_contribution_minutes: 56.2
+                    override:
+                      is_overridden: true
+                      reason_code: "PUBLIC_SAFETY_ESCALATION"
+                      justification: "Regional 911 call routing instability detected"
+                      overridden_by: "ops.supervisor@verizon.example.com"
+                      overridden_at: "2026-03-27T03:45:12Z"
+                      effective_until: "2026-03-27T07:45:12Z"
+                    contributing_factors:
+                      - factor: "IMPACT_SEVERITY"
+                        raw_value: 0.97
+                        weight: 0.34
+                        weighted_score: 33.0
+                        reason: "Severe outage classification and prolonged duration"
+                      - factor: "CRITICAL_INFRASTRUCTURE"
+                        raw_value: 0.92
+                        weight: 0.28
+                        weighted_score: 25.8
+                        reason: "Hospital and fire station dependency detected"
+                      - factor: "REGULATORY_WEIGHT"
+                        raw_value: 0.88
+                        weight: 0.2
+                        weighted_score: 17.6
+                        reason: "NERC critical zone regulatory risk"
+                    score_history:
+                      - computed_at: "2026-03-27T03:38:10Z"
+                        priority_score: 94.1
+                      - computed_at: "2026-03-27T03:42:33Z"
+                        priority_score: 97.4
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /v1/priorities:
+    get:
+      operationId: listRankedRestorationQueue
+      summary: Get ranked restoration queue
+      description: >-
+        Returns a paginated restoration queue sorted by effective priority score,
+        including score, rank, impact fields, and override indicator for each outage.
+      tags:
+        - Priorities
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: region
+          in: query
+          required: false
+          description: Restrict queue to geographic region
+          schema:
+            $ref: "#/components/schemas/Region"
+        - name: priority_tier
+          in: query
+          required: false
+          description: Filter by priority tier
+          schema:
+            $ref: "#/components/schemas/PriorityTier"
+        - name: include_overridden
+          in: query
+          required: false
+          description: Include outages with active manual overrides
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Ranked queue page retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriorityQueueResponse"
+              examples:
+                queue-page:
+                  summary: First page of ranked queue
+                  value:
+                    queue_version: 319
+                    page: 1
+                    page_size: 2
+                    total_items: 187
+                    total_pages: 94
+                    items:
+                      - outage_id: "out-nyc-10091"
+                        rank: 1
+                        priority_score: 97.4
+                        priority_tier: "P1"
+                        impacted_customers: 12840
+                        critical_facility_count: 2
+                        saidi_contribution_minutes: 56.2
+                        is_overridden: true
+                        region: "NORTHEAST"
+                        updated_at: "2026-03-27T03:45:12Z"
+                      - outage_id: "out-nj-7792"
+                        rank: 2
+                        priority_score: 81.6
+                        priority_tier: "P1"
+                        impacted_customers: 3410
+                        critical_facility_count: 1
+                        saidi_contribution_minutes: 22.8
+                        is_overridden: false
+                        region: "NORTHEAST"
+                        updated_at: "2026-03-27T03:42:33Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /v1/priorities/{outageId}/override:
+    patch:
+      operationId: overrideOutagePriority
+      summary: Apply or update manual priority override
+      description: >-
+        Applies a manual override to an outage's computed priority. Overrides
+        require a reason code and free-text justification for audit compliance.
+        Existing overrides can be replaced or cleared by authorized operators.
+      tags:
+        - Priorities
+      parameters:
+        - $ref: "#/components/parameters/OutageId"
+      requestBody:
+        required: true
+        description: Override parameters and compliance justification
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PriorityOverrideRequest"
+            examples:
+              elevate-priority:
+                summary: Elevate priority due to public safety concern
+                value:
+                  action: "APPLY"
+                  override_priority_score: 99.0
+                  reason_code: "PUBLIC_SAFETY_ESCALATION"
+                  justification: "Fire dispatch radio backhaul dependent on affected aggregation ring"
+                  effective_until: "2026-03-27T08:00:00Z"
+              clear-override:
+                summary: Clear previously applied override
+                value:
+                  action: "CLEAR"
+                  reason_code: "MANUAL_REVIEW_COMPLETE"
+                  justification: "Automated score now reflects critical dependency correctly"
+      responses:
+        "200":
+          description: Override action applied successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriorityOverrideResponse"
+              examples:
+                override-applied:
+                  summary: Override applied
+                  value:
+                    outage_id: "out-nyc-10091"
+                    queue_version: 320
+                    previous_priority_score: 97.4
+                    effective_priority_score: 99.0
+                    override:
+                      is_overridden: true
+                      reason_code: "PUBLIC_SAFETY_ESCALATION"
+                      justification: "Fire dispatch radio backhaul dependent on affected aggregation ring"
+                      overridden_by: "ops.supervisor@verizon.example.com"
+                      overridden_at: "2026-03-27T04:00:11Z"
+                      effective_until: "2026-03-27T08:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /v1/critical-facilities:
+    get:
+      operationId: listCriticalFacilities
+      summary: List critical facilities that boost outage priority
+      description: >-
+        Returns facilities such as hospitals, fire stations, emergency call
+        centers, water plants, and grid control hubs used by the scoring engine
+        when calculating critical infrastructure impact.
+      tags:
+        - Critical Facilities
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: facility_type
+          in: query
+          required: false
+          description: Filter by facility class
+          schema:
+            $ref: "#/components/schemas/CriticalFacilityType"
+        - name: region
+          in: query
+          required: false
+          description: Restrict results to region
+          schema:
+            $ref: "#/components/schemas/Region"
+        - name: active_only
+          in: query
+          required: false
+          description: Return only active facilities
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Critical facilities page retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CriticalFacilityListResponse"
+              examples:
+                facilities-page:
+                  summary: Two critical facilities in northeast region
+                  value:
+                    page: 1
+                    page_size: 2
+                    total_items: 1421
+                    total_pages: 711
+                    items:
+                      - facility_id: "fac-nyc-hosp-22"
+                        facility_name: "Metro Medical Center"
+                        facility_type: "HOSPITAL"
+                        region: "NORTHEAST"
+                        county: "New York"
+                        state: "NY"
+                        network_nodes:
+                          - "node-agg-nyc-11"
+                          - "node-core-nyc-03"
+                        criticality_weight: 1.0
+                        is_active: true
+                      - facility_id: "fac-nj-water-03"
+                        facility_name: "Passaic Regional Water Plant"
+                        facility_type: "WATER_PLANT"
+                        region: "NORTHEAST"
+                        county: "Passaic"
+                        state: "NJ"
+                        network_nodes:
+                          - "node-agg-nj-07"
+                        criticality_weight: 0.86
+                        is_active: true
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /v1/priorities/recompute:
+    post:
+      operationId: recomputeActivePriorities
+      summary: Recompute all active restoration priorities
+      description: >-
+        Triggers a full recomputation job for all active outages after material
+        input changes such as updated outage telemetry, refreshed critical
+        facility mappings, or modified rule weights. The endpoint returns a
+        job record for asynchronous execution tracking.
+      tags:
+        - Priorities
+      requestBody:
+        required: true
+        description: Recompute execution options and change reason
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecomputePrioritiesRequest"
+            examples:
+              rule-change-trigger:
+                summary: Trigger recompute after rule update
+                value:
+                  trigger_reason: "RULE_WEIGHT_UPDATE"
+                  initiated_by: "ops.automation@verizon.example.com"
+                  scope:
+                    region: "ALL"
+                    active_only: true
+                  include_dry_run_diff: false
+      responses:
+        "202":
+          description: Recompute job accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecomputePrioritiesResponse"
+              examples:
+                job-accepted:
+                  summary: Recompute request accepted
+                  value:
+                    recompute_job_id: "job-rpe-89231"
+                    status: "QUEUED"
+                    submitted_at: "2026-03-27T04:12:00Z"
+                    trigger_reason: "RULE_WEIGHT_UPDATE"
+                    estimated_completion_seconds: 95
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "503":
+          $ref: "#/components/responses/503"
+
+  /v1/rules:
+    get:
+      operationId: listPriorityScoringRules
+      summary: Get active priority scoring rules and weights
+      description: >-
+        Returns currently active scoring rules, normalized weights,
+        configuration version, and effective date ranges used for priority
+        computation.
+      tags:
+        - Rules
+      parameters:
+        - name: include_inactive
+          in: query
+          required: false
+          description: Include inactive rule definitions in response
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Rule set retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleListResponse"
+              examples:
+                active-rules:
+                  summary: Active weighted scoring rules
+                  value:
+                    ruleset_id: "ruleset-2026-03-27"
+                    version: 17
+                    effective_from: "2026-03-27T00:00:00Z"
+                    effective_to: null
+                    normalization_strategy: "WEIGHTED_SUM"
+                    rules:
+                      - rule_id: "rule-impact-severity"
+                        factor: "IMPACT_SEVERITY"
+                        weight: 0.34
+                        is_active: true
+                        description: "Outage severity and persistence impact"
+                      - rule_id: "rule-critical-infra"
+                        factor: "CRITICAL_INFRASTRUCTURE"
+                        weight: 0.28
+                        is_active: true
+                        description: "Critical facility dependency boost"
+                      - rule_id: "rule-regulatory"
+                        factor: "REGULATORY_WEIGHT"
+                        weight: 0.2
+                        is_active: true
+                        description: "Mandated restoration obligations"
+                      - rule_id: "rule-customer-impact"
+                        factor: "CUSTOMER_IMPACT"
+                        weight: 0.18
+                        is_active: true
+                        description: "Impacted customer volume weighting"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    OutageId:
+      name: outageId
+      in: path
+      required: true
+      description: Unique outage identifier
+      schema:
+        type: string
+        example: "out-nyc-10091"
+    Page:
+      name: page
+      in: query
+      required: false
+      description: One-based page number
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+        example: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Number of records per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+        example: 50
+
+  responses:
+    "400":
+      description: Bad Request - malformed parameters or payload
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            invalid-parameter:
+              value:
+                error:
+                  code: "INVALID_REQUEST"
+                  message: "page_size must be less than or equal to 200"
+                  details:
+                    field: "page_size"
+                    issue: "out_of_range"
+                  trace_id: "ee949f8e-5e26-41ef-a820-94dfcaecb7d7"
+    "401":
+      description: Unauthorized - authentication missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            missing-token:
+              value:
+                error:
+                  code: "UNAUTHORIZED"
+                  message: "Bearer token is missing or expired"
+                  trace_id: "be4d8538-bbb4-4f57-b145-cf3da0784ff5"
+    "403":
+      description: Forbidden - caller lacks required permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            insufficient-role:
+              value:
+                error:
+                  code: "FORBIDDEN"
+                  message: "Caller is not authorized for priority override operations"
+                  trace_id: "4c9bc92a-c543-4e95-8930-cffaf0cb0f6f"
+    "404":
+      description: Not Found - requested resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            outage-not-found:
+              value:
+                error:
+                  code: "OUTAGE_NOT_FOUND"
+                  message: "No active or historical outage found for outageId out-nyc-10091"
+                  trace_id: "7744d8e1-c5df-4ec2-b53f-f8f9673d2f83"
+    "409":
+      description: Conflict - resource state prevents requested action
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            concurrent-recompute:
+              value:
+                error:
+                  code: "CONFLICT"
+                  message: "A recompute job is already in progress"
+                  details:
+                    active_recompute_job_id: "job-rpe-89229"
+                  trace_id: "7f87dbf7-f7d7-4d75-95d6-866b9cc1c377"
+    "422":
+      description: Unprocessable Entity - semantic validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            invalid-override-score:
+              value:
+                error:
+                  code: "VALIDATION_FAILED"
+                  message: "override_priority_score must be between 0 and 100"
+                  details:
+                    field: "override_priority_score"
+                    issue: "range_violation"
+                  trace_id: "7f70d52a-b339-4cb5-a9f0-5d64215c3407"
+    "429":
+      description: Too Many Requests - request rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            throttled:
+              value:
+                error:
+                  code: "RATE_LIMIT_EXCEEDED"
+                  message: "Too many requests. Retry after 30 seconds"
+                  trace_id: "ad5f6ba7-c4e9-46f4-9fd5-dd3818695f44"
+    "500":
+      description: Internal Server Error - unexpected processing failure
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            engine-failure:
+              value:
+                error:
+                  code: "INTERNAL_ERROR"
+                  message: "An unexpected error occurred while evaluating scoring rules"
+                  trace_id: "559f7d93-f74f-4ed8-b46d-b80fb0f377d8"
+    "503":
+      description: Service Unavailable - dependency unavailable or maintenance window
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            dependency-down:
+              value:
+                error:
+                  code: "SERVICE_UNAVAILABLE"
+                  message: "Critical facility dependency index is unavailable"
+                  trace_id: "3fc30efe-d1cc-4c03-8ffa-535455d71432"
+
+  schemas:
+    Region:
+      type: string
+      description: Service region used for outage and facility scoping
+      enum:
+        - NORTHEAST
+        - SOUTHEAST
+        - MIDWEST
+        - SOUTHWEST
+        - WEST
+        - NATIONAL
+      example: NORTHEAST
+
+    PriorityTier:
+      type: string
+      description: Priority service tier derived from score thresholds
+      enum:
+        - P1
+        - P2
+        - P3
+        - P4
+      example: P1
+
+    ImpactSeverity:
+      type: string
+      description: Outage impact severity category
+      enum:
+        - LOW
+        - MODERATE
+        - HIGH
+        - SEVERE
+      example: SEVERE
+
+    OutageType:
+      type: string
+      description: High-level outage cause classification
+      enum:
+        - FIBER_BACKHAUL
+        - POWER_FEED_LOSS
+        - CORE_ROUTING_FAILURE
+        - RADIO_ACCESS_FAILURE
+        - TRANSPORT_CONGESTION
+        - EDGE_SITE_OUTAGE
+      example: FIBER_BACKHAUL
+
+    RegulatoryZone:
+      type: string
+      description: Regulatory policy zone used by scoring rules
+      enum:
+        - NONE
+        - STATE_MANDATE
+        - FEDERAL_MANDATE
+        - NERC_CRITICAL
+      example: NERC_CRITICAL
+
+    SlaTier:
+      type: string
+      description: SLA tier associated with impacted enterprise services
+      enum:
+        - BRONZE
+        - SILVER
+        - GOLD
+        - PLATINUM
+      example: PLATINUM
+
+    ScoreFactorName:
+      type: string
+      description: Factor identity used in weighted score composition
+      enum:
+        - IMPACT_SEVERITY
+        - CUSTOMER_IMPACT
+        - CRITICAL_INFRASTRUCTURE
+        - REGULATORY_WEIGHT
+        - OUTAGE_DURATION
+        - NETWORK_TOPOLOGY_RISK
+      example: IMPACT_SEVERITY
+
+    CriticalFacilityType:
+      type: string
+      description: Type of critical infrastructure facility
+      enum:
+        - HOSPITAL
+        - FIRE_STATION
+        - POLICE_STATION
+        - WATER_PLANT
+        - POWER_SUBSTATION
+        - EMERGENCY_CALL_CENTER
+        - TRANSPORT_CONTROL
+      example: HOSPITAL
+
+    OverrideAction:
+      type: string
+      description: Manual override action
+      enum:
+        - APPLY
+        - CLEAR
+      example: APPLY
+
+    OverrideReasonCode:
+      type: string
+      description: Standardized reason code for audit and compliance
+      enum:
+        - PUBLIC_SAFETY_ESCALATION
+        - EXECUTIVE_DIRECTIVE
+        - REGULATORY_ESCALATION
+        - INCIDENT_COMMAND_PRIORITY
+        - DATA_QUALITY_CORRECTION
+        - MANUAL_REVIEW_COMPLETE
+      example: PUBLIC_SAFETY_ESCALATION
+
+    RecomputeTriggerReason:
+      type: string
+      description: Trigger source for bulk recompute request
+      enum:
+        - NEW_OUTAGE_DATA
+        - FACILITY_MAP_REFRESH
+        - RULE_WEIGHT_UPDATE
+        - TOPOLOGY_RECONCILIATION
+      example: RULE_WEIGHT_UPDATE
+
+    CustomerSegmentBreakdown:
+      type: object
+      description: Customer segment counts impacted by outage
+      properties:
+        enterprise:
+          type: integer
+          minimum: 0
+          example: 640
+        consumer:
+          type: integer
+          minimum: 0
+          example: 12100
+        public_sector:
+          type: integer
+          minimum: 0
+          example: 100
+      required:
+        - enterprise
+        - consumer
+
+    OutageInput:
+      type: object
+      description: Outage input payload used for score computation
+      properties:
+        outage_id:
+          type: string
+          description: Unique outage identifier
+          example: "out-nyc-10091"
+        started_at:
+          type: string
+          format: date-time
+          description: UTC timestamp when outage started
+          example: "2026-03-27T03:35:00Z"
+        outage_type:
+          $ref: "#/components/schemas/OutageType"
+        impact_severity:
+          $ref: "#/components/schemas/ImpactSeverity"
+        impacted_customers:
+          type: integer
+          minimum: 0
+          description: Total number of impacted customer endpoints
+          example: 12840
+        customer_segments:
+          $ref: "#/components/schemas/CustomerSegmentBreakdown"
+        critical_facility_ids:
+          type: array
+          description: Known impacted critical facilities
+          items:
+            type: string
+          example:
+            - "fac-nyc-hosp-22"
+            - "fac-nyc-fire-14"
+        regulatory_zone:
+          $ref: "#/components/schemas/RegulatoryZone"
+        sla_tier:
+          $ref: "#/components/schemas/SlaTier"
+        saidi_contribution_minutes:
+          type: number
+          format: float
+          minimum: 0
+          description: Estimated outage contribution to SAIDI metric
+          example: 56.2
+      required:
+        - outage_id
+        - started_at
+        - outage_type
+        - impact_severity
+        - impacted_customers
+        - regulatory_zone
+        - saidi_contribution_minutes
+
+    ComputePrioritiesRequest:
+      type: object
+      properties:
+        request_id:
+          type: string
+          description: Caller-generated idempotency key
+          example: "req-44a1c6fd"
+        region:
+          $ref: "#/components/schemas/Region"
+        include_factor_breakdown:
+          type: boolean
+          default: false
+          description: Include factor-level details in output
+        outages:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/OutageInput"
+      required:
+        - outages
+
+    ContributingFactor:
+      type: object
+      description: Weighted factor contribution for final priority score
+      properties:
+        factor:
+          $ref: "#/components/schemas/ScoreFactorName"
+        raw_value:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.97
+        weight:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.34
+        weighted_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 33.0
+        reason:
+          type: string
+          description: Human-readable explanation of factor influence
+          example: Severe outage classification and prolonged duration
+      required:
+        - factor
+        - raw_value
+        - weight
+        - weighted_score
+
+    PriorityQueueItem:
+      type: object
+      description: Ranked queue item for outage restoration operations
+      properties:
+        outage_id:
+          type: string
+          example: "out-nyc-10091"
+        rank:
+          type: integer
+          minimum: 1
+          example: 1
+        priority_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 97.4
+        priority_tier:
+          $ref: "#/components/schemas/PriorityTier"
+        impacted_customers:
+          type: integer
+          minimum: 0
+          example: 12840
+        critical_facility_count:
+          type: integer
+          minimum: 0
+          example: 2
+        saidi_contribution_minutes:
+          type: number
+          format: float
+          minimum: 0
+          example: 56.2
+        is_overridden:
+          type: boolean
+          example: false
+        region:
+          $ref: "#/components/schemas/Region"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T03:45:12Z"
+      required:
+        - outage_id
+        - rank
+        - priority_score
+        - priority_tier
+        - impacted_customers
+        - critical_facility_count
+        - saidi_contribution_minutes
+        - is_overridden
+        - updated_at
+
+    PriorityComputationResult:
+      allOf:
+        - $ref: "#/components/schemas/PriorityQueueItem"
+        - type: object
+          properties:
+            contributing_factors:
+              type: array
+              items:
+                $ref: "#/components/schemas/ContributingFactor"
+
+    ComputePrioritiesResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+          example: "req-44a1c6fd"
+        computed_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T03:42:33Z"
+        total_outages_processed:
+          type: integer
+          minimum: 0
+          example: 2
+        queue_version:
+          type: integer
+          minimum: 1
+          example: 319
+        priorities:
+          type: array
+          items:
+            $ref: "#/components/schemas/PriorityComputationResult"
+      required:
+        - computed_at
+        - total_outages_processed
+        - queue_version
+        - priorities
+
+    ScoreHistoryItem:
+      type: object
+      properties:
+        computed_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T03:42:33Z"
+        priority_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 97.4
+      required:
+        - computed_at
+        - priority_score
+
+    PriorityOverrideState:
+      type: object
+      properties:
+        is_overridden:
+          type: boolean
+          example: true
+        reason_code:
+          $ref: "#/components/schemas/OverrideReasonCode"
+        justification:
+          type: string
+          maxLength: 2048
+          example: Regional 911 call routing instability detected
+        overridden_by:
+          type: string
+          format: email
+          example: ops.supervisor@verizon.example.com
+        overridden_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T03:45:12Z"
+        effective_until:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-03-27T07:45:12Z"
+      required:
+        - is_overridden
+
+    PriorityBreakdownResponse:
+      allOf:
+        - $ref: "#/components/schemas/PriorityQueueItem"
+        - type: object
+          properties:
+            queue_version:
+              type: integer
+              minimum: 1
+              example: 319
+            override:
+              $ref: "#/components/schemas/PriorityOverrideState"
+            contributing_factors:
+              type: array
+              items:
+                $ref: "#/components/schemas/ContributingFactor"
+            score_history:
+              type: array
+              items:
+                $ref: "#/components/schemas/ScoreHistoryItem"
+          required:
+            - queue_version
+            - override
+            - contributing_factors
+
+    PriorityQueueResponse:
+      type: object
+      properties:
+        queue_version:
+          type: integer
+          minimum: 1
+          example: 319
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        page_size:
+          type: integer
+          minimum: 1
+          example: 50
+        total_items:
+          type: integer
+          minimum: 0
+          example: 187
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 4
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PriorityQueueItem"
+      required:
+        - queue_version
+        - page
+        - page_size
+        - total_items
+        - total_pages
+        - items
+
+    PriorityOverrideRequest:
+      type: object
+      properties:
+        action:
+          $ref: "#/components/schemas/OverrideAction"
+        override_priority_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          description: >-
+            Required when action is APPLY. Ignored when action is CLEAR.
+          example: 99.0
+        reason_code:
+          $ref: "#/components/schemas/OverrideReasonCode"
+        justification:
+          type: string
+          minLength: 20
+          maxLength: 2048
+          description: Human-readable justification retained for audit
+          example: Fire dispatch radio backhaul dependent on affected aggregation ring
+        effective_until:
+          type: string
+          format: date-time
+          nullable: true
+          description: Override expiration timestamp; null means indefinite until cleared
+          example: "2026-03-27T08:00:00Z"
+      required:
+        - action
+        - reason_code
+        - justification
+
+    PriorityOverrideResponse:
+      type: object
+      properties:
+        outage_id:
+          type: string
+          example: "out-nyc-10091"
+        queue_version:
+          type: integer
+          minimum: 1
+          example: 320
+        previous_priority_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 97.4
+        effective_priority_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 99.0
+        override:
+          $ref: "#/components/schemas/PriorityOverrideState"
+      required:
+        - outage_id
+        - queue_version
+        - previous_priority_score
+        - effective_priority_score
+        - override
+
+    CriticalFacility:
+      type: object
+      properties:
+        facility_id:
+          type: string
+          example: "fac-nyc-hosp-22"
+        facility_name:
+          type: string
+          example: Metro Medical Center
+        facility_type:
+          $ref: "#/components/schemas/CriticalFacilityType"
+        region:
+          $ref: "#/components/schemas/Region"
+        county:
+          type: string
+          example: New York
+        state:
+          type: string
+          minLength: 2
+          maxLength: 2
+          example: NY
+        network_nodes:
+          type: array
+          items:
+            type: string
+          example:
+            - node-agg-nyc-11
+            - node-core-nyc-03
+        criticality_weight:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 1
+        is_active:
+          type: boolean
+          example: true
+      required:
+        - facility_id
+        - facility_name
+        - facility_type
+        - region
+        - criticality_weight
+        - is_active
+
+    CriticalFacilityListResponse:
+      type: object
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        page_size:
+          type: integer
+          minimum: 1
+          example: 50
+        total_items:
+          type: integer
+          minimum: 0
+          example: 1421
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 29
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CriticalFacility"
+      required:
+        - page
+        - page_size
+        - total_items
+        - total_pages
+        - items
+
+    RecomputeScope:
+      type: object
+      properties:
+        region:
+          type: string
+          description: Region to recompute, or ALL for global scope
+          example: ALL
+        active_only:
+          type: boolean
+          default: true
+          example: true
+      required:
+        - region
+
+    RecomputePrioritiesRequest:
+      type: object
+      properties:
+        trigger_reason:
+          $ref: "#/components/schemas/RecomputeTriggerReason"
+        initiated_by:
+          type: string
+          format: email
+          description: Operator or automation identity submitting request
+          example: ops.automation@verizon.example.com
+        scope:
+          $ref: "#/components/schemas/RecomputeScope"
+        include_dry_run_diff:
+          type: boolean
+          default: false
+          description: Compute differences without applying queue changes
+      required:
+        - trigger_reason
+        - initiated_by
+        - scope
+
+    RecomputeJobStatus:
+      type: string
+      enum:
+        - QUEUED
+        - RUNNING
+        - COMPLETED
+        - FAILED
+      example: QUEUED
+
+    RecomputePrioritiesResponse:
+      type: object
+      properties:
+        recompute_job_id:
+          type: string
+          example: job-rpe-89231
+        status:
+          $ref: "#/components/schemas/RecomputeJobStatus"
+        submitted_at:
+          type: string
+          format: date-time
+          example: "2026-03-27T04:12:00Z"
+        trigger_reason:
+          $ref: "#/components/schemas/RecomputeTriggerReason"
+        estimated_completion_seconds:
+          type: integer
+          minimum: 0
+          example: 95
+      required:
+        - recompute_job_id
+        - status
+        - submitted_at
+        - trigger_reason
+
+    RuleDefinition:
+      type: object
+      properties:
+        rule_id:
+          type: string
+          example: rule-impact-severity
+        factor:
+          $ref: "#/components/schemas/ScoreFactorName"
+        weight:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.34
+        is_active:
+          type: boolean
+          example: true
+        description:
+          type: string
+          example: Outage severity and persistence impact
+      required:
+        - rule_id
+        - factor
+        - weight
+        - is_active
+        - description
+
+    RuleListResponse:
+      type: object
+      properties:
+        ruleset_id:
+          type: string
+          example: ruleset-2026-03-27
+        version:
+          type: integer
+          minimum: 1
+          example: 17
+        effective_from:
+          type: string
+          format: date-time
+          example: "2026-03-27T00:00:00Z"
+        effective_to:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        normalization_strategy:
+          type: string
+          enum:
+            - WEIGHTED_SUM
+          example: WEIGHTED_SUM
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleDefinition"
+      required:
+        - ruleset_id
+        - version
+        - effective_from
+        - normalization_strategy
+        - rules
+
+    ErrorDetail:
+      type: object
+      additionalProperties: true
+      description: Optional machine-readable metadata for client handling
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        code:
+          type: string
+          example: INVALID_REQUEST
+        message:
+          type: string
+          example: page_size must be less than or equal to 200
+        details:
+          $ref: "#/components/schemas/ErrorDetail"
+        trace_id:
+          type: string
+          format: uuid
+          example: ee949f8e-5e26-41ef-a820-94dfcaecb7d7
+      required:
+        - code
+        - message
+        - trace_id
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorEnvelope"
+      required:
+        - error

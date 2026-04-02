@@ -1,0 +1,919 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Device Trust API
+  description: >-
+    Zero-trust device posture assessment and management service. Evaluates device health, compliance, and
+    behavioral signals to compute dynamic trust scores. Supports device registration, fingerprinting, continuous
+    posture assessment, and policy-driven blocking. Integrates with MDM/UEM platforms for enterprise device
+    compliance verification.
+  version: 1.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-identity-device-trust
+  x-acme-domain: identity
+servers:
+  - url: https://af-identity-device-trust.api.acmefin.com/v1
+    description: Production
+  - url: https://af-identity-device-trust.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Device Management
+    description: Device registration, listing, and lifecycle management
+  - name: Trust Assessment
+    description: Device trust scoring, posture evaluation, and blocking
+paths:
+  /devices:
+    get:
+      operationId: listDevices
+      summary: List registered devices
+      description: >-
+        Retrieve all devices registered for a user or organization with trust scores and compliance status.
+      tags:
+        - Device Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: user_id
+          in: query
+          required: false
+          description: Filter by device owner
+          schema:
+            type: "string"
+        - name: trust_level
+          in: query
+          required: false
+          description: Filter by trust level
+          schema:
+            type: "string"
+            enum:
+              - untrusted
+              - low
+              - medium
+              - high
+              - verified
+        - name: platform
+          in: query
+          required: false
+          description: Filter by platform
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        device_id:
+                          type: string
+                          description: Unique device identifier
+                          example: "dev_a1b2c3d4"
+                          readOnly: true
+                        user_id:
+                          type: string
+                          description: Device owner
+                          example: "usr_4e5f6a7b"
+                        device_name:
+                          type: string
+                          description: User-assigned device name
+                          example: "Work MacBook Pro"
+                        platform:
+                          type: string
+                          description: Device platform
+                          example: "macos"
+                          enum:
+                            - ios
+                            - android
+                            - macos
+                            - windows
+                            - linux
+                        fingerprint:
+                          type: string
+                          description: Device fingerprint hash (SHA-256)
+                          example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4..."
+                        trust_score:
+                          type: number
+                          description: Computed trust score (0-100)
+                          format: double
+                          example: 87.5
+                          minimum: 0
+                          maximum: 100
+                        trust_level:
+                          type: string
+                          description: Trust classification
+                          example: "high"
+                          enum:
+                            - untrusted
+                            - low
+                            - medium
+                            - high
+                            - verified
+                        last_seen_at:
+                          type: string
+                          description: Last activity timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        registered_at:
+                          type: string
+                          description: Device registration timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        is_blocked:
+                          type: boolean
+                          description: Whether the device is blocked
+                          example: false
+                      required:
+                        - device_id
+                        - user_id
+                        - trust_level
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: registerDevice
+      summary: Register device
+      description: >-
+        Register a new device for trust assessment. Collects device fingerprint, platform metadata, and
+        initial posture signals to compute an initial trust score.
+      tags:
+        - Device Management
+      requestBody:
+        required: true
+        description: Register device request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: Device owner
+                      example: "usr_4e5f6a7b"
+                    device_name:
+                      type: string
+                      description: Device name
+                      example: "Work MacBook Pro"
+                    platform:
+                      type: string
+                      description: Device platform
+                      example: "macos"
+                      enum:
+                        - ios
+                        - android
+                        - macos
+                        - windows
+                        - linux
+                    os_version:
+                      type: string
+                      description: Operating system version
+                      example: "14.5"
+                    hardware_id:
+                      type: string
+                      description: Hardware unique identifier
+                      example: "hw_9f8e7d6c"
+              required:
+                - user_id
+                - platform
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: Unique device identifier
+                    example: "dev_a1b2c3d4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Device owner
+                    example: "usr_4e5f6a7b"
+                  device_name:
+                    type: string
+                    description: User-assigned device name
+                    example: "Work MacBook Pro"
+                  platform:
+                    type: string
+                    description: Device platform
+                    example: "macos"
+                    enum:
+                      - ios
+                      - android
+                      - macos
+                      - windows
+                      - linux
+                  fingerprint:
+                    type: string
+                    description: Device fingerprint hash (SHA-256)
+                    example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4..."
+                  trust_score:
+                    type: number
+                    description: Computed trust score (0-100)
+                    format: double
+                    example: 87.5
+                    minimum: 0
+                    maximum: 100
+                  trust_level:
+                    type: string
+                    description: Trust classification
+                    example: "high"
+                    enum:
+                      - untrusted
+                      - low
+                      - medium
+                      - high
+                      - verified
+                  last_seen_at:
+                    type: string
+                    description: Last activity timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  registered_at:
+                    type: string
+                    description: Device registration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  is_blocked:
+                    type: boolean
+                    description: Whether the device is blocked
+                    example: false
+                required:
+                  - device_id
+                  - user_id
+                  - trust_score
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /devices/{device_id}:
+    get:
+      operationId: getDevice
+      summary: Get device details
+      description: >-
+        Retrieve full device details including posture signals, compliance checks, and trust score
+        breakdown.
+      tags:
+        - Device Management
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: Unique device id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: Unique device identifier
+                    example: "dev_a1b2c3d4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Device owner
+                    example: "usr_4e5f6a7b"
+                  device_name:
+                    type: string
+                    description: User-assigned device name
+                    example: "Work MacBook Pro"
+                  platform:
+                    type: string
+                    description: Device platform
+                    example: "macos"
+                    enum:
+                      - ios
+                      - android
+                      - macos
+                      - windows
+                      - linux
+                  fingerprint:
+                    type: string
+                    description: Device fingerprint hash (SHA-256)
+                    example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4..."
+                  trust_score:
+                    type: number
+                    description: Computed trust score (0-100)
+                    format: double
+                    example: 87.5
+                    minimum: 0
+                    maximum: 100
+                  trust_level:
+                    type: string
+                    description: Trust classification
+                    example: "high"
+                    enum:
+                      - untrusted
+                      - low
+                      - medium
+                      - high
+                      - verified
+                  last_seen_at:
+                    type: string
+                    description: Last activity timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  registered_at:
+                    type: string
+                    description: Device registration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  is_blocked:
+                    type: boolean
+                    description: Whether the device is blocked
+                    example: false
+                required:
+                  - device_id
+                  - user_id
+                  - trust_score
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /devices/{device_id}/assess:
+    post:
+      operationId: assessDeviceTrust
+      summary: Assess device trust score
+      description: >-
+        Trigger a real-time trust score reassessment for a device. Evaluates OS patch level, disk
+        encryption, screen lock, malware status, and behavioral anomalies.
+      tags:
+        - Trust Assessment
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: Unique device id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Assess device trust score request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    posture_signals:
+                      type: object
+                      description: Current device posture signals
+                      properties:
+                        os_patched:
+                          type: boolean
+                          description: OS security patches current
+                          example: true
+                        disk_encrypted:
+                          type: boolean
+                          description: Full-disk encryption enabled
+                          example: true
+                        screen_lock_enabled:
+                          type: boolean
+                          description: Screen lock configured
+                          example: true
+                        firewall_active:
+                          type: boolean
+                          description: Host firewall enabled
+                          example: true
+                        antivirus_running:
+                          type: boolean
+                          description: Antivirus/EDR agent running
+                          example: true
+              required:
+                - posture_signals
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: Unique device identifier
+                    example: "dev_a1b2c3d4"
+                    readOnly: true
+                  trust_score:
+                    type: number
+                    description: Updated trust score
+                    format: double
+                    example: 92.0
+                  trust_level:
+                    type: string
+                    description: Updated trust classification
+                    example: "verified"
+                  signals_evaluated:
+                    type: integer
+                    description: Number of signals assessed
+                    example: 5
+                  assessed_at:
+                    type: string
+                    description: Assessment timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - device_id
+                  - trust_score
+                  - trust_level
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /devices/{device_id}/block:
+    post:
+      operationId: blockDevice
+      summary: Block device
+      description: >-
+        Block a device from authentication, preventing any login attempts from this device fingerprint.
+        Existing sessions from this device are terminated.
+      tags:
+        - Trust Assessment
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: Unique device id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Block device request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: Reason for blocking
+                      example: "Device compromised"
+                    terminate_sessions:
+                      type: boolean
+                      description: Terminate active sessions from this device
+                      example: true
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: Unique device identifier
+                    example: "dev_a1b2c3d4"
+                    readOnly: true
+                  is_blocked:
+                    type: boolean
+                    description: Block status
+                    example: true
+                  sessions_terminated:
+                    type: integer
+                    description: Sessions terminated
+                    example: 2
+                  blocked_at:
+                    type: string
+                    description: Block timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - device_id
+                  - is_blocked
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /devices/{device_id}/unblock:
+    post:
+      operationId: unblockDevice
+      summary: Unblock device
+      description: >-
+        Remove the block on a device, allowing authentication attempts to resume. Requires re-assessment
+        before trust score is restored.
+      tags:
+        - Trust Assessment
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          description: Unique device id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Unblock device request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: Reason for unblocking
+                      example: "Device remediated"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_id:
+                    type: string
+                    description: Unique device identifier
+                    example: "dev_a1b2c3d4"
+                    readOnly: true
+                  is_blocked:
+                    type: boolean
+                    description: Block status
+                    example: false
+                  trust_score:
+                    type: number
+                    description: Reset trust score (requires reassessment)
+                    format: double
+                    example: 0.0
+                required:
+                  - device_id
+                  - is_blocked
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

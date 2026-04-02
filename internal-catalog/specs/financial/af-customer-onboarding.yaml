@@ -1,0 +1,1420 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Customer Onboarding API
+  description: End-to-end digital onboarding platform for new Acme Finance customers. Manages the complete application lifecycle
+    from initial submission through KYC/AML verification, identity proofing, document collection, approval decisioning, and
+    welcome kit fulfillment. Supports multi-channel origination (branch, online, mobile, partner) with configurable onboarding
+    checklists per product type.
+  version: 2.6.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-customer-onboarding
+  x-acme-domain: customer
+servers:
+- url: https://af-customer-onboarding.api.acmefin.com/v1
+  description: Production
+- url: https://af-customer-onboarding.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Applications
+  description: Onboarding application lifecycle management
+- name: Verification
+  description: KYC, identity verification, and document collection
+- name: Decisioning
+  description: Application approval, rejection, and fulfillment
+- name: Analytics
+  description: Onboarding metrics, funnel analysis, and checklist tracking
+paths:
+  /onboarding/applications:
+    get:
+      operationId: listApplications
+      summary: List onboarding applications
+      description: Returns a paginated list of onboarding applications with status and progress information. Supports filtering
+        by status, channel, product type, and date range.
+      tags:
+      - Applications
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by application status
+        schema:
+          type: string
+      - name: channel
+        in: query
+        required: false
+        description: Filter by origination channel
+        schema:
+          type: string
+      - name: product_type
+        in: query
+        required: false
+        description: Filter by product type
+        schema:
+          type: string
+      - name: from_date
+        in: query
+        required: false
+        description: Submitted after date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        application_id:
+                          type: string
+                          description: Application unique identifier
+                          example: APP-20250610-77421
+                        customer_id:
+                          type: string
+                          description: Customer CIF (assigned after approval)
+                          nullable: true
+                        applicant_name:
+                          type: string
+                          description: Applicant full name
+                          example: James Wilson
+                        product_type:
+                          type: string
+                          description: Product being applied for
+                          enum:
+                          - checking
+                          - savings
+                          - credit_card
+                          - personal_loan
+                          - mortgage
+                          - investment
+                        status:
+                          type: string
+                          description: Application status
+                          enum:
+                          - draft
+                          - submitted
+                          - kyc_pending
+                          - kyc_complete
+                          - under_review
+                          - approved
+                          - rejected
+                          - abandoned
+                        channel:
+                          type: string
+                          description: Origination channel
+                          enum:
+                          - branch
+                          - online
+                          - mobile
+                          - phone
+                          - partner
+                        submitted_at:
+                          type: string
+                          description: Submission timestamp
+                          format: date-time
+                          nullable: true
+                        kyc_status:
+                          type: string
+                          description: KYC verification status
+                          enum:
+                          - not_started
+                          - in_progress
+                          - passed
+                          - failed
+                          - manual_review
+                      required:
+                      - application_id
+                      - applicant_name
+                      - product_type
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: startApplication
+      summary: Start new onboarding application
+      description: Initiates a new customer onboarding application. Creates a draft application record and returns the application
+        ID for subsequent steps. The applicant's identity is not verified at this stage.
+      tags:
+      - Applications
+      requestBody:
+        required: true
+        description: Start new onboarding application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                applicant_name:
+                  type: string
+                  description: Full legal name
+                  example: James Wilson
+                email:
+                  type: string
+                  description: Contact email
+                  format: email
+                  example: james.wilson@email.com
+                phone:
+                  type: string
+                  description: Contact phone
+                  example: +1-555-0142
+                product_type:
+                  type: string
+                  description: Product being applied for
+                  enum:
+                  - checking
+                  - savings
+                  - credit_card
+                  - personal_loan
+                  - mortgage
+                  - investment
+                channel:
+                  type: string
+                  description: Origination channel
+                  enum:
+                  - branch
+                  - online
+                  - mobile
+                  - phone
+                  - partner
+                date_of_birth:
+                  type: string
+                  description: Date of birth
+                  format: date
+                  example: '1990-07-15'
+                ssn_last_four:
+                  type: string
+                  description: Last 4 digits of SSN
+                  example: '4832'
+                  minLength: 4
+                  maxLength: 4
+                referral_code:
+                  type: string
+                  description: Optional referral or promo code
+                  nullable: true
+              required:
+              - applicant_name
+              - email
+              - phone
+              - product_type
+              - channel
+              - date_of_birth
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Generated application ID
+                  status:
+                    type: string
+                    description: Initial status
+                    example: draft
+                  next_step:
+                    type: string
+                    description: Next required action
+                    example: submit_application
+                  created_at:
+                    type: string
+                    description: Creation timestamp
+                    format: date-time
+                required:
+                - application_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /onboarding/applications/{application_id}:
+    get:
+      operationId: getApplication
+      summary: Get application details
+      description: Returns full details of an onboarding application including current status, completed steps, pending requirements,
+        and processing timeline.
+      tags:
+      - Applications
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application unique identifier
+                    example: APP-20250610-77421
+                  customer_id:
+                    type: string
+                    description: Customer CIF (assigned after approval)
+                    nullable: true
+                  applicant_name:
+                    type: string
+                    description: Applicant full name
+                    example: James Wilson
+                  product_type:
+                    type: string
+                    description: Product being applied for
+                    enum:
+                    - checking
+                    - savings
+                    - credit_card
+                    - personal_loan
+                    - mortgage
+                    - investment
+                  status:
+                    type: string
+                    description: Application status
+                    enum:
+                    - draft
+                    - submitted
+                    - kyc_pending
+                    - kyc_complete
+                    - under_review
+                    - approved
+                    - rejected
+                    - abandoned
+                  channel:
+                    type: string
+                    description: Origination channel
+                    enum:
+                    - branch
+                    - online
+                    - mobile
+                    - phone
+                    - partner
+                  submitted_at:
+                    type: string
+                    description: Submission timestamp
+                    format: date-time
+                    nullable: true
+                  kyc_status:
+                    type: string
+                    description: KYC verification status
+                    enum:
+                    - not_started
+                    - in_progress
+                    - passed
+                    - failed
+                    - manual_review
+                required:
+                - application_id
+                - applicant_name
+                - product_type
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateApplication
+      summary: Update application
+      description: Updates application details. Only allowed when status is draft or when additional information is requested
+        during review.
+      tags:
+      - Applications
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  description: Updated email
+                  format: email
+                phone:
+                  type: string
+                  description: Updated phone
+                address:
+                  type: object
+                  description: Residential address
+                  properties:
+                    line1:
+                      type: string
+                      example: 456 Oak Avenue
+                    city:
+                      type: string
+                      example: Chicago
+                    state:
+                      type: string
+                      example: IL
+                    postal_code:
+                      type: string
+                      example: '60601'
+                employment_status:
+                  type: string
+                  description: Employment status
+                  enum:
+                  - employed
+                  - self_employed
+                  - retired
+                  - student
+                  - unemployed
+                annual_income:
+                  type: number
+                  description: Annual gross income
+                  format: double
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application unique identifier
+                    example: APP-20250610-77421
+                  customer_id:
+                    type: string
+                    description: Customer CIF (assigned after approval)
+                    nullable: true
+                  applicant_name:
+                    type: string
+                    description: Applicant full name
+                    example: James Wilson
+                  product_type:
+                    type: string
+                    description: Product being applied for
+                    enum:
+                    - checking
+                    - savings
+                    - credit_card
+                    - personal_loan
+                    - mortgage
+                    - investment
+                  status:
+                    type: string
+                    description: Application status
+                    enum:
+                    - draft
+                    - submitted
+                    - kyc_pending
+                    - kyc_complete
+                    - under_review
+                    - approved
+                    - rejected
+                    - abandoned
+                  channel:
+                    type: string
+                    description: Origination channel
+                    enum:
+                    - branch
+                    - online
+                    - mobile
+                    - phone
+                    - partner
+                  submitted_at:
+                    type: string
+                    description: Submission timestamp
+                    format: date-time
+                    nullable: true
+                  kyc_status:
+                    type: string
+                    description: KYC verification status
+                    enum:
+                    - not_started
+                    - in_progress
+                    - passed
+                    - failed
+                    - manual_review
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /onboarding/applications/{application_id}/kyc:
+    post:
+      operationId: initiateKycCheck
+      summary: Initiate KYC check
+      description: Triggers Know Your Customer verification including identity validation, sanctions screening, PEP (Politically
+        Exposed Person) check, and adverse media screening. Results are typically available within 30 seconds for automated
+        checks.
+      tags:
+      - Verification
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Initiate KYC check request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                check_level:
+                  type: string
+                  description: KYC check depth
+                  enum:
+                  - basic
+                  - enhanced
+                  - full_due_diligence
+                include_sanctions:
+                  type: boolean
+                  description: Include sanctions list screening
+                  default: true
+                include_pep:
+                  type: boolean
+                  description: Include PEP screening
+                  default: true
+              required:
+              - check_level
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kyc_reference:
+                    type: string
+                    description: KYC check reference ID
+                    example: KYC-20250610-33218
+                  status:
+                    type: string
+                    description: KYC status
+                    enum:
+                    - in_progress
+                    - passed
+                    - failed
+                    - manual_review
+                  checks_completed:
+                    type: array
+                    description: Individual check results
+                    items:
+                      type: object
+                  risk_score:
+                    type: integer
+                    description: KYC risk score 0-100
+                    example: 15
+                    minimum: 0
+                    maximum: 100
+                required:
+                - kyc_reference
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /onboarding/applications/{application_id}/identity-verify:
+    post:
+      operationId: verifyIdentity
+      summary: Verify applicant identity
+      description: Performs identity verification using document + selfie matching, knowledge-based authentication (KBA),
+        or database verification. Supports multiple identity proofing methods to meet NIST IAL2 requirements.
+      tags:
+      - Verification
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Verify applicant identity request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                method:
+                  type: string
+                  description: Verification method
+                  enum:
+                  - document_selfie
+                  - kba
+                  - database
+                  - video_call
+                document_id:
+                  type: string
+                  description: Uploaded identity document ID (for document_selfie method)
+                  nullable: true
+                selfie_image_base64:
+                  type: string
+                  description: Base64 selfie image (for document_selfie method)
+                  nullable: true
+              required:
+              - method
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification record ID
+                  result:
+                    type: string
+                    description: Verification result
+                    enum:
+                    - passed
+                    - failed
+                    - needs_manual_review
+                  confidence_score:
+                    type: number
+                    description: Match confidence 0.0-1.0
+                    format: double
+                    example: 0.96
+                  method_used:
+                    type: string
+                    description: Method that was used
+                required:
+                - verification_id
+                - result
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /onboarding/applications/{application_id}/documents:
+    post:
+      operationId: uploadApplicationDocument
+      summary: Upload application document
+      description: Uploads a supporting document for the onboarding application (identity proof, address proof, income documentation).
+        Updates the application checklist automatically.
+      tags:
+      - Verification
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Upload application document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                document_type:
+                  type: string
+                  description: Document type
+                  enum:
+                  - government_id
+                  - passport
+                  - drivers_license
+                  - utility_bill
+                  - bank_statement
+                  - pay_stub
+                  - tax_return
+                file_name:
+                  type: string
+                  description: File name
+                  example: drivers_license_front.jpg
+                file_content_base64:
+                  type: string
+                  description: Base64-encoded file content
+              required:
+              - document_type
+              - file_name
+              - file_content_base64
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Stored document ID
+                  status:
+                    type: string
+                    description: Processing status
+                    example: uploaded
+                  checklist_updated:
+                    type: boolean
+                    description: Whether checklist was updated
+                required:
+                - document_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /onboarding/applications/{application_id}/approve:
+    post:
+      operationId: approveApplication
+      summary: Approve application
+      description: Approves the onboarding application and triggers account provisioning. Creates the customer CIF record,
+        opens the requested product, and initiates welcome kit fulfillment. Requires all checklist items to be complete.
+      tags:
+      - Decisioning
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Approve application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                approved_by:
+                  type: string
+                  description: Approving officer ID
+                  example: OFF-2241
+                notes:
+                  type: string
+                  description: Approval notes
+                  nullable: true
+                override_checklist:
+                  type: boolean
+                  description: Override incomplete checklist (requires senior approval)
+                  default: false
+              required:
+              - approved_by
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application ID
+                  customer_id:
+                    type: string
+                    description: Newly created CIF number
+                    example: CIF-10089442
+                  status:
+                    type: string
+                    description: Updated status
+                    example: approved
+                  account_number:
+                    type: string
+                    description: Provisioned account number
+                    example: ACCT-55821-001
+                  approved_at:
+                    type: string
+                    description: Approval timestamp
+                    format: date-time
+                required:
+                - application_id
+                - customer_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /onboarding/applications/{application_id}/reject:
+    post:
+      operationId: rejectApplication
+      summary: Reject application
+      description: Rejects the onboarding application. Sends adverse action notice to the applicant as required by ECOA and
+        Fair Lending regulations. Records rejection reason for compliance reporting.
+      tags:
+      - Decisioning
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Reject application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejected_by:
+                  type: string
+                  description: Rejecting officer ID
+                reason_codes:
+                  type: array
+                  description: Rejection reason codes
+                  items:
+                    type: string
+                adverse_action_notice:
+                  type: boolean
+                  description: Send adverse action notice
+                  default: true
+              required:
+              - rejected_by
+              - reason_codes
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application ID
+                  status:
+                    type: string
+                    description: Updated status
+                    example: rejected
+                  adverse_action_sent:
+                    type: boolean
+                    description: Whether adverse action notice was sent
+                  rejected_at:
+                    type: string
+                    description: Rejection timestamp
+                    format: date-time
+                required:
+                - application_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /onboarding/applications/{application_id}/welcome-kit:
+    post:
+      operationId: sendWelcomeKit
+      summary: Send welcome kit
+      description: Triggers the welcome kit fulfillment for an approved application. Includes welcome letter, product terms,
+        digital banking enrollment, and debit card ordering where applicable.
+      tags:
+      - Decisioning
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Send welcome kit request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                delivery_method:
+                  type: string
+                  description: Kit delivery method
+                  enum:
+                  - email
+                  - mail
+                  - both
+                  default: both
+                include_debit_card:
+                  type: boolean
+                  description: Order debit card with welcome kit
+                  default: true
+              required:
+              - delivery_method
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  welcome_kit_id:
+                    type: string
+                    description: Welcome kit tracking ID
+                  delivery_method:
+                    type: string
+                    description: Delivery method used
+                  estimated_delivery:
+                    type: string
+                    description: Expected delivery date
+                    format: date
+                  debit_card_ordered:
+                    type: boolean
+                    description: Whether debit card was ordered
+                required:
+                - welcome_kit_id
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /onboarding/checklist/{application_id}:
+    get:
+      operationId: getOnboardingChecklist
+      summary: Get onboarding checklist
+      description: Returns the product-specific onboarding checklist with completion status for each required step. Steps
+        vary by product type and applicant risk profile.
+      tags:
+      - Analytics
+      parameters:
+      - name: application_id
+        in: path
+        required: true
+        description: Unique application id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application ID
+                  product_type:
+                    type: string
+                    description: Product type
+                  overall_progress:
+                    type: number
+                    description: Overall completion percentage
+                    format: double
+                    example: 75.0
+                  checklist_items:
+                    type: array
+                    description: Checklist steps with status
+                    items:
+                      type: object
+                  blocking_items:
+                    type: array
+                    description: Items blocking progress
+                    items:
+                      type: object
+                required:
+                - application_id
+                - checklist_items
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /onboarding/metrics:
+    get:
+      operationId: getOnboardingMetrics
+      summary: Get onboarding metrics
+      description: Returns aggregate onboarding funnel metrics including conversion rates, average completion time, drop-off
+        points, and channel performance. Used for process optimization and capacity planning.
+      tags:
+      - Analytics
+      parameters:
+      - name: period
+        in: query
+        required: false
+        description: Reporting period
+        schema:
+          type: string
+          enum:
+          - 7d
+          - 30d
+          - 90d
+          - 1y
+          default: 30d
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_applications:
+                    type: integer
+                    description: Total applications in period
+                    example: 3842
+                  approval_rate:
+                    type: number
+                    description: Approval rate percentage
+                    format: double
+                    example: 78.5
+                  avg_completion_days:
+                    type: number
+                    description: Average days to complete onboarding
+                    format: double
+                    example: 3.2
+                  funnel_stages:
+                    type: object
+                    description: Application count by stage
+                    properties:
+                      submitted:
+                        type: integer
+                        example: 3842
+                      kyc_complete:
+                        type: integer
+                        example: 3520
+                      approved:
+                        type: integer
+                        example: 3015
+                      rejected:
+                        type: integer
+                        example: 412
+                  channel_breakdown:
+                    type: object
+                    description: Applications by channel
+                    properties:
+                      online:
+                        type: integer
+                        example: 2105
+                      mobile:
+                        type: integer
+                        example: 1208
+                      branch:
+                        type: integer
+                        example: 529
+                required:
+                - total_applications
+                - approval_rate
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

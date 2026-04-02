@@ -1,0 +1,954 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Data Reporting API
+  description: >-
+    Enterprise reporting service for generating, scheduling, and distributing financial and operational reports.
+    Create parameterized reports with tabular, chart, pivot, and narrative templates, execute on-demand or
+    scheduled runs, and distribute outputs via email, Slack, SFTP, S3, or SharePoint in PDF, Excel, CSV, or HTML
+    formats.
+  version: 1.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-data-reporting
+  x-acme-domain: data
+servers:
+  - url: https://af-data-reporting.api.acmefin.com/v1
+    description: Production
+  - url: https://af-data-reporting.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Reports
+    description: Create, configure, and execute data reports
+  - name: Distributions
+    description: Manage report distribution channels and schedules
+paths:
+  /reports:
+    get:
+      operationId: listReports
+      summary: List reports
+      description: Retrieve all reports with template type, status, and last execution time.
+      tags:
+        - Reports
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: template
+          in: query
+          required: false
+          description: Filter by template type
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        report_id:
+                          type: string
+                          description: "Report identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Report name"
+                          example: "Monthly P&L Summary"
+                        description:
+                          type: string
+                          description: "Report purpose and intended audience"
+                        template:
+                          type: string
+                          description: "Report output template"
+                          enum:
+                            - tabular
+                            - chart
+                            - pivot
+                            - narrative
+                            - composite
+                        data_source:
+                          type: string
+                          description: "Underlying query or dataset"
+                        parameters:
+                          type: object
+                          description: "Report parameters (date range, filters, groupings)"
+                        owner:
+                          type: string
+                        last_run_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        status:
+                          type: string
+                          enum:
+                            - draft
+                            - active
+                            - archived
+                      required:
+                        - report_id
+                        - name
+                        - template
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createReport
+      summary: Create report
+      description: >-
+        Define a new parameterized report with a template, data source binding, and optional default
+        parameters.
+      tags:
+        - Reports
+      requestBody:
+        required: true
+        description: Create report request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    template:
+                      type: string
+                      enum:
+                        - tabular
+                        - chart
+                        - pivot
+                        - narrative
+                        - composite
+                    data_source:
+                      type: string
+                    parameters:
+                      type: object
+              required:
+                - name
+                - template
+                - data_source
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: "Report identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Report name"
+                    example: "Monthly P&L Summary"
+                  description:
+                    type: string
+                    description: "Report purpose and intended audience"
+                  template:
+                    type: string
+                    description: "Report output template"
+                    enum:
+                      - tabular
+                      - chart
+                      - pivot
+                      - narrative
+                      - composite
+                  data_source:
+                    type: string
+                    description: "Underlying query or dataset"
+                  parameters:
+                    type: object
+                    description: "Report parameters (date range, filters, groupings)"
+                  owner:
+                    type: string
+                  last_run_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - draft
+                      - active
+                      - archived
+                required:
+                  - report_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /reports/{report_id}:
+    get:
+      operationId: getReport
+      summary: Get report details
+      description: >-
+        Retrieve a report with its parameter schema, recent execution history, and distribution
+        configuration.
+      tags:
+        - Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: "Report identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Report name"
+                    example: "Monthly P&L Summary"
+                  description:
+                    type: string
+                    description: "Report purpose and intended audience"
+                  template:
+                    type: string
+                    description: "Report output template"
+                    enum:
+                      - tabular
+                      - chart
+                      - pivot
+                      - narrative
+                      - composite
+                  data_source:
+                    type: string
+                    description: "Underlying query or dataset"
+                  parameters:
+                    type: object
+                    description: "Report parameters (date range, filters, groupings)"
+                  owner:
+                    type: string
+                  last_run_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - draft
+                      - active
+                      - archived
+                required:
+                  - report_id
+                  - name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateReport
+      summary: Update report
+      description: Modify report name, template, parameters, or status.
+      tags:
+        - Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update report request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    parameters:
+                      type: object
+                    status:
+                      type: string
+                      enum:
+                        - active
+                        - archived
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: "Report identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Report name"
+                    example: "Monthly P&L Summary"
+                  description:
+                    type: string
+                    description: "Report purpose and intended audience"
+                  template:
+                    type: string
+                    description: "Report output template"
+                    enum:
+                      - tabular
+                      - chart
+                      - pivot
+                      - narrative
+                      - composite
+                  data_source:
+                    type: string
+                    description: "Underlying query or dataset"
+                  parameters:
+                    type: object
+                    description: "Report parameters (date range, filters, groupings)"
+                  owner:
+                    type: string
+                  last_run_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  status:
+                    type: string
+                    enum:
+                      - draft
+                      - active
+                      - archived
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /reports/{report_id}/run:
+    post:
+      operationId: runReport
+      summary: Run report
+      description: >-
+        Execute a report with optional parameter overrides and return the generated output. Large reports
+        are processed asynchronously.
+      tags:
+        - Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Run report request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    parameters:
+                      type: object
+                      description: "Runtime parameter overrides"
+                    output_format:
+                      type: string
+                      description: "Desired output format"
+                      enum:
+                        - pdf
+                        - xlsx
+                        - csv
+                        - html
+                      default: "pdf"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  execution_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum:
+                      - running
+                      - completed
+                  output_url:
+                    type: string
+                    description: "Download URL for completed reports"
+                    nullable: true
+                required:
+                  - execution_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /reports/{report_id}/schedule:
+    post:
+      operationId: scheduleReport
+      summary: Schedule report distribution
+      description: Attach a recurring schedule and distribution configuration to a report.
+      tags:
+        - Reports
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Schedule report distribution request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    cron_expression:
+                      type: string
+                      description: "Cron schedule"
+                    timezone:
+                      type: string
+                      default: "UTC"
+                    output_format:
+                      type: string
+                      enum:
+                        - pdf
+                        - xlsx
+                        - csv
+                        - html
+                    channel:
+                      type: string
+                      enum:
+                        - email
+                        - slack
+                        - sftp
+                        - s3
+                        - sharepoint
+                    recipients:
+                      type: array
+                      items:
+                        type: string
+              required:
+                - cron_expression
+                - output_format
+                - channel
+                - recipients
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  distribution_id:
+                    type: string
+                    format: uuid
+                  next_run_at:
+                    type: string
+                    format: date-time
+                required:
+                  - distribution_id
+                  - next_run_at
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /distributions:
+    get:
+      operationId: listDistributions
+      summary: List report distributions
+      description: >-
+        Retrieve all scheduled report distributions with channel, recipient, and last-sent status.
+      tags:
+        - Distributions
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        distribution_id:
+                          type: string
+                          description: "Distribution identifier"
+                          format: uuid
+                          readOnly: true
+                        report_id:
+                          type: string
+                          format: uuid
+                        channel:
+                          type: string
+                          description: "Distribution channel"
+                          enum:
+                            - email
+                            - slack
+                            - sftp
+                            - s3
+                            - sharepoint
+                        recipients:
+                          type: array
+                          description: "Recipient addresses or channels"
+                          items:
+                            type: string
+                        format:
+                          type: string
+                          description: "Output file format"
+                          enum:
+                            - pdf
+                            - xlsx
+                            - csv
+                            - html
+                        schedule:
+                          type: string
+                          description: "Cron expression for scheduled distribution"
+                        last_sent_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - distribution_id
+                        - report_id
+                        - channel
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

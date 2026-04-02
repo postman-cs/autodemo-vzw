@@ -1,0 +1,2199 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Data ETL Pipeline API
+  description: >-
+    End-to-end extract, transform, and load pipeline orchestration for enterprise data integration. Design multi-
+    stage DAG pipelines connecting heterogeneous data sources (JDBC, Kafka, S3, Snowflake, BigQuery) through
+    configurable transformation stages (SQL, Spark, dbt, Python). Includes cron-based scheduling, automatic retry
+    policies, connector health monitoring, detailed run logs, and real-time ingestion metrics for petabyte-scale
+    data movement.
+  version: 4.0.2
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-data-etl
+  x-acme-domain: data
+servers:
+  - url: https://af-data-etl.api.acmefin.com/v1
+    description: Production
+  - url: https://af-data-etl.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Pipelines
+    description: Create, configure, and manage ETL pipeline definitions
+  - name: Pipeline Runs
+    description: Monitor and manage individual pipeline execution runs
+  - name: Schedules
+    description: Configure cron-based and event-driven pipeline schedules
+  - name: Connectors
+    description: Manage data source and sink connector configurations
+  - name: Transformations
+    description: Catalog reusable data transformation definitions
+paths:
+  /pipelines:
+    get:
+      operationId: listPipelines
+      summary: List pipelines
+      description: >-
+        Retrieve all ETL pipelines with lifecycle status, last run time, and connector bindings.
+      tags:
+        - Pipelines
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by pipeline status
+          schema:
+            type: "string"
+            enum:
+              - draft
+              - active
+              - paused
+              - failed
+              - archived
+        - name: owner
+          in: query
+          required: false
+          description: Filter by pipeline owner
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        pipeline_id:
+                          type: string
+                          description: "Unique pipeline identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Pipeline name"
+                          example: "daily-transactions-ingest"
+                        description:
+                          type: string
+                          description: "Pipeline purpose and data flow summary"
+                        source_connector_id:
+                          type: string
+                          description: "Source connector reference"
+                          format: uuid
+                        sink_connector_id:
+                          type: string
+                          description: "Destination connector reference"
+                          format: uuid
+                        status:
+                          type: string
+                          description: "Pipeline lifecycle status"
+                          enum:
+                            - draft
+                            - active
+                            - paused
+                            - failed
+                            - archived
+                        dag_definition:
+                          type: object
+                          description: "Directed acyclic graph of transformation stages"
+                        retry_policy:
+                          type: object
+                          description: "Retry configuration for failed stages"
+                        owner:
+                          type: string
+                          description: "Pipeline owner"
+                          example: "data-eng@acmefin.com"
+                        last_run_at:
+                          type: string
+                          description: "Timestamp of most recent execution"
+                          format: date-time
+                        created_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - pipeline_id
+                        - name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createPipeline
+      summary: Create pipeline
+      description: >-
+        Define a new ETL pipeline with source and sink connectors, transformation DAG, and retry policy.
+      tags:
+        - Pipelines
+      requestBody:
+        required: true
+        description: Create pipeline request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    source_connector_id:
+                      type: string
+                      format: uuid
+                    sink_connector_id:
+                      type: string
+                      format: uuid
+                    dag_definition:
+                      type: object
+                      description: "Transformation stage DAG"
+                    retry_policy:
+                      type: object
+              required:
+                - name
+                - source_connector_id
+                - sink_connector_id
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pipeline_id:
+                    type: string
+                    description: "Unique pipeline identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Pipeline name"
+                    example: "daily-transactions-ingest"
+                  description:
+                    type: string
+                    description: "Pipeline purpose and data flow summary"
+                  source_connector_id:
+                    type: string
+                    description: "Source connector reference"
+                    format: uuid
+                  sink_connector_id:
+                    type: string
+                    description: "Destination connector reference"
+                    format: uuid
+                  status:
+                    type: string
+                    description: "Pipeline lifecycle status"
+                    enum:
+                      - draft
+                      - active
+                      - paused
+                      - failed
+                      - archived
+                  dag_definition:
+                    type: object
+                    description: "Directed acyclic graph of transformation stages"
+                  retry_policy:
+                    type: object
+                    description: "Retry configuration for failed stages"
+                  owner:
+                    type: string
+                    description: "Pipeline owner"
+                    example: "data-eng@acmefin.com"
+                  last_run_at:
+                    type: string
+                    description: "Timestamp of most recent execution"
+                    format: date-time
+                  created_at:
+                    type: string
+                    format: date-time
+                required:
+                  - pipeline_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /pipelines/{pipeline_id}:
+    get:
+      operationId: getPipeline
+      summary: Get pipeline details
+      description: >-
+        Retrieve a pipeline with full DAG definition, connector configs, recent run history, and health
+        summary.
+      tags:
+        - Pipelines
+      parameters:
+        - name: pipeline_id
+          in: path
+          required: true
+          description: Unique pipeline id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pipeline_id:
+                    type: string
+                    description: "Unique pipeline identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Pipeline name"
+                    example: "daily-transactions-ingest"
+                  description:
+                    type: string
+                    description: "Pipeline purpose and data flow summary"
+                  source_connector_id:
+                    type: string
+                    description: "Source connector reference"
+                    format: uuid
+                  sink_connector_id:
+                    type: string
+                    description: "Destination connector reference"
+                    format: uuid
+                  status:
+                    type: string
+                    description: "Pipeline lifecycle status"
+                    enum:
+                      - draft
+                      - active
+                      - paused
+                      - failed
+                      - archived
+                  dag_definition:
+                    type: object
+                    description: "Directed acyclic graph of transformation stages"
+                  retry_policy:
+                    type: object
+                    description: "Retry configuration for failed stages"
+                  owner:
+                    type: string
+                    description: "Pipeline owner"
+                    example: "data-eng@acmefin.com"
+                  last_run_at:
+                    type: string
+                    description: "Timestamp of most recent execution"
+                    format: date-time
+                  created_at:
+                    type: string
+                    format: date-time
+                required:
+                  - pipeline_id
+                  - name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updatePipeline
+      summary: Update pipeline
+      description: >-
+        Modify pipeline configuration. Active pipelines are paused during update and resumed automatically.
+      tags:
+        - Pipelines
+      parameters:
+        - name: pipeline_id
+          in: path
+          required: true
+          description: Unique pipeline id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update pipeline request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    description:
+                      type: string
+                    dag_definition:
+                      type: object
+                    retry_policy:
+                      type: object
+                    status:
+                      type: string
+                      enum:
+                        - active
+                        - paused
+                        - archived
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pipeline_id:
+                    type: string
+                    description: "Unique pipeline identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Pipeline name"
+                    example: "daily-transactions-ingest"
+                  description:
+                    type: string
+                    description: "Pipeline purpose and data flow summary"
+                  source_connector_id:
+                    type: string
+                    description: "Source connector reference"
+                    format: uuid
+                  sink_connector_id:
+                    type: string
+                    description: "Destination connector reference"
+                    format: uuid
+                  status:
+                    type: string
+                    description: "Pipeline lifecycle status"
+                    enum:
+                      - draft
+                      - active
+                      - paused
+                      - failed
+                      - archived
+                  dag_definition:
+                    type: object
+                    description: "Directed acyclic graph of transformation stages"
+                  retry_policy:
+                    type: object
+                    description: "Retry configuration for failed stages"
+                  owner:
+                    type: string
+                    description: "Pipeline owner"
+                    example: "data-eng@acmefin.com"
+                  last_run_at:
+                    type: string
+                    description: "Timestamp of most recent execution"
+                    format: date-time
+                  created_at:
+                    type: string
+                    format: date-time
+                required:
+                  - pipeline_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deletePipeline
+      summary: Delete pipeline
+      description: >-
+        Permanently delete a pipeline and its run history. Running executions are cancelled first.
+      tags:
+        - Pipelines
+      parameters:
+        - name: pipeline_id
+          in: path
+          required: true
+          description: Unique pipeline id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /pipelines/{pipeline_id}/run:
+    post:
+      operationId: triggerPipelineRun
+      summary: Trigger pipeline run
+      description: >-
+        Manually trigger a pipeline execution. Optionally override runtime parameters for this run only.
+      tags:
+        - Pipelines
+      parameters:
+        - name: pipeline_id
+          in: path
+          required: true
+          description: Unique pipeline id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Trigger pipeline run request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    parameters:
+                      type: object
+                      description: "Runtime parameter overrides"
+                    dry_run:
+                      type: boolean
+                      description: "Validate without executing"
+                      default: false
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - running
+                  started_at:
+                    type: string
+                    format: date-time
+                required:
+                  - run_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /pipelines/{pipeline_id}/clone:
+    post:
+      operationId: clonePipeline
+      summary: Clone pipeline
+      description: >-
+        Create a duplicate of an existing pipeline with a new name. All configuration is copied except
+        schedules.
+      tags:
+        - Pipelines
+      parameters:
+        - name: pipeline_id
+          in: path
+          required: true
+          description: Unique pipeline id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Clone pipeline request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    new_name:
+                      type: string
+                      description: "Name for the cloned pipeline"
+              required:
+                - new_name
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pipeline_id:
+                    type: string
+                    description: "New pipeline ID"
+                    format: uuid
+                  name:
+                    type: string
+                  status:
+                    type: string
+                required:
+                  - pipeline_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /runs:
+    get:
+      operationId: listRuns
+      summary: List pipeline runs
+      description: >-
+        Retrieve execution runs across all pipelines with filters for status, trigger type, and date range.
+      tags:
+        - Pipeline Runs
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: pipeline_id
+          in: query
+          required: false
+          description: Filter by pipeline
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by execution status
+          schema:
+            type: "string"
+            enum:
+              - queued
+              - running
+              - succeeded
+              - failed
+              - cancelled
+        - name: trigger
+          in: query
+          required: false
+          description: Filter by trigger type
+          schema:
+            type: "string"
+        - name: since
+          in: query
+          required: false
+          description: Filter runs started after this timestamp
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        run_id:
+                          type: string
+                          description: "Unique run identifier"
+                          format: uuid
+                          readOnly: true
+                        pipeline_id:
+                          type: string
+                          description: "Parent pipeline"
+                          format: uuid
+                        status:
+                          type: string
+                          description: "Execution status"
+                          enum:
+                            - queued
+                            - running
+                            - succeeded
+                            - failed
+                            - cancelled
+                        trigger:
+                          type: string
+                          description: "How this run was initiated"
+                          enum:
+                            - scheduled
+                            - manual
+                            - api
+                            - event
+                        started_at:
+                          type: string
+                          format: date-time
+                        finished_at:
+                          type: string
+                          format: date-time
+                        records_processed:
+                          type: integer
+                          description: "Total records ingested during this run"
+                        bytes_processed:
+                          type: integer
+                          description: "Total data volume processed"
+                        error_message:
+                          type: string
+                          description: "Failure reason if status is failed"
+                      required:
+                        - run_id
+                        - pipeline_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /runs/{run_id}:
+    get:
+      operationId: getRun
+      summary: Get run details
+      description: >-
+        Retrieve detailed execution information including per-stage metrics, data volumes, and error
+        diagnostics.
+      tags:
+        - Pipeline Runs
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: Unique run id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                    description: "Unique run identifier"
+                    format: uuid
+                    readOnly: true
+                  pipeline_id:
+                    type: string
+                    description: "Parent pipeline"
+                    format: uuid
+                  status:
+                    type: string
+                    description: "Execution status"
+                    enum:
+                      - queued
+                      - running
+                      - succeeded
+                      - failed
+                      - cancelled
+                  trigger:
+                    type: string
+                    description: "How this run was initiated"
+                    enum:
+                      - scheduled
+                      - manual
+                      - api
+                      - event
+                  started_at:
+                    type: string
+                    format: date-time
+                  finished_at:
+                    type: string
+                    format: date-time
+                  records_processed:
+                    type: integer
+                    description: "Total records ingested during this run"
+                  bytes_processed:
+                    type: integer
+                    description: "Total data volume processed"
+                  error_message:
+                    type: string
+                    description: "Failure reason if status is failed"
+                required:
+                  - run_id
+                  - pipeline_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /runs/{run_id}/logs:
+    get:
+      operationId: getRunLogs
+      summary: Get run logs
+      description: >-
+        Stream structured log entries for a pipeline run with severity filtering and stage-level scoping.
+      tags:
+        - Pipeline Runs
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: Unique run id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                  entries:
+                    type: array
+                    description: "Log entries with timestamp, severity, stage, and message"
+                    items:
+                      type: object
+                  total_entries:
+                    type: integer
+                required:
+                  - run_id
+                  - entries
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /runs/{run_id}/cancel:
+    post:
+      operationId: cancelRun
+      summary: Cancel pipeline run
+      description: >-
+        Request cancellation of a running pipeline execution. In-flight stages complete before the run
+        stops.
+      tags:
+        - Pipeline Runs
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: Unique run id
+          schema:
+            type: "string"
+      responses:
+        "202":
+          description: Action accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /schedules:
+    get:
+      operationId: listSchedules
+      summary: List schedules
+      description: Retrieve all pipeline schedules with next execution time and enabled status.
+      tags:
+        - Schedules
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        schedule_id:
+                          type: string
+                          description: "Schedule identifier"
+                          format: uuid
+                          readOnly: true
+                        pipeline_id:
+                          type: string
+                          description: "Scheduled pipeline"
+                          format: uuid
+                        cron_expression:
+                          type: string
+                          description: "Cron schedule expression"
+                          example: "0 2 * * *"
+                        timezone:
+                          type: string
+                          description: "IANA timezone"
+                          example: "America/New_York"
+                        is_enabled:
+                          type: boolean
+                          description: "Whether schedule is active"
+                        next_run_at:
+                          type: string
+                          description: "Next scheduled execution"
+                          format: date-time
+                        last_run_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - schedule_id
+                        - pipeline_id
+                        - cron_expression
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSchedule
+      summary: Create schedule
+      description: >-
+        Attach a cron-based schedule to a pipeline. Schedules are evaluated in the specified timezone.
+      tags:
+        - Schedules
+      requestBody:
+        required: true
+        description: Create schedule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    pipeline_id:
+                      type: string
+                      format: uuid
+                    cron_expression:
+                      type: string
+                    timezone:
+                      type: string
+                      default: "UTC"
+                    is_enabled:
+                      type: boolean
+                      default: true
+              required:
+                - pipeline_id
+                - cron_expression
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule_id:
+                    type: string
+                    description: "Schedule identifier"
+                    format: uuid
+                    readOnly: true
+                  pipeline_id:
+                    type: string
+                    description: "Scheduled pipeline"
+                    format: uuid
+                  cron_expression:
+                    type: string
+                    description: "Cron schedule expression"
+                    example: "0 2 * * *"
+                  timezone:
+                    type: string
+                    description: "IANA timezone"
+                    example: "America/New_York"
+                  is_enabled:
+                    type: boolean
+                    description: "Whether schedule is active"
+                  next_run_at:
+                    type: string
+                    description: "Next scheduled execution"
+                    format: date-time
+                  last_run_at:
+                    type: string
+                    format: date-time
+                required:
+                  - schedule_id
+                  - pipeline_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /schedules/{schedule_id}:
+    get:
+      operationId: getSchedule
+      summary: Get schedule details
+      description: Retrieve a schedule with its execution history and next planned run.
+      tags:
+        - Schedules
+      parameters:
+        - name: schedule_id
+          in: path
+          required: true
+          description: Unique schedule id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule_id:
+                    type: string
+                    description: "Schedule identifier"
+                    format: uuid
+                    readOnly: true
+                  pipeline_id:
+                    type: string
+                    description: "Scheduled pipeline"
+                    format: uuid
+                  cron_expression:
+                    type: string
+                    description: "Cron schedule expression"
+                    example: "0 2 * * *"
+                  timezone:
+                    type: string
+                    description: "IANA timezone"
+                    example: "America/New_York"
+                  is_enabled:
+                    type: boolean
+                    description: "Whether schedule is active"
+                  next_run_at:
+                    type: string
+                    description: "Next scheduled execution"
+                    format: date-time
+                  last_run_at:
+                    type: string
+                    format: date-time
+                required:
+                  - schedule_id
+                  - pipeline_id
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateSchedule
+      summary: Update schedule
+      description: Modify schedule timing or toggle enabled/disabled.
+      tags:
+        - Schedules
+      parameters:
+        - name: schedule_id
+          in: path
+          required: true
+          description: Unique schedule id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update schedule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    cron_expression:
+                      type: string
+                    timezone:
+                      type: string
+                    is_enabled:
+                      type: boolean
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule_id:
+                    type: string
+                    description: "Schedule identifier"
+                    format: uuid
+                    readOnly: true
+                  pipeline_id:
+                    type: string
+                    description: "Scheduled pipeline"
+                    format: uuid
+                  cron_expression:
+                    type: string
+                    description: "Cron schedule expression"
+                    example: "0 2 * * *"
+                  timezone:
+                    type: string
+                    description: "IANA timezone"
+                    example: "America/New_York"
+                  is_enabled:
+                    type: boolean
+                    description: "Whether schedule is active"
+                  next_run_at:
+                    type: string
+                    description: "Next scheduled execution"
+                    format: date-time
+                  last_run_at:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteSchedule
+      summary: Delete schedule
+      description: Remove a pipeline schedule.
+      tags:
+        - Schedules
+      parameters:
+        - name: schedule_id
+          in: path
+          required: true
+          description: Unique schedule id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /connectors:
+    get:
+      operationId: listConnectors
+      summary: List connectors
+      description: >-
+        Retrieve data connectors with connectivity status and supported data flow directions.
+      tags:
+        - Connectors
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: type
+          in: query
+          required: false
+          description: Filter by connector type
+          schema:
+            type: "string"
+            enum:
+              - jdbc
+              - s3
+              - kafka
+              - rest_api
+              - sftp
+              - snowflake
+              - bigquery
+              - dynamodb
+        - name: direction
+          in: query
+          required: false
+          description: Filter by data flow direction
+          schema:
+            type: "string"
+            enum:
+              - source
+              - sink
+              - bidirectional
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        connector_id:
+                          type: string
+                          description: "Connector identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Connector display name"
+                          example: "prod-postgres-core"
+                        type:
+                          type: string
+                          description: "Connector technology type"
+                          enum:
+                            - jdbc
+                            - s3
+                            - kafka
+                            - rest_api
+                            - sftp
+                            - snowflake
+                            - bigquery
+                            - dynamodb
+                        direction:
+                          type: string
+                          description: "Data flow direction"
+                          enum:
+                            - source
+                            - sink
+                            - bidirectional
+                        connection_status:
+                          type: string
+                          description: "Current connectivity status"
+                          enum:
+                            - connected
+                            - disconnected
+                            - error
+                        last_tested_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - connector_id
+                        - name
+                        - type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createConnector
+      summary: Create connector
+      description: Register a new data connector. Connection credentials are encrypted at rest.
+      tags:
+        - Connectors
+      requestBody:
+        required: true
+        description: Create connector request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    type:
+                      type: string
+                      enum:
+                        - jdbc
+                        - s3
+                        - kafka
+                        - rest_api
+                        - sftp
+                        - snowflake
+                        - bigquery
+                        - dynamodb
+                    direction:
+                      type: string
+                      enum:
+                        - source
+                        - sink
+                        - bidirectional
+                    connection_config:
+                      type: object
+                      description: "Connector-specific configuration (JDBC URL, S3 bucket, Kafka bootstrap servers, etc.)"
+              required:
+                - name
+                - type
+                - direction
+                - connection_config
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connector_id:
+                    type: string
+                    description: "Connector identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Connector display name"
+                    example: "prod-postgres-core"
+                  type:
+                    type: string
+                    description: "Connector technology type"
+                    enum:
+                      - jdbc
+                      - s3
+                      - kafka
+                      - rest_api
+                      - sftp
+                      - snowflake
+                      - bigquery
+                      - dynamodb
+                  direction:
+                    type: string
+                    description: "Data flow direction"
+                    enum:
+                      - source
+                      - sink
+                      - bidirectional
+                  connection_status:
+                    type: string
+                    description: "Current connectivity status"
+                    enum:
+                      - connected
+                      - disconnected
+                      - error
+                  last_tested_at:
+                    type: string
+                    format: date-time
+                required:
+                  - connector_id
+                  - name
+                  - type
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /connectors/{connector_id}:
+    get:
+      operationId: getConnector
+      summary: Get connector details
+      description: Retrieve connector configuration, health status, and usage across pipelines.
+      tags:
+        - Connectors
+      parameters:
+        - name: connector_id
+          in: path
+          required: true
+          description: Unique connector id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connector_id:
+                    type: string
+                    description: "Connector identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Connector display name"
+                    example: "prod-postgres-core"
+                  type:
+                    type: string
+                    description: "Connector technology type"
+                    enum:
+                      - jdbc
+                      - s3
+                      - kafka
+                      - rest_api
+                      - sftp
+                      - snowflake
+                      - bigquery
+                      - dynamodb
+                  direction:
+                    type: string
+                    description: "Data flow direction"
+                    enum:
+                      - source
+                      - sink
+                      - bidirectional
+                  connection_status:
+                    type: string
+                    description: "Current connectivity status"
+                    enum:
+                      - connected
+                      - disconnected
+                      - error
+                  last_tested_at:
+                    type: string
+                    format: date-time
+                required:
+                  - connector_id
+                  - name
+                  - type
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: deleteConnector
+      summary: Delete connector
+      description: >-
+        Remove a data connector. Fails if the connector is referenced by active pipelines.
+      tags:
+        - Connectors
+      parameters:
+        - name: connector_id
+          in: path
+          required: true
+          description: Unique connector id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /connectors/{connector_id}/test:
+    post:
+      operationId: testConnector
+      summary: Test connector
+      description: >-
+        Execute a connectivity test against the data source or sink and return diagnostics.
+      tags:
+        - Connectors
+      parameters:
+        - name: connector_id
+          in: path
+          required: true
+          description: Unique connector id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connector_id:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - connected
+                      - error
+                  latency_ms:
+                    type: integer
+                    description: "Round-trip latency in milliseconds"
+                  error_message:
+                    type: string
+                    nullable: true
+                required:
+                  - connector_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /transformations:
+    get:
+      operationId: listTransformations
+      summary: List transformations
+      description: >-
+        Retrieve all reusable transformation definitions with engine type and schema metadata.
+      tags:
+        - Transformations
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        transform_id:
+                          type: string
+                          description: "Transformation identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Transformation name"
+                          example: "normalize_currency"
+                        type:
+                          type: string
+                          description: "Transformation engine"
+                          enum:
+                            - sql
+                            - python
+                            - spark
+                            - dbt
+                            - custom
+                        description:
+                          type: string
+                          description: "What this transformation does"
+                        input_schema:
+                          type: string
+                          description: "Expected input schema reference"
+                        output_schema:
+                          type: string
+                          description: "Produced output schema reference"
+                      required:
+                        - transform_id
+                        - name
+                        - type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /transformations/{transform_id}:
+    get:
+      operationId: getTransformation
+      summary: Get transformation
+      description: >-
+        Retrieve a transformation with its full definition, input/output schemas, and usage across
+        pipelines.
+      tags:
+        - Transformations
+      parameters:
+        - name: transform_id
+          in: path
+          required: true
+          description: Unique transform id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transform_id:
+                    type: string
+                    description: "Transformation identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Transformation name"
+                    example: "normalize_currency"
+                  type:
+                    type: string
+                    description: "Transformation engine"
+                    enum:
+                      - sql
+                      - python
+                      - spark
+                      - dbt
+                      - custom
+                  description:
+                    type: string
+                    description: "What this transformation does"
+                  input_schema:
+                    type: string
+                    description: "Expected input schema reference"
+                  output_schema:
+                    type: string
+                    description: "Produced output schema reference"
+                required:
+                  - transform_id
+                  - name
+                  - type
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /pipelines/{pipeline_id}/validate:
+    post:
+      operationId: validatePipeline
+      summary: Validate pipeline DAG
+      description: >-
+        Validate the pipeline DAG for correctness including cycle detection, connector compatibility, and
+        schema alignment between stages.
+      tags:
+        - Pipelines
+      parameters:
+        - name: pipeline_id
+          in: path
+          required: true
+          description: Unique pipeline id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_valid:
+                    type: boolean
+                  errors:
+                    type: array
+                    description: "Validation errors"
+                    items:
+                      type: object
+                  warnings:
+                    type: array
+                    description: "Non-blocking warnings"
+                    items:
+                      type: object
+                required:
+                  - is_valid
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /runs/{run_id}/retry:
+    post:
+      operationId: retryRun
+      summary: Retry failed run
+      description: >-
+        Retry a failed pipeline run from the last failed stage. Only applicable to runs with status
+        'failed'.
+      tags:
+        - Pipeline Runs
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: Unique run id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Retry failed run request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    from_stage:
+                      type: string
+                      description: "Stage to restart from (default: last failed stage)"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                    description: "New run identifier"
+                    format: uuid
+                  status:
+                    type: string
+                  restarted_from:
+                    type: string
+                required:
+                  - run_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

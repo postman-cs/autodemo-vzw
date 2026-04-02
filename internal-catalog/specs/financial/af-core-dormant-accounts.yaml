@@ -1,0 +1,716 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Core Dormant Accounts API
+  description: >-
+    Monitor and manage dormant account classifications per state unclaimed property regulations. Tracks inactivity
+    periods, manages pre-dormancy outreach campaigns, and enforces jurisdiction-specific escheatment timelines.
+    Supports account reactivation workflows when customer contact is re-established.
+  version: 1.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-core-dormant-accounts
+  x-acme-domain: core
+servers:
+  - url: https://af-core-dormant-accounts.api.acmefin.com/v1
+    description: Production
+  - url: https://af-core-dormant-accounts.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Dormant Accounts
+    description: Dormancy monitoring, outreach, and reactivation
+paths:
+  /dormant-accounts:
+    get:
+      operationId: listDormantAccounts
+      summary: List dormant accounts
+      description: >-
+        Retrieve accounts classified as pre-dormant, dormant, or pending escheatment. Filter by
+        jurisdiction, dormancy status, or escheatment deadline range. Results include outreach history and
+        balance information for each account.
+      tags:
+        - Dormant Accounts
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: dormancy_status
+          in: query
+          required: false
+          description: Filter by dormancy classification
+          schema:
+            type: "string"
+            enum:
+              - PRE_DORMANT
+              - DORMANT
+              - ESCHEATMENT_PENDING
+        - name: state_jurisdiction
+          in: query
+          required: false
+          description: Filter by state jurisdiction
+          schema:
+            type: "string"
+        - name: escheatment_before
+          in: query
+          required: false
+          description: Filter accounts with escheatment deadline before this date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        account_id:
+                          type: string
+                          description: Account identifier
+                          example: "acct-10045892"
+                        dormancy_status:
+                          type: string
+                          description: Dormancy classification
+                          enum:
+                            - PRE_DORMANT
+                            - DORMANT
+                            - ESCHEATMENT_PENDING
+                            - ESCHEATED
+                            - REACTIVATED
+                        last_activity_date:
+                          type: string
+                          description: Date of last qualifying customer-initiated activity
+                          format: date
+                          example: "2023-08-15"
+                        dormant_since:
+                          type: string
+                          description: Date account was classified as dormant
+                          format: date
+                          example: "2024-08-15"
+                        escheatment_deadline:
+                          type: string
+                          description: State-mandated escheatment deadline
+                          format: date
+                          example: "2027-08-15"
+                        state_jurisdiction:
+                          type: string
+                          description: State governing unclaimed property rules
+                          example: "NY"
+                        balance_at_dormancy:
+                          type: number
+                          description: Balance when account became dormant
+                          format: double
+                          example: 1842.3
+                        outreach_attempts:
+                          type: integer
+                          description: Number of customer outreach attempts made
+                          example: 3
+                        last_outreach_date:
+                          type: string
+                          description: Date of most recent outreach attempt
+                          format: date
+                          example: "2025-03-01"
+                      required:
+                        - account_id
+                        - dormancy_status
+                        - last_activity_date
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /dormant-accounts/{account_id}:
+    get:
+      operationId: getDormantAccountDetails
+      summary: Get dormant account details
+      description: >-
+        Retrieve the complete dormancy profile for an account including activity timeline, outreach history,
+        applicable state regulations, and escheatment countdown. Includes the balance snapshot captured at
+        the time of dormancy classification.
+      tags:
+        - Dormant Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Account identifier
+                    example: "acct-10045892"
+                  dormancy_status:
+                    type: string
+                    description: Dormancy classification
+                    enum:
+                      - PRE_DORMANT
+                      - DORMANT
+                      - ESCHEATMENT_PENDING
+                      - ESCHEATED
+                      - REACTIVATED
+                  last_activity_date:
+                    type: string
+                    description: Date of last qualifying customer-initiated activity
+                    format: date
+                    example: "2023-08-15"
+                  dormant_since:
+                    type: string
+                    description: Date account was classified as dormant
+                    format: date
+                    example: "2024-08-15"
+                  escheatment_deadline:
+                    type: string
+                    description: State-mandated escheatment deadline
+                    format: date
+                    example: "2027-08-15"
+                  state_jurisdiction:
+                    type: string
+                    description: State governing unclaimed property rules
+                    example: "NY"
+                  balance_at_dormancy:
+                    type: number
+                    description: Balance when account became dormant
+                    format: double
+                    example: 1842.3
+                  outreach_attempts:
+                    type: integer
+                    description: Number of customer outreach attempts made
+                    example: 3
+                  last_outreach_date:
+                    type: string
+                    description: Date of most recent outreach attempt
+                    format: date
+                    example: "2025-03-01"
+                required:
+                  - account_id
+                  - dormancy_status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /dormant-accounts/{account_id}/reactivate:
+    post:
+      operationId: reactivateAccount
+      summary: Reactivate dormant account
+      description: >-
+        Reactivate a dormant account after verifying the customer's identity. Requires updated KYC
+        documentation if the account has been dormant for more than 3 years. Reactivation cancels any
+        pending escheatment proceedings and restores the account to ACTIVE status in the Accounts service.
+      tags:
+        - Dormant Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Reactivate dormant account request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    verification_method:
+                      type: string
+                      description: How customer identity was verified
+                      enum:
+                        - IN_BRANCH
+                        - PHONE_VERIFICATION
+                        - DIGITAL_ID
+                        - NOTARIZED_LETTER
+                    verified_by:
+                      type: string
+                      description: Officer who verified the customer
+                      example: "user-ops-4421"
+              required:
+                - verification_method
+                - verified_by
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Account identifier
+                    example: "acct-10045892"
+                  dormancy_status:
+                    type: string
+                    description: Dormancy classification
+                    enum:
+                      - PRE_DORMANT
+                      - DORMANT
+                      - ESCHEATMENT_PENDING
+                      - ESCHEATED
+                      - REACTIVATED
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /dormant-accounts/{account_id}/outreach:
+    post:
+      operationId: recordOutreachAttempt
+      summary: Record outreach attempt
+      description: >-
+        Log a customer outreach attempt as required by state unclaimed property regulations. Most
+        jurisdictions require at least one documented attempt to contact the account holder via mail before
+        escheatment can proceed. The system tracks delivery status and return-to-sender responses.
+      tags:
+        - Dormant Accounts
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Unique account id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Record outreach attempt request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    channel:
+                      type: string
+                      description: Outreach channel used
+                      enum:
+                        - CERTIFIED_MAIL
+                        - REGULAR_MAIL
+                        - EMAIL
+                        - PHONE
+                    notes:
+                      type: string
+                      description: Details of the outreach attempt
+                      example: "Certified letter sent to address on file — tracking #9400111899223033"
+              required:
+                - channel
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Account identifier
+                    example: "acct-10045892"
+                  outreach_attempts:
+                    type: integer
+                    description: Number of customer outreach attempts made
+                    example: 3
+                  last_outreach_date:
+                    type: string
+                    description: Date of most recent outreach attempt
+                    format: date
+                    example: "2025-03-01"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /dormant-accounts/summary:
+    get:
+      operationId: getDormancySummary
+      summary: Get dormancy summary
+      description: >-
+        Retrieve aggregate statistics across all dormant accounts including counts by status, total balances
+        at risk of escheatment, and upcoming escheatment deadlines grouped by state jurisdiction. Useful for
+        regulatory reporting and operational dashboards.
+      tags:
+        - Dormant Accounts
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_dormant:
+                    type: integer
+                    description: Total dormant accounts
+                    example: 342
+                  total_pre_dormant:
+                    type: integer
+                    description: Accounts in pre-dormant stage
+                    example: 1205
+                  total_balance_at_risk:
+                    type: number
+                    description: Aggregate balance subject to escheatment
+                    format: double
+                    example: 847291.5
+                  escheatments_next_90_days:
+                    type: integer
+                    description: Accounts reaching escheatment within 90 days
+                    example: 28
+                required:
+                  - total_dormant
+                  - total_balance_at_risk
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

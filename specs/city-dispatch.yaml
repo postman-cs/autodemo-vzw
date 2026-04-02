@@ -1,0 +1,350 @@
+openapi: 3.0.3
+
+info:
+  title: Metro City Dispatch CAD - Demo
+  description: City Computer-Aided Dispatch system APIs for incident management, unit tracking, and dispatch operations.
+  version: "1.0"
+
+servers:
+  - url: "{{cad_base}}"
+    description: City Dispatch Mock Server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Incidents
+  - name: Units
+  - name: Dispatch
+  - name: Telemetry
+
+paths:
+  /v1/incidents:
+    post:
+      summary: Create Incident
+      description: Report a new emergency incident for dispatch.
+      tags: ["Incidents"]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: ["type", "priority", "location", "description", "callerPhone"]
+              properties:
+                type:
+                  type: string
+                  enum: ["MEDICAL", "FIRE", "TRAFFIC", "HAZMAT"]
+                  example: "MEDICAL"
+                priority:
+                  type: integer
+                  enum: [1, 2, 3, 4, 5]
+                  description: "1 = highest priority"
+                  example: 1
+                location:
+                  type: object
+                  required: ["address", "lat", "lng"]
+                  properties:
+                    address:
+                      type: string
+                      example: "1001 Potrero Ave, San Francisco, CA 94110"
+                    lat:
+                      type: number
+                      example: 37.7554
+                    lng:
+                      type: number
+                      example: -122.4057
+                description:
+                  type: string
+                  example: "Cardiac arrest reported by bystander. CPR in progress."
+                callerPhone:
+                  type: string
+                  example: "+14155550123"
+      responses:
+        "201":
+          description: Incident created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  incidentId:
+                    type: string
+                    example: "INC-2026-03-26-0042"
+                  type:
+                    type: string
+                  priority:
+                    type: integer
+                  status:
+                    type: string
+                    enum: ["REPORTED", "DISPATCHED", "EN_ROUTE", "ON_SCENE", "RESOLVED"]
+                    example: "REPORTED"
+                  location:
+                    type: object
+                    properties:
+                      address:
+                        type: string
+                      lat:
+                        type: number
+                      lng:
+                        type: number
+                  createdAt:
+                    type: string
+                    format: date-time
+                    example: "2026-03-26T18:30:00Z"
+
+  /v1/units/available:
+    get:
+      summary: List Available Units
+      description: Retrieve all units currently available for dispatch.
+      tags: ["Units"]
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["AMBULANCE", "ENGINE", "LADDER", "RESCUE"]
+          example: "AMBULANCE"
+        - name: nearLat
+          in: query
+          required: false
+          schema:
+            type: number
+          example: 37.7554
+        - name: nearLng
+          in: query
+          required: false
+          schema:
+            type: number
+          example: -122.4057
+        - name: radiusMiles
+          in: query
+          required: false
+          schema:
+            type: number
+          example: 5
+      responses:
+        "200":
+          description: List of available units
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  units:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        unitId:
+                          type: string
+                          example: "MEDIC-7"
+                        type:
+                          type: string
+                          example: "AMBULANCE"
+                        status:
+                          type: string
+                          enum: ["AVAILABLE", "DISPATCHED", "EN_ROUTE", "ON_SCENE", "OUT_OF_SERVICE"]
+                          example: "AVAILABLE"
+                        location:
+                          type: object
+                          properties:
+                            lat:
+                              type: number
+                              example: 37.7749
+                            lng:
+                              type: number
+                              example: -122.4194
+                        personnel:
+                          type: array
+                          items:
+                            type: string
+                          example: ["Paramedic Chen", "EMT Rodriguez"]
+                        equipment:
+                          type: array
+                          items:
+                            type: string
+                          example: ["AED", "Cardiac Monitor", "IV Kit"]
+                        distanceMiles:
+                          type: number
+                          example: 1.8
+              example:
+                units:
+                  - unitId: "MEDIC-7"
+                    type: "AMBULANCE"
+                    status: "AVAILABLE"
+                    location:
+                      lat: 37.7749
+                      lng: -122.4194
+                    personnel: ["Paramedic Chen", "EMT Rodriguez"]
+                    equipment: ["AED", "Cardiac Monitor", "IV Kit"]
+                    distanceMiles: 1.8
+                  - unitId: "MEDIC-12"
+                    type: "AMBULANCE"
+                    status: "AVAILABLE"
+                    location:
+                      lat: 37.7833
+                      lng: -122.4367
+                    personnel: ["Paramedic Patel", "EMT Kim"]
+                    equipment: ["AED", "Cardiac Monitor", "IV Kit", "Stretcher"]
+                    distanceMiles: 3.2
+
+  /v1/incidents/{incidentId}/dispatch:
+    post:
+      summary: Dispatch Unit to Incident
+      tags: ["Dispatch"]
+      parameters:
+        - name: incidentId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "INC-2026-03-26-0042"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: ["unitId", "priority"]
+              properties:
+                unitId:
+                  type: string
+                  example: "MEDIC-7"
+                priority:
+                  type: string
+                  enum: ["EMERGENCY", "URGENT", "ROUTINE"]
+                  example: "EMERGENCY"
+                notes:
+                  type: string
+                  example: "Cardiac arrest. Fastest route via US-101. QoD bandwidth reserved."
+      responses:
+        "200":
+          description: Unit dispatched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispatchId:
+                    type: string
+                    example: "DSP-2026-03-26-0042-001"
+                  incidentId:
+                    type: string
+                  unitId:
+                    type: string
+                  status:
+                    type: string
+                    example: "DISPATCHED"
+                  dispatchedAt:
+                    type: string
+                    format: date-time
+                  estimatedArrival:
+                    type: string
+                    format: date-time
+                    example: "2026-03-26T18:37:00Z"
+                  route:
+                    type: object
+                    properties:
+                      distanceMeters:
+                        type: integer
+                        example: 6100
+                      durationSeconds:
+                        type: integer
+                        example: 420
+                      provider:
+                        type: string
+                        example: "HERE"
+
+  /v1/units/{unitId}/telemetry:
+    get:
+      summary: Get Unit Telemetry
+      description: Retrieve real-time telemetry data for a dispatched unit.
+      tags: ["Telemetry"]
+      parameters:
+        - name: unitId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "MEDIC-7"
+      responses:
+        "200":
+          description: Unit telemetry data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unitId:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  location:
+                    type: object
+                    properties:
+                      lat:
+                        type: number
+                        example: 37.7680
+                      lng:
+                        type: number
+                        example: -122.4130
+                  speed:
+                    type: object
+                    properties:
+                      mph:
+                        type: number
+                        example: 35
+                      kmh:
+                        type: number
+                        example: 56
+                  heading:
+                    type: number
+                    description: "Degrees, heading south toward hospital"
+                    example: 165
+                  eta:
+                    type: object
+                    properties:
+                      minutes:
+                        type: number
+                        example: 3
+                      updatedAt:
+                        type: string
+                        format: date-time
+                  vitals:
+                    type: object
+                    description: Patient telemetry from ambulance
+                    properties:
+                      heartRate:
+                        type: integer
+                        example: 45
+                      bloodPressure:
+                        type: string
+                        example: "90/60"
+                      spO2:
+                        type: integer
+                        example: 94
+                      status:
+                        type: string
+                        example: "CRITICAL"
+                  connectivity:
+                    type: object
+                    properties:
+                      provider:
+                        type: string
+                        example: "Verizon"
+                      signal:
+                        type: string
+                        enum: ["EXCELLENT", "GOOD", "FAIR", "POOR"]
+                        example: "EXCELLENT"
+                      qodSession:
+                        type: string
+                        example: "a1b2c3d4-e5f6-7890-abcd-ef0123456789"
+                      bandwidth:
+                        type: string
+                        example: "QOS_L"
+                      videoUplink:
+                        type: boolean
+                        example: true

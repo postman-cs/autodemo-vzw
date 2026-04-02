@@ -1,0 +1,939 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Customer Segmentation API
+  description: >-
+    Dynamic customer segmentation engine for Acme Finance. Supports rule-based and ML-driven segmentation,
+    audience building for targeted campaigns, segment analytics, and export capabilities. Integrates with the
+    marketing automation platform and campaign management system for personalized customer engagement.
+  version: 2.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-customer-segmentation
+  x-acme-domain: customer
+servers:
+  - url: https://af-customer-segmentation.api.acmefin.com/v1
+    description: Production
+  - url: https://af-customer-segmentation.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Segments
+    description: Segment definition, management, and customer assignment
+  - name: Audience Builder
+    description: Dynamic audience creation and campaign targeting
+  - name: Rules Engine
+    description: Segmentation rules configuration and evaluation
+paths:
+  /segments:
+    get:
+      operationId: listSegments
+      summary: List customer segments
+      description: >-
+        Returns all configured customer segments with population counts and metadata. Includes both static
+        (rule-based) and dynamic (ML-driven) segments.
+      tags:
+        - Segments
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: type
+          in: query
+          required: false
+          description: Filter by segment type
+          schema:
+            type: "string"
+            enum:
+              - static
+              - dynamic
+              - ml_predicted
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        segment_id:
+                          type: string
+                          description: Segment identifier
+                          example: "SEG-HNW-GROWTH"
+                        name:
+                          type: string
+                          description: Segment display name
+                          example: "High Net Worth Growth"
+                        description:
+                          type: string
+                          description: Segment description
+                        type:
+                          type: string
+                          description: Segment type
+                          enum:
+                            - static
+                            - dynamic
+                            - ml_predicted
+                        population_count:
+                          type: integer
+                          description: Current member count
+                          example: 12450
+                        status:
+                          type: string
+                          description: Segment status
+                          enum:
+                            - active
+                            - draft
+                            - archived
+                        last_refreshed:
+                          type: string
+                          description: Last population refresh
+                          format: date-time
+                      required:
+                        - segment_id
+                        - name
+                        - type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSegment
+      summary: Create customer segment
+      description: >-
+        Creates a new customer segment with the specified rules and criteria. Static segments are populated
+        immediately; dynamic segments are refreshed on schedule.
+      tags:
+        - Segments
+      requestBody:
+        required: true
+        description: Create customer segment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: Segment name
+                      example: "Young Professionals"
+                    description:
+                      type: string
+                      description: Segment description
+                    type:
+                      type: string
+                      description: Segment type
+                      enum:
+                        - static
+                        - dynamic
+                    rules:
+                      type: array
+                      description: Segmentation rules
+                      items:
+                        type: object
+                    refresh_frequency:
+                      type: string
+                      description: How often to refresh population
+                      enum:
+                        - hourly
+                        - daily
+                        - weekly
+                        - manual
+                      default: "daily"
+              required:
+                - name
+                - type
+                - rules
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  segment_id:
+                    type: string
+                    description: Created segment ID
+                  name:
+                    type: string
+                    description: Segment name
+                  status:
+                    type: string
+                    description: Initial status
+                    example: "active"
+                  population_count:
+                    type: integer
+                    description: Initial member count
+                required:
+                  - segment_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /segments/{segment_id}:
+    get:
+      operationId: getSegment
+      summary: Get segment details
+      description: >-
+        Returns full segment details including rules, population statistics, and associated campaigns.
+      tags:
+        - Segments
+      parameters:
+        - name: segment_id
+          in: path
+          required: true
+          description: Unique segment id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  segment_id:
+                    type: string
+                    description: Segment ID
+                  name:
+                    type: string
+                    description: Segment name
+                  description:
+                    type: string
+                    description: Segment description
+                  type:
+                    type: string
+                    description: Segment type
+                  rules:
+                    type: array
+                    description: Applied segmentation rules
+                    items:
+                      type: object
+                  population_count:
+                    type: integer
+                    description: Current members
+                  avg_relationship_value:
+                    type: number
+                    description: Average relationship value of members
+                    format: double
+                    example: 125000.0
+                  active_campaigns:
+                    type: integer
+                    description: Active campaigns targeting this segment
+                    example: 3
+                required:
+                  - segment_id
+                  - name
+                  - type
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /customers/{customer_id}/segments:
+    post:
+      operationId: assignCustomerSegment
+      summary: Assign customer to segment
+      description: >-
+        Manually assigns a customer to a specific segment. Used for override assignments that bypass the
+        automated rules engine.
+      tags:
+        - Segments
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          description: Unique customer id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Assign customer to segment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    segment_id:
+                      type: string
+                      description: Target segment ID
+                      example: "SEG-HNW-GROWTH"
+                    reason:
+                      type: string
+                      description: Reason for manual assignment
+                      example: "RM upgrade based on relationship review"
+                    override_rules:
+                      type: boolean
+                      description: Override rule-based assignment
+                      default: false
+              required:
+                - segment_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  segment_id:
+                    type: string
+                    description: Assigned segment
+                  previous_segment:
+                    type: string
+                    description: Previous segment (if any)
+                    nullable: true
+                  assigned_at:
+                    type: string
+                    description: Assignment timestamp
+                    format: date-time
+                required:
+                  - customer_id
+                  - segment_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /segments/rules:
+    get:
+      operationId: listSegmentationRules
+      summary: List segmentation rules
+      description: >-
+        Returns all available segmentation rule types and operators for building segment criteria. Includes
+        field definitions, supported operators, and value types.
+      tags:
+        - Rules Engine
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_categories:
+                    type: array
+                    description: Available rule categories
+                    items:
+                      type: object
+                  supported_fields:
+                    type: array
+                    description: Customer fields available for segmentation
+                    items:
+                      type: object
+                  operators:
+                    type: array
+                    description: Supported comparison operators
+                    items:
+                      type: string
+                required:
+                  - rule_categories
+                  - supported_fields
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /segments/audience:
+    post:
+      operationId: buildAudience
+      summary: Build dynamic audience
+      description: >-
+        Creates a dynamic audience using complex filter criteria. Audiences can combine demographic,
+        behavioral, financial, and engagement attributes. Returns matching customer count for preview before
+        committing.
+      tags:
+        - Audience Builder
+      requestBody:
+        required: true
+        description: Build dynamic audience request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: Audience name
+                      example: "High-Value Mortgage Prospects"
+                    criteria:
+                      type: array
+                      description: Filter criteria (AND logic between groups)
+                      items:
+                        type: object
+                    exclusion_criteria:
+                      type: array
+                      description: Exclusion filters
+                      items:
+                        type: object
+                    preview_only:
+                      type: boolean
+                      description: Only return count, do not create
+                      default: true
+              required:
+                - name
+                - criteria
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  audience_id:
+                    type: string
+                    description: Audience ID (null if preview_only)
+                    nullable: true
+                  matched_count:
+                    type: integer
+                    description: Number of matching customers
+                    example: 8420
+                  estimated_value:
+                    type: number
+                    description: Estimated total relationship value
+                    format: double
+                    example: 1052500000.0
+                  sample_profiles:
+                    type: array
+                    description: Sample matching profiles (max 5)
+                    items:
+                      type: object
+                required:
+                  - matched_count
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /segments/{segment_id}/export:
+    post:
+      operationId: exportSegment
+      summary: Export segment members
+      description: >-
+        Exports the member list of a segment in the specified format. Used for campaign list generation,
+        data analysis, and external system integration.
+      tags:
+        - Audience Builder
+      parameters:
+        - name: segment_id
+          in: path
+          required: true
+          description: Unique segment id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Export segment members request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    format:
+                      type: string
+                      description: Export file format
+                      enum:
+                        - csv
+                        - json
+                        - parquet
+                    fields:
+                      type: array
+                      description: Customer fields to include in export
+                      items:
+                        type: string
+                    include_contact_info:
+                      type: boolean
+                      description: Include PII contact information
+                      default: false
+              required:
+                - format
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  export_id:
+                    type: string
+                    description: Export job ID
+                  status:
+                    type: string
+                    description: Export status
+                    example: "processing"
+                  estimated_records:
+                    type: integer
+                    description: Estimated record count
+                  download_url:
+                    type: string
+                    description: Download URL (available when complete)
+                    nullable: true
+                required:
+                  - export_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /segments/{segment_id}/campaign-target:
+    post:
+      operationId: targetSegmentForCampaign
+      summary: Target segment for campaign
+      description: >-
+        Associates a segment with a marketing campaign for targeted outreach. Validates opt-out compliance
+        and channel availability before confirming targeting.
+      tags:
+        - Audience Builder
+      parameters:
+        - name: segment_id
+          in: path
+          required: true
+          description: Unique segment id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Target segment for campaign request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    campaign_id:
+                      type: string
+                      description: Marketing campaign ID
+                      example: "CMP-Q2-SAVINGS"
+                    channel:
+                      type: string
+                      description: Campaign channel
+                      enum:
+                        - email
+                        - sms
+                        - push
+                        - mail
+                        - multi_channel
+                    suppress_opted_out:
+                      type: boolean
+                      description: Exclude opted-out customers
+                      default: true
+                    send_date:
+                      type: string
+                      description: Scheduled campaign send date
+                      format: date-time
+              required:
+                - campaign_id
+                - channel
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  targeting_id:
+                    type: string
+                    description: Targeting record ID
+                  eligible_recipients:
+                    type: integer
+                    description: Recipients after suppression
+                    example: 11200
+                  suppressed_count:
+                    type: integer
+                    description: Customers suppressed due to opt-out
+                    example: 1250
+                  status:
+                    type: string
+                    description: Targeting status
+                    example: "confirmed"
+                required:
+                  - targeting_id
+                  - eligible_recipients
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

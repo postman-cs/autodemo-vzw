@@ -1,0 +1,1346 @@
+openapi: 3.0.3
+info:
+  title: VZW Telemetry Ingest API
+  description: |
+    The VZW Telemetry Ingest API provides ingestion and operational visibility endpoints for responder field telemetry.
+
+    The API supports high-volume telemetry event intake, diagnostic trace ingestion, alert rule management,
+    active and historical alert retrieval, operator acknowledgements, and incident-level telemetry summaries
+    used by command and dispatch dashboards.
+  version: 1.0.0
+  contact:
+    name: Verizon Telemetry Platform API Team
+    email: apisupport@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms
+  x-catalog-id: vzw-telemetry-ingest-api
+  x-domain: telemetry
+servers:
+  - url: https://vzw-telemetry-ingest-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-telemetry-ingest-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - bearerAuth: []
+tags:
+  - name: Telemetry Events
+    description: Batch ingestion of field telemetry event samples.
+  - name: Telemetry Traces
+    description: Ingestion of distributed trace spans from responder-facing applications.
+  - name: Alert Rules
+    description: Authoring and lifecycle management of threshold and anomaly alert rules.
+  - name: Alerts
+    description: Querying and acknowledging active and resolved alerts.
+  - name: Incident Telemetry
+    description: Incident scoped telemetry rollups for command dashboards.
+paths:
+  /v1/telemetry/events:
+    post:
+      operationId: ingestTelemetryEvents
+      summary: Ingest telemetry event batch
+      description: |
+        Ingests a batch of telemetry event samples from edge devices and responder units.
+
+        Each event in the request must include device identity and key radio/network quality indicators,
+        including RSRP and packet loss, and may include optional context dimensions for downstream routing.
+      tags:
+        - Telemetry Events
+      requestBody:
+        required: true
+        description: One ingestion envelope containing one or more telemetry events.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryEventBatchRequest'
+            examples:
+              responderBatch:
+                summary: Responder radio and network health signals
+                value:
+                  batch_id: batch_01HRF9GQ2W6AK8V2X4V9R2M6V0
+                  source_system: responder-edge-gateway
+                  emitted_at: '2026-03-26T18:40:10Z'
+                  events:
+                    - event_id: evt_01HRF9Q2E7K6JQ4P9Q8T2JY7XV
+                      observed_at: '2026-03-26T18:39:55Z'
+                      stream_id: west-region-lte-stream-02
+                      device_id: unit-ca-sf-amb-014
+                      signal_rsrp: -98
+                      packet_loss_pct: 1.4
+                      attributes:
+                        district: sf-west
+                        carrier_profile: public-safety-priority
+                    - event_id: evt_01HRF9Q8QQM4Q5Q87R6DNM5M6K
+                      observed_at: '2026-03-26T18:39:57Z'
+                      stream_id: west-region-lte-stream-02
+                      device_id: unit-ca-sf-amb-015
+                      signal_rsrp: -104
+                      packet_loss_pct: 3.2
+                      attributes:
+                        district: sf-west
+                        carrier_profile: public-safety-priority
+      responses:
+        '202':
+          description: Batch accepted for asynchronous processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestAcceptedResponse'
+              examples:
+                accepted:
+                  value:
+                    request_id: req_01HRFA2V8AJ3R0H1W0P55EZBMT
+                    ingest_status: accepted
+                    accepted_count: 2
+                    rejected_count: 0
+                    received_at: '2026-03-26T18:40:11Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/telemetry/traces:
+    post:
+      operationId: ingestTelemetryTraces
+      summary: Ingest telemetry traces
+      description: |
+        Ingests trace spans produced by field applications and edge collectors for operational diagnostics.
+
+        This endpoint is optimized for append-only trace writes and can be used to reconstruct
+        request paths, dependency timing, and error localization across responder workflows.
+      tags:
+        - Telemetry Traces
+      requestBody:
+        required: true
+        description: A trace envelope containing one or more spans.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TraceIngestRequest'
+            examples:
+              diagnosticsSpans:
+                summary: Spans from mobile diagnostics request
+                value:
+                  trace_source: responder-field-app
+                  emitted_at: '2026-03-26T18:41:05Z'
+                  spans:
+                    - span_id: 6ce4a0f4f66f4aab
+                      trace_id: 47f8f5f16d5a4b8f89b3e2f67d87ab12
+                      parent_span_id: 3b2abf14b8db4d90
+                      service_name: field-app-mobile
+                      operation_name: uploadVitals
+                      start_time: '2026-03-26T18:40:58.102Z'
+                      end_time: '2026-03-26T18:40:58.776Z'
+                      status: ok
+                      attributes:
+                        incident_id: inc_20260326_0042
+                        device_id: unit-ca-sf-amb-014
+                    - span_id: 9fd7b42d65d1460a
+                      trace_id: 47f8f5f16d5a4b8f89b3e2f67d87ab12
+                      service_name: telemetry-edge-collector
+                      operation_name: fanoutToIngestQueue
+                      start_time: '2026-03-26T18:40:58.303Z'
+                      end_time: '2026-03-26T18:40:58.611Z'
+                      status: ok
+                      attributes:
+                        queue_region: us-west-2
+                        stream_id: west-region-lte-stream-02
+      responses:
+        '202':
+          description: Trace payload accepted for asynchronous processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestAcceptedResponse'
+              examples:
+                accepted:
+                  value:
+                    request_id: req_01HRFA50FQ77NW7AWVQY4P8F1K
+                    ingest_status: accepted
+                    accepted_count: 2
+                    rejected_count: 0
+                    received_at: '2026-03-26T18:41:06Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '413':
+          $ref: '#/components/responses/PayloadTooLargeError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/telemetry/streams/{streamId}:
+    get:
+      operationId: getTelemetryStream
+      summary: Get telemetry stream state
+      description: |
+        Returns metadata and lag health for a telemetry stream.
+
+        Stream lag values are intended for operational diagnostics and can be used to detect
+        ingestion bottlenecks, partition imbalances, or delayed consumer pipelines.
+      tags:
+        - Telemetry Events
+      parameters:
+        - $ref: '#/components/parameters/StreamIdPath'
+      responses:
+        '200':
+          description: Telemetry stream metadata and lag returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryStreamResponse'
+              examples:
+                streamState:
+                  value:
+                    stream_id: west-region-lte-stream-02
+                    region: us-west-2
+                    partition_count: 24
+                    retention_hours: 72
+                    current_lag_ms: 820
+                    max_lag_ms: 2105
+                    health_state: healthy
+                    last_event_at: '2026-03-26T18:41:08Z'
+                    updated_at: '2026-03-26T18:41:10Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/alerts/rules:
+    post:
+      operationId: createAlertRule
+      summary: Create alert rule
+      description: |
+        Creates an alert rule used to evaluate incoming telemetry within a time window.
+
+        Rules support threshold definitions, optional dimensions, and explicit severity mapping
+        to standard operational levels consumed by command dashboards and escalation policies.
+      tags:
+        - Alert Rules
+      requestBody:
+        required: true
+        description: Alert rule definition payload.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAlertRuleRequest'
+            examples:
+              packetLossRule:
+                summary: Elevated packet loss detection rule
+                value:
+                  name: packet-loss-elevated-west
+                  description: Trigger when average packet loss exceeds expected SLA.
+                  metric: packet_loss_pct
+                  operator: gt
+                  threshold: 2.5
+                  window:
+                    unit: minutes
+                    size: 5
+                  severity_mapping:
+                    warning:
+                      min: 2.5
+                      max: 4.9
+                    critical:
+                      min: 5.0
+                  dimensions:
+                    district: sf-west
+                    carrier_profile: public-safety-priority
+                  enabled: true
+      responses:
+        '201':
+          description: Alert rule created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRuleResponse'
+              examples:
+                created:
+                  value:
+                    rule_id: rule_01HRFA8NQY6MPEYMBCX9G4Q3V8
+                    name: packet-loss-elevated-west
+                    description: Trigger when average packet loss exceeds expected SLA.
+                    metric: packet_loss_pct
+                    operator: gt
+                    threshold: 2.5
+                    window:
+                      unit: minutes
+                      size: 5
+                    severity_mapping:
+                      warning:
+                        min: 2.5
+                        max: 4.9
+                      critical:
+                        min: 5.0
+                    dimensions:
+                      district: sf-west
+                      carrier_profile: public-safety-priority
+                    enabled: true
+                    created_at: '2026-03-26T18:42:04Z'
+                    updated_at: '2026-03-26T18:42:04Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/alerts:
+    get:
+      operationId: listAlerts
+      summary: List alerts
+      description: |
+        Returns a paginated list of alert instances filtered by lifecycle status and optional dimensions.
+
+        The response includes both active and resolved alerts, and supports stable sorting for dashboard use.
+      tags:
+        - Alerts
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/SortByQuery'
+        - $ref: '#/components/parameters/SortOrderQuery'
+        - $ref: '#/components/parameters/AlertStatusQuery'
+        - $ref: '#/components/parameters/SeverityQuery'
+        - $ref: '#/components/parameters/IncidentIdQuery'
+      responses:
+        '200':
+          description: Paginated alert list returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertListResponse'
+              examples:
+                activeAndResolved:
+                  value:
+                    page: 1
+                    per_page: 2
+                    total: 287
+                    data:
+                      - alert_id: alert_01HRFABCEQ5W4A0J0APB9QKQVA
+                        rule_id: rule_01HRFA8NQY6MPEYMBCX9G4Q3V8
+                        incident_id: inc_20260326_0042
+                        stream_id: west-region-lte-stream-02
+                        metric: packet_loss_pct
+                        observed_value: 5.6
+                        threshold: 5.0
+                        severity: critical
+                        status: active
+                        triggered_at: '2026-03-26T18:42:40Z'
+                        resolved_at: null
+                      - alert_id: alert_01HRFABPPSP5R5RWWQ1CQY2VZX
+                        rule_id: rule_01HRFA8NQY6MPEYMBCX9G4Q3V8
+                        incident_id: inc_20260326_0038
+                        stream_id: west-region-lte-stream-01
+                        metric: packet_loss_pct
+                        observed_value: 2.8
+                        threshold: 2.5
+                        severity: warning
+                        status: resolved
+                        triggered_at: '2026-03-26T17:58:10Z'
+                        resolved_at: '2026-03-26T18:01:37Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/alerts/{alertId}:ack:
+    post:
+      operationId: acknowledgeAlert
+      summary: Acknowledge alert
+      description: |
+        Acknowledges an active alert by an operator.
+
+        Acknowledgement records ownership and rationale to avoid duplicate escalations and to support
+        handoff visibility between dispatch shifts.
+      tags:
+        - Alerts
+      parameters:
+        - $ref: '#/components/parameters/AlertIdPath'
+      requestBody:
+        required: true
+        description: Operator acknowledgement details.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcknowledgeAlertRequest'
+            examples:
+              operatorAck:
+                value:
+                  operator_id: op_dispatch_west_12
+                  ack_reason: Investigating field packet loss spike near district handoff.
+      responses:
+        '200':
+          description: Alert acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcknowledgeAlertResponse'
+              examples:
+                acknowledged:
+                  value:
+                    alert_id: alert_01HRFABCEQ5W4A0J0APB9QKQVA
+                    status: acknowledged
+                    acknowledged_by: op_dispatch_west_12
+                    ack_reason: Investigating field packet loss spike near district handoff.
+                    acknowledged_at: '2026-03-26T18:43:12Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/incidents/{incidentId}/telemetry/summary:
+    get:
+      operationId: getIncidentTelemetrySummary
+      summary: Get incident telemetry summary
+      description: |
+        Returns aggregated telemetry KPIs for an incident, suitable for command dashboard rendering.
+
+        KPI calculations include signal distribution, packet loss trends, ingest rates, and alert breakdowns
+        over the requested interval.
+      tags:
+        - Incident Telemetry
+      parameters:
+        - $ref: '#/components/parameters/IncidentIdPath'
+        - $ref: '#/components/parameters/SummaryFromQuery'
+        - $ref: '#/components/parameters/SummaryToQuery'
+      responses:
+        '200':
+          description: Incident telemetry summary returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentTelemetrySummaryResponse'
+              examples:
+                summary:
+                  value:
+                    incident_id: inc_20260326_0042
+                    from: '2026-03-26T18:00:00Z'
+                    to: '2026-03-26T18:45:00Z'
+                    kpis:
+                      event_count: 12548
+                      trace_span_count: 30471
+                      avg_signal_rsrp: -96.2
+                      p95_packet_loss_pct: 4.8
+                      max_packet_loss_pct: 8.4
+                      active_alert_count: 3
+                      resolved_alert_count: 9
+                    severity_breakdown:
+                      warning: 6
+                      critical: 6
+                    stream_health:
+                      healthy_streams: 5
+                      degraded_streams: 1
+                      unhealthy_streams: 0
+                    generated_at: '2026-03-26T18:45:02Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    StreamIdPath:
+      name: streamId
+      in: path
+      required: true
+      description: Unique telemetry stream identifier.
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]+$'
+      example: west-region-lte-stream-02
+    AlertIdPath:
+      name: alertId
+      in: path
+      required: true
+      description: Unique alert identifier.
+      schema:
+        type: string
+        minLength: 10
+        maxLength: 64
+      example: alert_01HRFABCEQ5W4A0J0APB9QKQVA
+    IncidentIdPath:
+      name: incidentId
+      in: path
+      required: true
+      description: Incident identifier used by dispatch systems.
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 64
+      example: inc_20260326_0042
+    PageQuery:
+      name: page
+      in: query
+      required: false
+      description: Page number for pagination.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPageQuery:
+      name: per_page
+      in: query
+      required: false
+      description: Items per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+    SortByQuery:
+      name: sort_by
+      in: query
+      required: false
+      description: Sort field.
+      schema:
+        type: string
+        enum:
+          - triggered_at
+          - severity
+          - status
+          - stream_id
+        default: triggered_at
+    SortOrderQuery:
+      name: sort_order
+      in: query
+      required: false
+      description: Sort direction.
+      schema:
+        type: string
+        enum:
+          - asc
+          - desc
+        default: desc
+    AlertStatusQuery:
+      name: status
+      in: query
+      required: false
+      description: Filter alerts by status.
+      schema:
+        type: string
+        enum:
+          - active
+          - acknowledged
+          - resolved
+    SeverityQuery:
+      name: severity
+      in: query
+      required: false
+      description: Filter alerts by severity level.
+      schema:
+        type: string
+        enum:
+          - info
+          - warning
+          - critical
+    IncidentIdQuery:
+      name: incident_id
+      in: query
+      required: false
+      description: Filter alerts by incident identifier.
+      schema:
+        type: string
+        maxLength: 64
+    SummaryFromQuery:
+      name: from
+      in: query
+      required: false
+      description: Inclusive UTC start timestamp for summary window.
+      schema:
+        type: string
+        format: date-time
+    SummaryToQuery:
+      name: to
+      in: query
+      required: false
+      description: Exclusive UTC end timestamp for summary window.
+      schema:
+        type: string
+        format: date-time
+  responses:
+    BadRequestError:
+      description: Request cannot be processed because of malformed syntax or invalid query constraints.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: bad_request
+              message: Invalid request payload.
+              details:
+                - field: events[0].signal_rsrp
+                  issue: must be between -140 and -40
+              request_id: req_01HRFAJTGMPTH8WN1VTRTXP3T2
+    UnauthorizedError:
+      description: Authentication credentials are missing, invalid, or expired.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: unauthorized
+              message: Bearer token is missing or invalid.
+              request_id: req_01HRFAKRACNVE4TCD75JB3PXMG
+    ForbiddenError:
+      description: Caller is authenticated but does not have permission for this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: forbidden
+              message: Insufficient scope for telemetry:write.
+              request_id: req_01HRFAM87FTSTBCKWF9X3MQE9H
+    NotFoundError:
+      description: The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: not_found
+              message: Resource not found.
+              request_id: req_01HRFANZX4NFWMJ2NBX8WF2V2B
+    ConflictError:
+      description: Request conflicts with current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: conflict
+              message: Alert is already acknowledged.
+              request_id: req_01HRFAPSE4YQFVF3J9EPY7SV0R
+    PayloadTooLargeError:
+      description: Request payload exceeds the configured ingestion size limit.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: payload_too_large
+              message: Maximum payload size of 2 MB exceeded.
+              request_id: req_01HRFARH6H9C9Y1M0WKSQTB95V
+    UnsupportedMediaTypeError:
+      description: Content type is unsupported for this endpoint.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: unsupported_media_type
+              message: Content-Type must be application/json.
+              request_id: req_01HRFATMK3Y0KHCSD44XMM17ZP
+    ValidationError:
+      description: Request payload failed schema or semantic validation checks.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: validation_error
+              message: One or more fields are invalid.
+              details:
+                - field: spans[1].end_time
+                  issue: must be later than start_time
+              request_id: req_01HRFAVQJT9EATXY7VT8P7TNHR
+    RateLimitError:
+      description: Request rate limit exceeded.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: rate_limited
+              message: Too many requests. Retry later.
+              request_id: req_01HRFAXN6MEBCMBSB3YQ4QXHKW
+    InternalServerError:
+      description: Unexpected server-side error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: internal_error
+              message: An internal error occurred.
+              request_id: req_01HRFAZ1P2HGH6VC6D7C2FDWKK
+  schemas:
+    TelemetryEventBatchRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - batch_id
+        - source_system
+        - emitted_at
+        - events
+      properties:
+        batch_id:
+          type: string
+          description: Client-generated idempotency key for the batch.
+          minLength: 8
+          maxLength: 80
+        source_system:
+          type: string
+          description: Originating system or collector identifier.
+          minLength: 3
+          maxLength: 80
+        emitted_at:
+          type: string
+          format: date-time
+          description: Time when the batch left the source system.
+        events:
+          type: array
+          description: One or more telemetry events.
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/TelemetryEvent'
+    TelemetryEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - observed_at
+        - stream_id
+        - device_id
+        - signal_rsrp
+        - packet_loss_pct
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier.
+          minLength: 8
+          maxLength: 80
+        observed_at:
+          type: string
+          format: date-time
+          description: Timestamp when the measurement was observed.
+        stream_id:
+          type: string
+          description: Logical stream identifier.
+          minLength: 3
+          maxLength: 128
+        device_id:
+          type: string
+          description: Edge or responder device identifier.
+          minLength: 3
+          maxLength: 128
+        signal_rsrp:
+          type: integer
+          format: int32
+          description: Signal power in dBm.
+          minimum: -140
+          maximum: -40
+        packet_loss_pct:
+          type: number
+          format: float
+          description: Packet loss percentage observed by the sender.
+          minimum: 0
+          maximum: 100
+        attributes:
+          type: object
+          description: Additional dimensions used for filtering and routing.
+          additionalProperties:
+            type: string
+    TraceIngestRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - trace_source
+        - emitted_at
+        - spans
+      properties:
+        trace_source:
+          type: string
+          description: Source of the trace payload.
+          minLength: 3
+          maxLength: 80
+        emitted_at:
+          type: string
+          format: date-time
+          description: Timestamp when trace payload was emitted.
+        spans:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            $ref: '#/components/schemas/TraceSpan'
+    TraceSpan:
+      type: object
+      additionalProperties: false
+      required:
+        - span_id
+        - trace_id
+        - service_name
+        - operation_name
+        - start_time
+        - end_time
+        - status
+      properties:
+        span_id:
+          type: string
+          description: Span identifier.
+          minLength: 8
+          maxLength: 32
+        trace_id:
+          type: string
+          description: Trace identifier.
+          minLength: 16
+          maxLength: 64
+        parent_span_id:
+          type: string
+          description: Parent span identifier, if available.
+          minLength: 8
+          maxLength: 32
+          nullable: true
+        service_name:
+          type: string
+          description: Service name that produced the span.
+          minLength: 1
+          maxLength: 120
+        operation_name:
+          type: string
+          description: Operation represented by the span.
+          minLength: 1
+          maxLength: 160
+        start_time:
+          type: string
+          format: date-time
+          description: Start timestamp for span.
+        end_time:
+          type: string
+          format: date-time
+          description: End timestamp for span.
+        status:
+          type: string
+          description: Span completion status.
+          enum:
+            - ok
+            - error
+            - timeout
+        attributes:
+          type: object
+          description: Additional metadata for diagnostics.
+          additionalProperties:
+            type: string
+    IngestAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - ingest_status
+        - accepted_count
+        - rejected_count
+        - received_at
+      properties:
+        request_id:
+          type: string
+          description: Unique server request identifier.
+          minLength: 10
+          maxLength: 64
+        ingest_status:
+          type: string
+          enum:
+            - accepted
+            - partially_accepted
+        accepted_count:
+          type: integer
+          minimum: 0
+        rejected_count:
+          type: integer
+          minimum: 0
+        received_at:
+          type: string
+          format: date-time
+    TelemetryStreamResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - stream_id
+        - region
+        - partition_count
+        - retention_hours
+        - current_lag_ms
+        - max_lag_ms
+        - health_state
+        - updated_at
+      properties:
+        stream_id:
+          type: string
+        region:
+          type: string
+        partition_count:
+          type: integer
+          minimum: 1
+        retention_hours:
+          type: integer
+          minimum: 1
+        current_lag_ms:
+          type: integer
+          minimum: 0
+        max_lag_ms:
+          type: integer
+          minimum: 0
+        health_state:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - unhealthy
+        last_event_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+    CreateAlertRuleRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - metric
+        - operator
+        - threshold
+        - window
+        - severity_mapping
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        metric:
+          type: string
+          enum:
+            - signal_rsrp
+            - packet_loss_pct
+            - ingest_lag_ms
+            - trace_error_rate
+        operator:
+          type: string
+          enum:
+            - gt
+            - gte
+            - lt
+            - lte
+        threshold:
+          type: number
+          format: float
+        window:
+          $ref: '#/components/schemas/MetricWindow'
+        severity_mapping:
+          $ref: '#/components/schemas/SeverityMapping'
+        dimensions:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional dimension constraints for evaluation scope.
+        enabled:
+          type: boolean
+          default: true
+    AlertRuleResponse:
+      allOf:
+        - $ref: '#/components/schemas/CreateAlertRuleRequest'
+        - type: object
+          additionalProperties: false
+          required:
+            - rule_id
+            - created_at
+            - updated_at
+            - enabled
+          properties:
+            rule_id:
+              type: string
+              minLength: 10
+              maxLength: 64
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+    MetricWindow:
+      type: object
+      additionalProperties: false
+      required:
+        - unit
+        - size
+      properties:
+        unit:
+          type: string
+          enum:
+            - minutes
+            - hours
+        size:
+          type: integer
+          minimum: 1
+          maximum: 1440
+    SeverityMapping:
+      type: object
+      additionalProperties: false
+      required:
+        - warning
+        - critical
+      properties:
+        info:
+          $ref: '#/components/schemas/SeverityThresholdRange'
+        warning:
+          $ref: '#/components/schemas/SeverityThresholdRange'
+        critical:
+          $ref: '#/components/schemas/SeverityThresholdRange'
+    SeverityThresholdRange:
+      type: object
+      additionalProperties: false
+      required:
+        - min
+      properties:
+        min:
+          type: number
+          format: float
+        max:
+          type: number
+          format: float
+          nullable: true
+    AlertListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - per_page
+        - total
+        - data
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        per_page:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+    Alert:
+      type: object
+      additionalProperties: false
+      required:
+        - alert_id
+        - rule_id
+        - metric
+        - observed_value
+        - threshold
+        - severity
+        - status
+        - triggered_at
+      properties:
+        alert_id:
+          type: string
+          minLength: 10
+          maxLength: 64
+        rule_id:
+          type: string
+          minLength: 10
+          maxLength: 64
+        incident_id:
+          type: string
+          maxLength: 64
+          nullable: true
+        stream_id:
+          type: string
+          maxLength: 128
+          nullable: true
+        metric:
+          type: string
+          enum:
+            - signal_rsrp
+            - packet_loss_pct
+            - ingest_lag_ms
+            - trace_error_rate
+        observed_value:
+          type: number
+          format: float
+        threshold:
+          type: number
+          format: float
+        severity:
+          type: string
+          enum:
+            - info
+            - warning
+            - critical
+        status:
+          type: string
+          enum:
+            - active
+            - acknowledged
+            - resolved
+        triggered_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+    AcknowledgeAlertRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - operator_id
+        - ack_reason
+      properties:
+        operator_id:
+          type: string
+          minLength: 3
+          maxLength: 64
+        ack_reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+    AcknowledgeAlertResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - alert_id
+        - status
+        - acknowledged_by
+        - ack_reason
+        - acknowledged_at
+      properties:
+        alert_id:
+          type: string
+          minLength: 10
+          maxLength: 64
+        status:
+          type: string
+          enum:
+            - acknowledged
+        acknowledged_by:
+          type: string
+          minLength: 3
+          maxLength: 64
+        ack_reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+        acknowledged_at:
+          type: string
+          format: date-time
+    IncidentTelemetrySummaryResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - incident_id
+        - from
+        - to
+        - kpis
+        - severity_breakdown
+        - stream_health
+        - generated_at
+      properties:
+        incident_id:
+          type: string
+          maxLength: 64
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        kpis:
+          $ref: '#/components/schemas/IncidentKpis'
+        severity_breakdown:
+          $ref: '#/components/schemas/SeverityBreakdown'
+        stream_health:
+          $ref: '#/components/schemas/StreamHealthBreakdown'
+        generated_at:
+          type: string
+          format: date-time
+    IncidentKpis:
+      type: object
+      additionalProperties: false
+      required:
+        - event_count
+        - trace_span_count
+        - avg_signal_rsrp
+        - p95_packet_loss_pct
+        - max_packet_loss_pct
+        - active_alert_count
+        - resolved_alert_count
+      properties:
+        event_count:
+          type: integer
+          minimum: 0
+        trace_span_count:
+          type: integer
+          minimum: 0
+        avg_signal_rsrp:
+          type: number
+          format: float
+        p95_packet_loss_pct:
+          type: number
+          format: float
+        max_packet_loss_pct:
+          type: number
+          format: float
+        active_alert_count:
+          type: integer
+          minimum: 0
+        resolved_alert_count:
+          type: integer
+          minimum: 0
+    SeverityBreakdown:
+      type: object
+      additionalProperties: false
+      required:
+        - warning
+        - critical
+      properties:
+        info:
+          type: integer
+          minimum: 0
+        warning:
+          type: integer
+          minimum: 0
+        critical:
+          type: integer
+          minimum: 0
+    StreamHealthBreakdown:
+      type: object
+      additionalProperties: false
+      required:
+        - healthy_streams
+        - degraded_streams
+        - unhealthy_streams
+      properties:
+        healthy_streams:
+          type: integer
+          minimum: 0
+        degraded_streams:
+          type: integer
+          minimum: 0
+        unhealthy_streams:
+          type: integer
+          minimum: 0
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - request_id
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+            request_id:
+              type: string
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - issue
+      properties:
+        field:
+          type: string
+        issue:
+          type: string

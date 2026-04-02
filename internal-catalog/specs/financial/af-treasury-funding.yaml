@@ -1,0 +1,2059 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Funding & Liquidity Management API
+  description: >-
+    Comprehensive funding lifecycle management covering funding request workflows with multi-level approval,
+    funding source inventory and availability tracking, cost-of-funds calculation with transfer pricing, maturity
+    ladder analysis for funding gap identification, contingency funding plan maintenance, allocation optimization,
+    and regulatory compliance reporting for NSFR and funding concentration limits.
+  version: 2.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-treasury-funding
+  x-acme-domain: treasury
+servers:
+  - url: https://af-treasury-funding.api.acmefin.com/v1
+    description: Production
+  - url: https://af-treasury-funding.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Funding Requests
+    description: Submit, approve, and track funding requests across the organization
+  - name: Funding Sources
+    description: Manage funding sources, cost of funds, and source availability
+  - name: Liquidity Planning
+    description: Maturity ladder analysis, contingency planning, and funding compliance
+paths:
+  /funding-requests:
+    get:
+      operationId: listFundingRequests
+      summary: List funding requests
+      description: >-
+        List all funding requests across business units with approval status and funding source allocation.
+      tags:
+        - Funding Requests
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: "Filter by status"
+          schema:
+            type: "string"
+        - name: urgency
+          in: query
+          required: false
+          description: "Filter by urgency"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        request_id:
+                          type: string
+                          description: "Request ID"
+                          format: uuid
+                          example: "fr-4a5b6c7d-8e9f"
+                        requestor:
+                          type: string
+                          description: "Requesting business unit"
+                          example: "Commercial Banking"
+                        amount:
+                          type: number
+                          description: "Requested amount"
+                          format: double
+                          example: 25000000.0
+                        currency:
+                          type: string
+                          description: "Currency"
+                          example: "USD"
+                        purpose:
+                          type: string
+                          description: "Funding purpose"
+                          example: "working_capital"
+                          enum:
+                            - working_capital
+                            - asset_purchase
+                            - debt_refinancing
+                            - project_finance
+                            - regulatory_buffer
+                        urgency:
+                          type: string
+                          description: "Request urgency"
+                          example: "routine"
+                          enum:
+                            - routine
+                            - urgent
+                            - emergency
+                        status:
+                          type: string
+                          description: "Request status"
+                          example: "pending"
+                          enum:
+                            - pending
+                            - under_review
+                            - approved
+                            - rejected
+                            - funded
+                            - closed
+                        requested_date:
+                          type: string
+                          description: "Required funding date"
+                          example: "2025-07-01"
+                        created_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - request_id
+                        - requestor
+                        - amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createFundingRequest
+      summary: Submit funding request
+      description: >-
+        Submit a new funding request for treasury review and approval. Requests above $10M require
+        additional credit committee sign-off.
+      tags:
+        - Funding Requests
+      requestBody:
+        required: true
+        description: Submit funding request request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    requestor:
+                      type: string
+                      description: "Business unit"
+                      example: "Commercial Banking"
+                    amount:
+                      type: number
+                      description: "Amount"
+                      format: double
+                      example: 25000000.0
+                    currency:
+                      type: string
+                      description: "Currency"
+                      example: "USD"
+                    purpose:
+                      type: string
+                      description: "Purpose"
+                      example: "working_capital"
+                      enum:
+                        - working_capital
+                        - asset_purchase
+                        - debt_refinancing
+                        - project_finance
+                    urgency:
+                      type: string
+                      description: "Urgency"
+                      example: "routine"
+                      enum:
+                        - routine
+                        - urgent
+                        - emergency
+                    requested_date:
+                      type: string
+                      description: "Needed by"
+                      example: "2025-07-01"
+                    tenor_months:
+                      type: integer
+                      description: "Funding tenor in months"
+                      example: 12
+                    justification:
+                      type: string
+                      description: "Business justification"
+                      example: "Working capital for Q3 expansion"
+              required:
+                - requestor
+                - amount
+                - currency
+                - purpose
+                - requested_date
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fr-4a5b6c7d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "pending"
+                required:
+                  - request_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /funding-requests/{request_id}:
+    get:
+      operationId: getFundingRequest
+      summary: Get funding request
+      description: Retrieve full funding request details with approval chain and allocation.
+      tags:
+        - Funding Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: "Unique request id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fr-4a5b6c7d"
+                  requestor:
+                    type: string
+                    description: "Unit"
+                    example: "Commercial Banking"
+                  amount:
+                    type: number
+                    description: "Amount"
+                    format: double
+                    example: 25000000.0
+                  currency:
+                    type: string
+                    description: "Currency"
+                    example: "USD"
+                  purpose:
+                    type: string
+                    description: "Purpose"
+                    example: "working_capital"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "approved"
+                required:
+                  - request_id
+                  - amount
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateFundingRequest
+      summary: Update funding request
+      description: Update a pending funding request.
+      tags:
+        - Funding Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: "Unique request id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update funding request request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    amount:
+                      type: number
+                      description: "Updated amount"
+                      format: double
+                      example: 30000000.0
+                    tenor_months:
+                      type: integer
+                      description: "Updated tenor"
+                      example: 18
+                    justification:
+                      type: string
+                      description: "Updated justification"
+                      example: "Increased scope"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fr-4a5b6c7d"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - request_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /funding-requests/{request_id}/approve:
+    post:
+      operationId: approveFundingRequest
+      summary: Approve funding request
+      description: >-
+        Approve a funding request. Approved requests move to the funding allocation pipeline.
+      tags:
+        - Funding Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: "Unique request id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Approve funding request request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    comment:
+                      type: string
+                      description: "Approval comment"
+                      example: "Approved — allocating from commercial paper program"
+                    funding_source_id:
+                      type: string
+                      description: "Preferred source"
+                      format: uuid
+                      example: "fs-5a6b7c8d"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fr-4a5b6c7d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "approved"
+                  approved_by:
+                    type: string
+                    description: "Approver"
+                    example: "treasury-head"
+                  approved_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - request_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /funding-requests/{request_id}/reject:
+    post:
+      operationId: rejectFundingRequest
+      summary: Reject funding request
+      description: Reject a funding request with a reason.
+      tags:
+        - Funding Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: "Unique request id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Reject funding request request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: "Rejection reason"
+                      example: "Insufficient justification — resubmit with updated business case"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fr-4a5b6c7d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "rejected"
+                  rejected_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - request_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /funding-sources:
+    get:
+      operationId: listFundingSources
+      summary: List funding sources
+      description: >-
+        List all available funding sources including credit facilities, commercial paper programs, bond
+        issuances, and intercompany loans.
+      tags:
+        - Funding Sources
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source_id:
+                          type: string
+                          description: "Source ID"
+                          format: uuid
+                          example: "fs-5a6b7c8d-9e0f"
+                        name:
+                          type: string
+                          description: "Source name"
+                          example: "Revolving Credit Facility - Citi"
+                        type:
+                          type: string
+                          description: "Source type"
+                          example: "revolving_credit"
+                          enum:
+                            - revolving_credit
+                            - term_loan
+                            - commercial_paper
+                            - bond
+                            - intercompany
+                            - repo
+                            - deposit
+                        total_capacity:
+                          type: number
+                          description: "Total facility size"
+                          format: double
+                          example: 500000000.0
+                        drawn_amount:
+                          type: number
+                          description: "Currently drawn"
+                          format: double
+                          example: 125000000.0
+                        available:
+                          type: number
+                          description: "Available capacity"
+                          format: double
+                          example: 375000000.0
+                        currency:
+                          type: string
+                          description: "Currency"
+                          example: "USD"
+                        cost_bps:
+                          type: integer
+                          description: "Current cost in basis points"
+                          example: 85
+                        maturity_date:
+                          type: string
+                          description: "Facility maturity"
+                          example: "2027-06-15"
+                        status:
+                          type: string
+                          description: "Status"
+                          example: "active"
+                          enum:
+                            - active
+                            - fully_drawn
+                            - expired
+                            - cancelled
+                      required:
+                        - source_id
+                        - name
+                        - type
+                        - available
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createFundingSource
+      summary: Add funding source
+      description: Register a new funding source in the treasury system.
+      tags:
+        - Funding Sources
+      requestBody:
+        required: true
+        description: Add funding source request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Source name"
+                      example: "Term Loan - JPM"
+                    type:
+                      type: string
+                      description: "Type"
+                      example: "revolving_credit"
+                      enum:
+                        - revolving_credit
+                        - term_loan
+                        - commercial_paper
+                        - bond
+                        - intercompany
+                        - repo
+                    total_capacity:
+                      type: number
+                      description: "Capacity"
+                      format: double
+                      example: 200000000.0
+                    currency:
+                      type: string
+                      description: "Currency"
+                      example: "USD"
+                    cost_bps:
+                      type: integer
+                      description: "Cost (bps)"
+                      example: 120
+                    maturity_date:
+                      type: string
+                      description: "Maturity"
+                      example: "2028-12-31"
+                    covenants:
+                      type: object
+                      description: "Financial covenant thresholds"
+              required:
+                - name
+                - type
+                - total_capacity
+                - currency
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fs-5a6b7c8d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "Term Loan - JPM"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - source_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /funding-sources/{source_id}:
+    get:
+      operationId: getFundingSource
+      summary: Get funding source
+      description: Retrieve funding source details with draw history and covenant compliance.
+      tags:
+        - Funding Sources
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          description: "Unique source id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fs-5a6b7c8d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "Revolving Credit Facility"
+                  type:
+                    type: string
+                    description: "Type"
+                    example: "revolving_credit"
+                  total_capacity:
+                    type: number
+                    description: "Capacity"
+                    format: double
+                    example: 500000000.0
+                  available:
+                    type: number
+                    description: "Available"
+                    format: double
+                    example: 375000000.0
+                  cost_bps:
+                    type: integer
+                    description: "Cost"
+                    example: 85
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - source_id
+                  - name
+                  - type
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateFundingSource
+      summary: Update funding source
+      description: Update funding source details.
+      tags:
+        - Funding Sources
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          description: "Unique source id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update funding source request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    cost_bps:
+                      type: integer
+                      description: "Updated cost"
+                      example: 90
+                    total_capacity:
+                      type: number
+                      description: "Updated capacity"
+                      format: double
+                      example: 600000000.0
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fs-5a6b7c8d"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - source_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: removeFundingSource
+      summary: Remove funding source
+      description: Remove an expired or cancelled funding source.
+      tags:
+        - Funding Sources
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          description: "Unique source id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /funding-sources/{source_id}/availability:
+    get:
+      operationId: getSourceAvailability
+      summary: Get source availability
+      description: >-
+        Check real-time availability of a funding source including drawn amount, pending draws, and covenant
+        headroom.
+      tags:
+        - Funding Sources
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          description: "Unique source id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "fs-5a6b7c8d"
+                  total_capacity:
+                    type: number
+                    description: "Total"
+                    format: double
+                    example: 500000000.0
+                  drawn:
+                    type: number
+                    description: "Drawn"
+                    format: double
+                    example: 125000000.0
+                  pending_draws:
+                    type: number
+                    description: "Pending"
+                    format: double
+                    example: 10000000.0
+                  available:
+                    type: number
+                    description: "Available"
+                    format: double
+                    example: 365000000.0
+                  covenant_headroom:
+                    type: object
+                    description: "Distance to covenant breach"
+                  next_maturity:
+                    type: string
+                    description: "Next repayment date"
+                    example: "2025-12-15"
+                required:
+                  - source_id
+                  - available
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /cost-of-funds:
+    get:
+      operationId: getCostOfFunds
+      summary: Get cost of funds
+      description: >-
+        Retrieve the blended cost of funds across all funding sources with breakdown by source type,
+        currency, and tenor.
+      tags:
+        - Funding Sources
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blended_cost_bps:
+                    type: integer
+                    description: "Blended cost in basis points"
+                    example: 95
+                  by_source_type:
+                    type: object
+                    description: "Cost by funding source type"
+                  by_currency:
+                    type: object
+                    description: "Cost by currency"
+                  by_tenor:
+                    type: object
+                    description: "Cost by maturity tenor"
+                  total_outstanding:
+                    type: number
+                    description: "Total outstanding funding"
+                    format: double
+                    example: 850000000.0
+                  as_of:
+                    type: string
+                    description: "Calculation timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - blended_cost_bps
+                  - total_outstanding
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /cost-of-funds/calculate:
+    post:
+      operationId: calculateCostOfFunds
+      summary: Calculate cost of funds
+      description: >-
+        Calculate the marginal cost of a new funding draw given current portfolio composition and market
+        rates.
+      tags:
+        - Funding Sources
+      requestBody:
+        required: true
+        description: Calculate cost of funds request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    amount:
+                      type: number
+                      description: "Draw amount"
+                      format: double
+                      example: 50000000.0
+                    currency:
+                      type: string
+                      description: "Currency"
+                      example: "USD"
+                    tenor_months:
+                      type: integer
+                      description: "Tenor"
+                      example: 12
+                    source_id:
+                      type: string
+                      description: "Preferred source (optional)"
+                      format: uuid
+                      example: "fs-5a6b7c8d"
+              required:
+                - amount
+                - currency
+                - tenor_months
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estimated_cost_bps:
+                    type: integer
+                    description: "Estimated cost"
+                    example: 92
+                  source_id:
+                    type: string
+                    description: "Recommended source"
+                    format: uuid
+                    example: "fs-5a6b7c8d"
+                  source_name:
+                    type: string
+                    description: "Source"
+                    example: "Revolving Credit"
+                  annual_cost:
+                    type: number
+                    description: "Annual interest cost"
+                    format: double
+                    example: 460000.0
+                  impact_on_blended:
+                    type: integer
+                    description: "Impact on blended cost (bps)"
+                    example: 1
+                required:
+                  - estimated_cost_bps
+                  - source_name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /maturity-ladder:
+    get:
+      operationId: getMaturityLadder
+      summary: Get maturity ladder
+      description: >-
+        Generate a maturity ladder showing funding maturities and gaps across time buckets (overnight, 1W,
+        1M, 3M, 6M, 1Y, 2Y, 5Y+). Identifies potential funding gaps requiring action.
+      tags:
+        - Liquidity Planning
+      parameters:
+        - name: currency
+          in: query
+          required: false
+          description: "Filter by currency"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buckets:
+                    type: array
+                    description: "Maturity buckets with maturing amounts and available refinancing"
+                    items:
+                      type: object
+                  total_maturing_12m:
+                    type: number
+                    description: "Total maturing in next 12 months"
+                    format: double
+                    example: 250000000.0
+                  identified_gaps:
+                    type: array
+                    description: "Time periods with funding gaps"
+                    items:
+                      type: object
+                  as_of:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - buckets
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /maturity-ladder/{bucket_id}:
+    get:
+      operationId: getMaturityBucket
+      summary: Get maturity bucket
+      description: >-
+        Retrieve detailed breakdown of a specific maturity bucket showing individual instruments maturing.
+      tags:
+        - Liquidity Planning
+      parameters:
+        - name: bucket_id
+          in: path
+          required: true
+          description: "Unique bucket id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bucket_id:
+                    type: string
+                    description: "Bucket identifier"
+                    example: "3M"
+                  bucket_label:
+                    type: string
+                    description: "Bucket label"
+                    example: "3 Months"
+                  total_maturing:
+                    type: number
+                    description: "Total amount maturing"
+                    format: double
+                    example: 75000000.0
+                  instruments:
+                    type: array
+                    description: "Individual maturing instruments"
+                    items:
+                      type: object
+                  refinancing_available:
+                    type: number
+                    description: "Available refinancing capacity"
+                    format: double
+                    example: 100000000.0
+                  net_position:
+                    type: number
+                    description: "Net position (available - maturing)"
+                    format: double
+                    example: 25000000.0
+                required:
+                  - bucket_id
+                  - total_maturing
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /contingency-plans:
+    get:
+      operationId: listContingencyPlans
+      summary: List contingency plans
+      description: List contingency funding plans (CFPs) for stress scenarios.
+      tags:
+        - Liquidity Planning
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        plan_id:
+                          type: string
+                          description: "Plan ID"
+                          format: uuid
+                          example: "cfp-9a0b1c2d"
+                        name:
+                          type: string
+                          description: "Plan name"
+                          example: "Liquidity Crisis Response Plan"
+                        scenario:
+                          type: string
+                          description: "Stress scenario type"
+                          example: "idiosyncratic"
+                          enum:
+                            - idiosyncratic
+                            - market_wide
+                            - combined
+                        status:
+                          type: string
+                          description: "Plan status"
+                          example: "draft"
+                          enum:
+                            - draft
+                            - approved
+                            - active
+                            - archived
+                        last_tested:
+                          type: string
+                          description: "Last test date"
+                          example: "2025-03-15"
+                        total_contingent_funding:
+                          type: number
+                          description: "Total contingent funding available"
+                          format: double
+                          example: 1500000000.0
+                      required:
+                        - plan_id
+                        - name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createContingencyPlan
+      summary: Create contingency plan
+      description: Create a new contingency funding plan.
+      tags:
+        - Liquidity Planning
+      requestBody:
+        required: true
+        description: Create contingency plan request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Plan name"
+                      example: "Market Stress CFP"
+                    scenario:
+                      type: string
+                      description: "Scenario"
+                      example: "idiosyncratic"
+                      enum:
+                        - idiosyncratic
+                        - market_wide
+                        - combined
+                    description:
+                      type: string
+                      description: "Description"
+                      example: "Response plan for market-wide liquidity stress"
+                    actions:
+                      type: array
+                      description: "Ordered response actions"
+                      items:
+                        type: object
+                    triggers:
+                      type: array
+                      description: "Activation triggers"
+                      items:
+                        type: object
+              required:
+                - name
+                - scenario
+                - actions
+                - triggers
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "cfp-9a0b1c2d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "draft"
+                required:
+                  - plan_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /contingency-plans/{plan_id}:
+    get:
+      operationId: getContingencyPlan
+      summary: Get contingency plan
+      description: Retrieve plan details with actions and triggers.
+      tags:
+        - Liquidity Planning
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          description: "Unique plan id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "cfp-9a0b1c2d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "Liquidity Crisis Response"
+                  scenario:
+                    type: string
+                    description: "Scenario"
+                    example: "combined"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "approved"
+                  actions:
+                    type: array
+                    description: "Response actions"
+                    items:
+                      type: object
+                required:
+                  - plan_id
+                  - name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateContingencyPlan
+      summary: Update contingency plan
+      description: Update plan actions and triggers.
+      tags:
+        - Liquidity Planning
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          description: "Unique plan id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update contingency plan request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    actions:
+                      type: array
+                      description: "Updated actions"
+                      items:
+                        type: object
+                    triggers:
+                      type: array
+                      description: "Updated triggers"
+                      items:
+                        type: object
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "cfp-9a0b1c2d"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - plan_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /contingency-plans/{plan_id}/activate:
+    post:
+      operationId: activateContingencyPlan
+      summary: Activate contingency plan
+      description: >-
+        Activate a contingency funding plan in response to a stress event. Triggers the execution of
+        predefined response actions.
+      tags:
+        - Liquidity Planning
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          description: "Unique plan id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Activate contingency plan request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: "Activation reason"
+                      example: "Market-wide credit spread widening exceeding 200bps trigger"
+                    severity:
+                      type: string
+                      description: "Severity level"
+                      example: "level_1"
+                      enum:
+                        - level_1
+                        - level_2
+                        - level_3
+              required:
+                - reason
+                - severity
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "cfp-9a0b1c2d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                  activated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  actions_initiated:
+                    type: integer
+                    description: "Actions started"
+                    example: 5
+                required:
+                  - plan_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /funding-allocation:
+    get:
+      operationId: getFundingAllocation
+      summary: Get funding allocation
+      description: View current funding allocation across business units and products.
+      tags:
+        - Funding Requests
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_funded:
+                    type: number
+                    description: "Total outstanding funding"
+                    format: double
+                    example: 850000000.0
+                  by_business_unit:
+                    type: object
+                    description: "Allocation by business unit"
+                  by_product:
+                    type: object
+                    description: "Allocation by product"
+                  by_currency:
+                    type: object
+                    description: "Allocation by currency"
+                  as_of:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - total_funded
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: optimizeFundingAllocation
+      summary: Optimize allocation
+      description: >-
+        Run the funding allocation optimizer to recommend the lowest-cost funding mix for pending requests
+        while respecting source limits and diversification constraints.
+      tags:
+        - Funding Requests
+      requestBody:
+        required: true
+        description: Optimize allocation request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    pending_request_ids:
+                      type: array
+                      description: "Funding request IDs to allocate"
+                      items:
+                        type: string
+                    constraints:
+                      type: object
+                      description: "Optimization constraints (max concentration, min diversification)"
+              required:
+                - pending_request_ids
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendations:
+                    type: array
+                    description: "Recommended source allocations"
+                    items:
+                      type: object
+                  total_cost_bps:
+                    type: integer
+                    description: "Blended cost of recommendation"
+                    example: 88
+                  diversification_score:
+                    type: number
+                    description: "Source diversification score (0-1)"
+                    format: double
+                    example: 0.85
+                required:
+                  - recommendations
+                  - total_cost_bps
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /funding-compliance:
+    get:
+      operationId: getFundingCompliance
+      summary: Get funding compliance
+      description: >-
+        Retrieve funding compliance metrics including NSFR ratio, funding concentration limits, and
+        regulatory reporting status.
+      tags:
+        - Liquidity Planning
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nsfr_ratio:
+                    type: number
+                    description: "Net Stable Funding Ratio"
+                    format: double
+                    example: 1.12
+                  nsfr_required:
+                    type: number
+                    description: "Regulatory minimum"
+                    format: double
+                    example: 1.0
+                  funding_concentration:
+                    type: object
+                    description: "Concentration by source type and counterparty"
+                  concentration_breaches:
+                    type: array
+                    description: "Active concentration limit breaches"
+                    items:
+                      type: object
+                  last_regulatory_report:
+                    type: string
+                    description: "Last regulatory submission"
+                    example: "2025-06-01"
+                  as_of:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - nsfr_ratio
+                  - nsfr_required
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

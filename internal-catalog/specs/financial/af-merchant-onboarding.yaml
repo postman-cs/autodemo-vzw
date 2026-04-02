@@ -1,0 +1,1095 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Merchant Onboarding API
+  description: >-
+    End-to-end merchant onboarding from application through go-live. Includes Know Your Business (KYB)
+    verification, risk assessment, underwriting, terminal provisioning, and activation. Supports sub-merchant
+    onboarding for payment facilitator (PayFac) models. Compliant with card brand registration requirements and
+    BSA/AML merchant due diligence.
+  version: 3.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-merchant-onboarding
+  x-acme-domain: merchant
+servers:
+  - url: https://af-merchant-onboarding.api.acmefin.com/v1
+    description: Production
+  - url: https://af-merchant-onboarding.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Applications
+    description: Merchant application processing
+  - name: Verification
+    description: KYB and compliance verification
+  - name: Provisioning
+    description: Terminal and gateway provisioning
+paths:
+  /applications:
+    get:
+      operationId: listMerchantApps
+      summary: List merchant applications
+      description: >-
+        Retrieve merchant onboarding applications with filtering by status, risk tier, or business type.
+        Returns application summaries with current pipeline stage.
+      tags:
+        - Applications
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: "Filter by status"
+          schema:
+            type: "string"
+        - name: risk_tier
+          in: query
+          required: false
+          description: "Filter by risk tier"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        application_id:
+                          type: string
+                          description: "Application identifier"
+                          example: "mapp-550034"
+                        business_name:
+                          type: string
+                          description: "Legal business name"
+                          example: "Sunset Coffee LLC"
+                        dba_name:
+                          type: string
+                          description: "Doing business as"
+                          example: "Sunset Coffee"
+                        mcc:
+                          type: string
+                          description: "Merchant category code"
+                          example: "5812"
+                        business_type:
+                          type: string
+                          description: "Business entity type"
+                          example: "LLC"
+                          enum:
+                            - SOLE_PROP
+                            - LLC
+                            - CORPORATION
+                            - PARTNERSHIP
+                            - NON_PROFIT
+                        estimated_monthly_volume:
+                          type: number
+                          description: "Estimated monthly card volume"
+                          format: double
+                          example: 75000.0
+                        risk_tier:
+                          type: string
+                          description: "Assigned risk tier"
+                          example: "STANDARD"
+                          enum:
+                            - LOW
+                            - STANDARD
+                            - ELEVATED
+                            - HIGH
+                        status:
+                          type: string
+                          description: "Application status"
+                          example: "APPROVED"
+                          enum:
+                            - SUBMITTED
+                            - KYB_REVIEW
+                            - RISK_ASSESSMENT
+                            - APPROVED
+                            - DECLINED
+                            - PROVISIONING
+                            - LIVE
+                            - SUSPENDED
+                        merchant_id:
+                          type: string
+                          description: "Assigned MID (after approval)"
+                          example: "mid-880012"
+                        created_at:
+                          type: string
+                          description: "Application timestamp"
+                          format: date-time
+                          example: "2026-02-01T10:00:00Z"
+                      required:
+                        - application_id
+                        - business_name
+                        - mcc
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: submitMerchantApp
+      summary: Submit merchant application
+      description: >-
+        Submit a new merchant onboarding application with business information, ownership details, and
+        processing estimates. Triggers automated KYB verification and preliminary risk scoring.
+      tags:
+        - Applications
+      requestBody:
+        required: true
+        description: Submit merchant application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                business_name:
+                  type: string
+                  description: "Legal business name"
+                  example: "Sunset Coffee LLC"
+                dba_name:
+                  type: string
+                  description: "DBA name"
+                  example: "Sunset Coffee"
+                tax_id:
+                  type: string
+                  description: "EIN or SSN"
+                  example: "12-3456789"
+                mcc:
+                  type: string
+                  description: "Merchant category code"
+                  example: "5812"
+                business_type:
+                  type: string
+                  description: "Entity type"
+                  example: "LLC"
+                estimated_monthly_volume:
+                  type: number
+                  description: "Estimated monthly volume"
+                  format: double
+                  example: 75000.0
+                website_url:
+                  type: string
+                  description: "Business website"
+                  example: "https://sunsetcoffee.com"
+                owner_name:
+                  type: string
+                  description: "Principal owner name"
+                  example: "Maria Santos"
+                owner_ssn_last4:
+                  type: string
+                  description: "Owner SSN last 4 digits"
+                  example: "5678"
+              required:
+                - business_name
+                - tax_id
+                - mcc
+                - business_type
+                - owner_name
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Application identifier"
+                    example: "mapp-550034"
+                  business_name:
+                    type: string
+                    description: "Legal business name"
+                    example: "Sunset Coffee LLC"
+                  dba_name:
+                    type: string
+                    description: "Doing business as"
+                    example: "Sunset Coffee"
+                  mcc:
+                    type: string
+                    description: "Merchant category code"
+                    example: "5812"
+                  business_type:
+                    type: string
+                    description: "Business entity type"
+                    example: "LLC"
+                    enum:
+                      - SOLE_PROP
+                      - LLC
+                      - CORPORATION
+                      - PARTNERSHIP
+                      - NON_PROFIT
+                  estimated_monthly_volume:
+                    type: number
+                    description: "Estimated monthly card volume"
+                    format: double
+                    example: 75000.0
+                  risk_tier:
+                    type: string
+                    description: "Assigned risk tier"
+                    example: "STANDARD"
+                    enum:
+                      - LOW
+                      - STANDARD
+                      - ELEVATED
+                      - HIGH
+                  status:
+                    type: string
+                    description: "Application status"
+                    example: "APPROVED"
+                    enum:
+                      - SUBMITTED
+                      - KYB_REVIEW
+                      - RISK_ASSESSMENT
+                      - APPROVED
+                      - DECLINED
+                      - PROVISIONING
+                      - LIVE
+                      - SUSPENDED
+                  merchant_id:
+                    type: string
+                    description: "Assigned MID (after approval)"
+                    example: "mid-880012"
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-02-01T10:00:00Z"
+                required:
+                  - application_id
+                  - business_name
+                  - mcc
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}:
+    get:
+      operationId: getMerchantApp
+      summary: Get merchant application
+      description: >-
+        Retrieve complete merchant application details including KYB results, risk assessment, underwriting
+        decision, and provisioning status.
+      tags:
+        - Applications
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Application identifier"
+                    example: "mapp-550034"
+                  business_name:
+                    type: string
+                    description: "Legal business name"
+                    example: "Sunset Coffee LLC"
+                  dba_name:
+                    type: string
+                    description: "Doing business as"
+                    example: "Sunset Coffee"
+                  mcc:
+                    type: string
+                    description: "Merchant category code"
+                    example: "5812"
+                  business_type:
+                    type: string
+                    description: "Business entity type"
+                    example: "LLC"
+                    enum:
+                      - SOLE_PROP
+                      - LLC
+                      - CORPORATION
+                      - PARTNERSHIP
+                      - NON_PROFIT
+                  estimated_monthly_volume:
+                    type: number
+                    description: "Estimated monthly card volume"
+                    format: double
+                    example: 75000.0
+                  risk_tier:
+                    type: string
+                    description: "Assigned risk tier"
+                    example: "STANDARD"
+                    enum:
+                      - LOW
+                      - STANDARD
+                      - ELEVATED
+                      - HIGH
+                  status:
+                    type: string
+                    description: "Application status"
+                    example: "APPROVED"
+                    enum:
+                      - SUBMITTED
+                      - KYB_REVIEW
+                      - RISK_ASSESSMENT
+                      - APPROVED
+                      - DECLINED
+                      - PROVISIONING
+                      - LIVE
+                      - SUSPENDED
+                  merchant_id:
+                    type: string
+                    description: "Assigned MID (after approval)"
+                    example: "mid-880012"
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-02-01T10:00:00Z"
+                required:
+                  - application_id
+                  - business_name
+                  - mcc
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /applications/{application_id}/kyb:
+    post:
+      operationId: runKYB
+      summary: Run KYB verification
+      description: >-
+        Initiate Know Your Business verification including business entity validation, OFAC/sanctions
+        screening, MATCH/TMF database check, and principal owner identity verification. Returns verification
+        results with any flags requiring manual review.
+      tags:
+        - Verification
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kyb_status:
+                    type: string
+                    description: "Verification result"
+                    example: "PASSED"
+                    enum:
+                      - PASSED
+                      - REVIEW_REQUIRED
+                      - FAILED
+                  entity_verified:
+                    type: boolean
+                    description: "Business entity confirmed"
+                    example: true
+                  ofac_clear:
+                    type: boolean
+                    description: "OFAC screening clear"
+                    example: true
+                  match_tmf_clear:
+                    type: boolean
+                    description: "MATCH/TMF database clear"
+                    example: true
+                  flags:
+                    type: array
+                    description: "Review flags (if any)"
+                    items:
+                      type: string
+                required:
+                  - kyb_status
+                  - entity_verified
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/risk-assessment:
+    post:
+      operationId: assessRisk
+      summary: Run risk assessment
+      description: >-
+        Perform merchant risk assessment based on business type, MCC, processing history, online/card-not-
+        present ratio, and industry risk factors. Assigns a risk tier that determines reserve requirements,
+        monitoring frequency, and processing limits.
+      tags:
+        - Verification
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  risk_tier:
+                    type: string
+                    description: "Assigned risk tier"
+                    example: "STANDARD"
+                  risk_score:
+                    type: integer
+                    description: "Risk score (0-100)"
+                    example: 32
+                  reserve_requirement:
+                    type: number
+                    description: "Reserve percentage required"
+                    format: double
+                    example: 0
+                  monthly_limit:
+                    type: number
+                    description: "Monthly processing limit"
+                    format: double
+                    example: 150000.0
+                  monitoring_frequency:
+                    type: string
+                    description: "Monitoring schedule"
+                    example: "QUARTERLY"
+                    enum:
+                      - MONTHLY
+                      - QUARTERLY
+                      - SEMI_ANNUAL
+                      - ANNUAL
+                required:
+                  - risk_tier
+                  - risk_score
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/approve:
+    post:
+      operationId: approveMerchant
+      summary: Approve merchant application
+      description: >-
+        Approve the merchant application and assign a Merchant ID (MID). Triggers terminal provisioning
+        workflow and generates the merchant processing agreement for signature.
+      tags:
+        - Applications
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Approve merchant application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pricing_plan:
+                  type: string
+                  description: "Pricing plan to assign"
+                  example: "IC_PLUS_25"
+                  enum:
+                    - IC_PLUS_15
+                    - IC_PLUS_25
+                    - FLAT_279
+                    - FLAT_299
+                    - TIERED_STANDARD
+                monthly_fee:
+                  type: number
+                  description: "Monthly account fee"
+                  format: double
+                  example: 25.0
+              required:
+                - pricing_plan
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: "Application identifier"
+                    example: "mapp-550034"
+                  business_name:
+                    type: string
+                    description: "Legal business name"
+                    example: "Sunset Coffee LLC"
+                  dba_name:
+                    type: string
+                    description: "Doing business as"
+                    example: "Sunset Coffee"
+                  mcc:
+                    type: string
+                    description: "Merchant category code"
+                    example: "5812"
+                  business_type:
+                    type: string
+                    description: "Business entity type"
+                    example: "LLC"
+                    enum:
+                      - SOLE_PROP
+                      - LLC
+                      - CORPORATION
+                      - PARTNERSHIP
+                      - NON_PROFIT
+                  estimated_monthly_volume:
+                    type: number
+                    description: "Estimated monthly card volume"
+                    format: double
+                    example: 75000.0
+                  risk_tier:
+                    type: string
+                    description: "Assigned risk tier"
+                    example: "STANDARD"
+                    enum:
+                      - LOW
+                      - STANDARD
+                      - ELEVATED
+                      - HIGH
+                  status:
+                    type: string
+                    description: "Application status"
+                    example: "APPROVED"
+                    enum:
+                      - SUBMITTED
+                      - KYB_REVIEW
+                      - RISK_ASSESSMENT
+                      - APPROVED
+                      - DECLINED
+                      - PROVISIONING
+                      - LIVE
+                      - SUSPENDED
+                  merchant_id:
+                    type: string
+                    description: "Assigned MID (after approval)"
+                    example: "mid-880012"
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-02-01T10:00:00Z"
+                required:
+                  - application_id
+                  - business_name
+                  - mcc
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/provision-terminal:
+    post:
+      operationId: provisionTerminal
+      summary: Provision terminal
+      description: >-
+        Provision a payment terminal for the approved merchant. Configures the terminal with the merchant's
+        MID, TID, encryption keys, and card brand settings. Supports physical terminal shipping and virtual
+        terminal provisioning.
+      tags:
+        - Provisioning
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Provision terminal request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                terminal_type:
+                  type: string
+                  description: "Terminal type"
+                  example: "COUNTERTOP"
+                  enum:
+                    - COUNTERTOP
+                    - MOBILE
+                    - VIRTUAL
+                    - UNATTENDED
+                    - PIN_PAD
+                quantity:
+                  type: integer
+                  description: "Number of terminals"
+                  example: 2
+                shipping_address:
+                  type: string
+                  description: "Shipping address"
+                  example: "123 Main St, Austin, TX 78701"
+              required:
+                - terminal_type
+                - quantity
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  terminal_ids:
+                    type: array
+                    description: "Provisioned terminal IDs"
+                    items:
+                      type: string
+                      example: "term-1201"
+                  estimated_delivery:
+                    type: string
+                    description: "Estimated delivery date"
+                    format: date
+                    example: "2026-03-10"
+                required:
+                  - terminal_ids
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/go-live:
+    post:
+      operationId: goLive
+      summary: Activate merchant
+      description: >-
+        Activate the merchant for live transaction processing. Validates all prerequisites are complete (KYB
+        passed, agreement signed, terminals provisioned). Sends welcome kit and onboarding materials to the
+        merchant.
+      tags:
+        - Provisioning
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: "Unique application id"
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchant_id:
+                    type: string
+                    description: "Live merchant ID"
+                    example: "mid-880012"
+                  live_date:
+                    type: string
+                    description: "Go-live date"
+                    format: date
+                    example: "2026-03-05"
+                  gateway_credentials:
+                    type: object
+                    description: "Gateway API credentials (masked)"
+                required:
+                  - merchant_id
+                  - live_date
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

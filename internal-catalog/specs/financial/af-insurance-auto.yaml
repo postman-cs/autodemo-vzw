@@ -1,0 +1,1460 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Insurance Auto API
+  description: Full-lifecycle personal and commercial auto insurance policy management. Supports multi-vehicle policies with
+    per-vehicle coverage selections, endorsement processing, liability limit configuration (split-limit and CSL), and state-specific
+    coverage requirements including PIP, UM/UIM, and MedPay. Integrates with VIN decoders and ISO loss-cost rating data.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-insurance-auto
+  x-acme-domain: insurance
+servers:
+- url: https://af-insurance-auto.api.acmefin.com/v1
+  description: Production
+- url: https://af-insurance-auto.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Auto Policies
+  description: Policy issuance, endorsement, and lifecycle management for personal and commercial auto lines
+- name: Vehicles
+  description: Vehicle add/remove, VIN decoding, garaging address, and per-vehicle coverage management
+- name: Coverage
+  description: Coverage options, state-mandated minimums, and rating factor lookups
+paths:
+  /auto/policies:
+    get:
+      operationId: listAutoPolicies
+      summary: List auto policies
+      description: Retrieve a paginated list of personal and commercial auto insurance policies. Supports filtering by policy
+        status, policyholder name, effective date range, and vehicle VIN.
+      tags:
+      - Auto Policies
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by policy status
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - CANCELLED
+          - EXPIRED
+          - PENDING
+          - SUSPENDED
+      - name: policyholder_name
+        in: query
+        required: false
+        description: Filter by named insured (partial match)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        policy_id:
+                          type: string
+                          description: Auto policy number
+                          example: AUT-10038472
+                        policyholder_name:
+                          type: string
+                          description: Named insured
+                          example: James R. Patterson
+                        policy_term:
+                          type: string
+                          description: Policy term length
+                          example: 6_MONTH
+                          enum:
+                          - 6_MONTH
+                          - 12_MONTH
+                        effective_date:
+                          type: string
+                          format: date
+                          example: '2024-07-01'
+                        expiration_date:
+                          type: string
+                          format: date
+                          example: '2025-01-01'
+                        status:
+                          type: string
+                          example: ACTIVE
+                          enum:
+                          - ACTIVE
+                          - CANCELLED
+                          - EXPIRED
+                          - PENDING
+                          - SUSPENDED
+                        total_premium:
+                          type: number
+                          description: Total six-month or annual premium
+                          format: double
+                          example: 1847.0
+                        liability_limits:
+                          type: string
+                          description: Bodily injury / property damage limits
+                          example: 100/300/100
+                        uninsured_motorist:
+                          type: boolean
+                          description: Uninsured/underinsured motorist coverage
+                          example: true
+                        pip_coverage:
+                          type: boolean
+                          description: Personal injury protection coverage
+                          example: true
+                        vehicle_count:
+                          type: integer
+                          description: Number of vehicles on policy
+                          example: 2
+                      required:
+                      - policy_id
+                      - policyholder_name
+                      - status
+                      - effective_date
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createAutoPolicy
+      summary: Issue new auto policy
+      description: Create a new personal or commercial auto insurance policy. At least one vehicle and one named driver must
+        be provided. Premium is calculated based on ISO rating territory, driver profiles, vehicle characteristics, and selected
+        coverage options.
+      tags:
+      - Auto Policies
+      requestBody:
+        required: true
+        description: Issue new auto policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                policyholder_name:
+                  type: string
+                  description: Named insured
+                  example: James R. Patterson
+                policy_term:
+                  type: string
+                  description: Policy term length
+                  example: 6_MONTH
+                  enum:
+                  - 6_MONTH
+                  - 12_MONTH
+                effective_date:
+                  type: string
+                  format: date
+                  example: '2024-07-01'
+                liability_limits:
+                  type: string
+                  description: Bodily injury / property damage limits
+                  example: 100/300/100
+                uninsured_motorist:
+                  type: boolean
+                  description: Uninsured/underinsured motorist coverage
+                  example: true
+                pip_coverage:
+                  type: boolean
+                  description: Personal injury protection coverage
+                  example: true
+              required:
+              - policyholder_name
+              - policy_term
+              - effective_date
+              - liability_limits
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Auto policy number
+                    example: AUT-10038472
+                  policyholder_name:
+                    type: string
+                    description: Named insured
+                    example: James R. Patterson
+                  policy_term:
+                    type: string
+                    description: Policy term length
+                    example: 6_MONTH
+                    enum:
+                    - 6_MONTH
+                    - 12_MONTH
+                  effective_date:
+                    type: string
+                    format: date
+                    example: '2024-07-01'
+                  expiration_date:
+                    type: string
+                    format: date
+                    example: '2025-01-01'
+                  status:
+                    type: string
+                    example: ACTIVE
+                    enum:
+                    - ACTIVE
+                    - CANCELLED
+                    - EXPIRED
+                    - PENDING
+                    - SUSPENDED
+                  total_premium:
+                    type: number
+                    description: Total six-month or annual premium
+                    format: double
+                    example: 1847.0
+                  liability_limits:
+                    type: string
+                    description: Bodily injury / property damage limits
+                    example: 100/300/100
+                  uninsured_motorist:
+                    type: boolean
+                    description: Uninsured/underinsured motorist coverage
+                    example: true
+                  pip_coverage:
+                    type: boolean
+                    description: Personal injury protection coverage
+                    example: true
+                  vehicle_count:
+                    type: integer
+                    description: Number of vehicles on policy
+                    example: 2
+                required:
+                - policy_id
+                - status
+                - total_premium
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /auto/policies/{policy_id}:
+    get:
+      operationId: getAutoPolicy
+      summary: Retrieve auto policy details
+      description: Fetch complete auto policy details including all listed vehicles, named drivers, coverage selections, premium
+        breakdown, and endorsement history.
+      tags:
+      - Auto Policies
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        description: Unique policy id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Auto policy number
+                    example: AUT-10038472
+                  policyholder_name:
+                    type: string
+                    description: Named insured
+                    example: James R. Patterson
+                  policy_term:
+                    type: string
+                    description: Policy term length
+                    example: 6_MONTH
+                    enum:
+                    - 6_MONTH
+                    - 12_MONTH
+                  effective_date:
+                    type: string
+                    format: date
+                    example: '2024-07-01'
+                  expiration_date:
+                    type: string
+                    format: date
+                    example: '2025-01-01'
+                  status:
+                    type: string
+                    example: ACTIVE
+                    enum:
+                    - ACTIVE
+                    - CANCELLED
+                    - EXPIRED
+                    - PENDING
+                    - SUSPENDED
+                  total_premium:
+                    type: number
+                    description: Total six-month or annual premium
+                    format: double
+                    example: 1847.0
+                  liability_limits:
+                    type: string
+                    description: Bodily injury / property damage limits
+                    example: 100/300/100
+                  uninsured_motorist:
+                    type: boolean
+                    description: Uninsured/underinsured motorist coverage
+                    example: true
+                  pip_coverage:
+                    type: boolean
+                    description: Personal injury protection coverage
+                    example: true
+                  vehicle_count:
+                    type: integer
+                    description: Number of vehicles on policy
+                    example: 2
+                required:
+                - policy_id
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateAutoPolicy
+      summary: Update auto policy
+      description: Modify policy-level details such as liability limits, PIP elections, or named insured information. Changes
+        that affect premium trigger a mid-term re-rate and may generate an endorsement.
+      tags:
+      - Auto Policies
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        description: Unique policy id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update auto policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                liability_limits:
+                  type: string
+                  description: Bodily injury / property damage limits
+                  example: 100/300/100
+                uninsured_motorist:
+                  type: boolean
+                  description: Uninsured/underinsured motorist coverage
+                  example: true
+                pip_coverage:
+                  type: boolean
+                  description: Personal injury protection coverage
+                  example: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Auto policy number
+                    example: AUT-10038472
+                  policyholder_name:
+                    type: string
+                    description: Named insured
+                    example: James R. Patterson
+                  policy_term:
+                    type: string
+                    description: Policy term length
+                    example: 6_MONTH
+                    enum:
+                    - 6_MONTH
+                    - 12_MONTH
+                  effective_date:
+                    type: string
+                    format: date
+                    example: '2024-07-01'
+                  expiration_date:
+                    type: string
+                    format: date
+                    example: '2025-01-01'
+                  status:
+                    type: string
+                    example: ACTIVE
+                    enum:
+                    - ACTIVE
+                    - CANCELLED
+                    - EXPIRED
+                    - PENDING
+                    - SUSPENDED
+                  total_premium:
+                    type: number
+                    description: Total six-month or annual premium
+                    format: double
+                    example: 1847.0
+                  liability_limits:
+                    type: string
+                    description: Bodily injury / property damage limits
+                    example: 100/300/100
+                  uninsured_motorist:
+                    type: boolean
+                    description: Uninsured/underinsured motorist coverage
+                    example: true
+                  pip_coverage:
+                    type: boolean
+                    description: Personal injury protection coverage
+                    example: true
+                  vehicle_count:
+                    type: integer
+                    description: Number of vehicles on policy
+                    example: 2
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /auto/policies/{policy_id}/vehicles:
+    get:
+      operationId: listPolicyVehicles
+      summary: List vehicles on policy
+      description: Retrieve all vehicles listed on an auto policy, including VIN, year/make/model, usage classification, garaging
+        address, and per-vehicle coverage elections.
+      tags:
+      - Vehicles
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        vehicle_id:
+                          type: string
+                          description: Vehicle record identifier
+                          example: VEH-00293847
+                        vin:
+                          type: string
+                          description: 17-character Vehicle Identification Number
+                          example: 1HGCM82633A004352
+                          minLength: 17
+                          maxLength: 17
+                        year:
+                          type: integer
+                          description: Model year
+                          example: 2023
+                        make:
+                          type: string
+                          description: Vehicle manufacturer
+                          example: Honda
+                        model:
+                          type: string
+                          description: Vehicle model
+                          example: Accord
+                        usage:
+                          type: string
+                          example: COMMUTE
+                          enum:
+                          - PLEASURE
+                          - COMMUTE
+                          - BUSINESS
+                          - RIDESHARE
+                        annual_mileage:
+                          type: integer
+                          description: Estimated annual miles driven
+                          example: 12000
+                        garaging_zip:
+                          type: string
+                          description: ZIP code where vehicle is primarily garaged
+                          example: '07030'
+                        coverages:
+                          type: object
+                          description: Vehicle-level coverage selections
+                          properties:
+                            comprehensive_deductible:
+                              type: integer
+                              description: Comprehensive (other-than-collision) deductible
+                              example: 500
+                            collision_deductible:
+                              type: integer
+                              description: Collision deductible
+                              example: 1000
+                            rental_reimbursement:
+                              type: boolean
+                              example: true
+                            roadside_assistance:
+                              type: boolean
+                              example: true
+                      required:
+                      - vehicle_id
+                      - vin
+                      - year
+                      - make
+                      - model
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: addVehicleToPolicy
+      summary: Add vehicle to policy
+      description: Add a new vehicle to an existing auto policy. The VIN is decoded to verify year, make, model, and vehicle
+        class. Premium is recalculated and a mid-term endorsement is generated reflecting the coverage change effective date.
+      tags:
+      - Vehicles
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        description: Auto policy identifier
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Add vehicle to policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vin:
+                  type: string
+                  description: 17-character Vehicle Identification Number
+                  example: 1HGCM82633A004352
+                  minLength: 17
+                  maxLength: 17
+                usage:
+                  type: string
+                  example: COMMUTE
+                  enum:
+                  - PLEASURE
+                  - COMMUTE
+                  - BUSINESS
+                  - RIDESHARE
+                annual_mileage:
+                  type: integer
+                  description: Estimated annual miles driven
+                  example: 12000
+                garaging_zip:
+                  type: string
+                  description: ZIP code where vehicle is primarily garaged
+                  example: '07030'
+              required:
+              - vin
+              - usage
+              - garaging_zip
+      responses:
+        '201':
+          description: Vehicle added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vehicle_id:
+                    type: string
+                    description: Vehicle record identifier
+                    example: VEH-00293847
+                  vin:
+                    type: string
+                    description: 17-character Vehicle Identification Number
+                    example: 1HGCM82633A004352
+                    minLength: 17
+                    maxLength: 17
+                  year:
+                    type: integer
+                    description: Model year
+                    example: 2023
+                  make:
+                    type: string
+                    description: Vehicle manufacturer
+                    example: Honda
+                  model:
+                    type: string
+                    description: Vehicle model
+                    example: Accord
+                  usage:
+                    type: string
+                    example: COMMUTE
+                    enum:
+                    - PLEASURE
+                    - COMMUTE
+                    - BUSINESS
+                    - RIDESHARE
+                  annual_mileage:
+                    type: integer
+                    description: Estimated annual miles driven
+                    example: 12000
+                  garaging_zip:
+                    type: string
+                    description: ZIP code where vehicle is primarily garaged
+                    example: '07030'
+                  coverages:
+                    type: object
+                    description: Vehicle-level coverage selections
+                    properties:
+                      comprehensive_deductible:
+                        type: integer
+                        description: Comprehensive (other-than-collision) deductible
+                        example: 500
+                      collision_deductible:
+                        type: integer
+                        description: Collision deductible
+                        example: 1000
+                      rental_reimbursement:
+                        type: boolean
+                        example: true
+                      roadside_assistance:
+                        type: boolean
+                        example: true
+                required:
+                - vehicle_id
+                - vin
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /auto/policies/{policy_id}/vehicles/{vehicle_id}:
+    delete:
+      operationId: removeVehicleFromPolicy
+      summary: Remove vehicle from policy
+      description: Remove a vehicle from an auto policy. At least one vehicle must remain on the policy. Generates a mid-term
+        endorsement and premium credit.
+      tags:
+      - Vehicles
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        description: Auto policy identifier
+        schema:
+          type: string
+      - name: vehicle_id
+        in: path
+        required: true
+        description: Vehicle record identifier
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Vehicle removed successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /auto/policies/{policy_id}/endorsements:
+    post:
+      operationId: createAutoEndorsement
+      summary: Process policy endorsement
+      description: Create a mid-term policy change endorsement. Endorsement types include adding/removing vehicles or drivers,
+        changing coverage limits, updating garaging address, or modifying usage classification. Each endorsement generates
+        a premium adjustment effective on the specified change date.
+      tags:
+      - Auto Policies
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        description: Unique policy id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Process policy endorsement request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                endorsement_type:
+                  type: string
+                  description: Type of policy change
+                  example: CHANGE_COVERAGE
+                  enum:
+                  - ADD_VEHICLE
+                  - REMOVE_VEHICLE
+                  - ADD_DRIVER
+                  - REMOVE_DRIVER
+                  - CHANGE_COVERAGE
+                  - CHANGE_ADDRESS
+                  - CHANGE_USAGE
+                effective_date:
+                  type: string
+                  description: Date change takes effect
+                  format: date
+                  example: '2024-09-01'
+                changes:
+                  type: object
+                  description: Endorsement change details
+                reason:
+                  type: string
+                  description: Reason for endorsement
+                  example: Vehicle sold, replacing with new purchase
+              required:
+              - endorsement_type
+              - effective_date
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endorsement_id:
+                    type: string
+                    example: END-AUT-00918274
+                  premium_change:
+                    type: number
+                    description: Premium adjustment amount (positive=additional, negative=credit)
+                    format: double
+                    example: -42.5
+                  new_total_premium:
+                    type: number
+                    format: double
+                    example: 1804.5
+                  status:
+                    type: string
+                    example: APPLIED
+                    enum:
+                    - APPLIED
+                    - PENDING_REVIEW
+                required:
+                - endorsement_id
+                - premium_change
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /auto/policies/{policy_id}/declarations:
+    get:
+      operationId: getAutoDeclarationsPage
+      summary: Generate declarations page
+      description: Produce the policy declarations page (dec page) summarizing named insureds, listed vehicles, coverage selections,
+        limits, deductibles, and premium breakdown. This is the policyholder-facing summary of coverage.
+      tags:
+      - Auto Policies
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        description: Auto policy identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    example: AUT-10038472
+                  policyholder_name:
+                    type: string
+                    example: James R. Patterson
+                  effective_date:
+                    type: string
+                    format: date
+                  expiration_date:
+                    type: string
+                    format: date
+                  vehicles:
+                    type: array
+                    items:
+                      type: object
+                  coverages:
+                    type: array
+                    items:
+                      type: object
+                  total_premium:
+                    type: number
+                    format: double
+                  document_url:
+                    type: string
+                    description: URL to download the PDF declarations page
+                    format: uri
+                required:
+                - policy_id
+                - policyholder_name
+                - total_premium
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /auto/coverage-options:
+    get:
+      operationId: listAutoCoverageOptions
+      summary: List available coverage options
+      description: Retrieve all available auto insurance coverage options including liability, physical damage, medical payments,
+        and supplemental coverages. Results are filtered by state to reflect state-mandated minimums and available optional
+        coverages.
+      tags:
+      - Coverage
+      parameters:
+      - name: state
+        in: query
+        required: true
+        description: Two-letter state code for state-specific coverage requirements
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 2
+      - name: policy_type
+        in: query
+        required: false
+        description: Personal or commercial auto
+        schema:
+          type: string
+          enum:
+          - PERSONAL
+          - COMMERCIAL
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  coverage_code:
+                    type: string
+                    description: Coverage type code
+                    example: COMP
+                  coverage_name:
+                    type: string
+                    description: Human-readable coverage name
+                    example: Comprehensive (Other Than Collision)
+                  category:
+                    type: string
+                    example: PHYSICAL_DAMAGE
+                    enum:
+                    - LIABILITY
+                    - PHYSICAL_DAMAGE
+                    - MEDICAL
+                    - SUPPLEMENTAL
+                  available_limits:
+                    type: array
+                    description: Available limit options
+                    items:
+                      type: string
+                      example: $500 deductible
+                  required_by_state:
+                    type: boolean
+                    description: Whether this coverage is state-mandated
+                    example: false
+                  description:
+                    type: string
+                    description: Coverage description for policyholders
+                    example: Covers damage to your vehicle from events other than collision, such as theft, vandalism, or
+                      weather.
+                required:
+                - coverage_code
+                - coverage_name
+                - category
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /auto/quotes:
+    post:
+      operationId: requestAutoQuote
+      summary: Request auto insurance quote
+      description: Generate a premium quote for a new auto insurance policy based on driver profiles, vehicle information,
+        desired coverage selections, and garaging location. Uses ISO rating territories and loss-cost data for accurate premium
+        indication.
+      tags:
+      - Coverage
+      requestBody:
+        required: true
+        description: Request auto insurance quote request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                drivers:
+                  type: array
+                  description: Driver profiles
+                  items:
+                    type: object
+                vehicles:
+                  type: array
+                  description: Vehicles to insure
+                  items:
+                    type: object
+                desired_coverages:
+                  type: object
+                  description: Requested coverage selections
+                effective_date:
+                  type: string
+                  format: date
+                state:
+                  type: string
+                  description: Rating state
+                  example: NJ
+              required:
+              - drivers
+              - vehicles
+              - effective_date
+              - state
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote_id:
+                    type: string
+                    example: QUO-AUT-00482917
+                  total_premium:
+                    type: number
+                    format: double
+                    example: 1847.0
+                  premium_breakdown:
+                    type: object
+                  valid_until:
+                    type: string
+                    format: date-time
+                  status:
+                    type: string
+                    example: QUOTED
+                    enum:
+                    - QUOTED
+                    - EXPIRED
+                required:
+                - quote_id
+                - total_premium
+                - valid_until
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /auto/policies/{policy_id}/coverage:
+    patch:
+      operationId: updateAutoCoverage
+      summary: Modify policy coverage selections
+      description: Update coverage limits, deductibles, or optional coverage elections on an active auto policy. Triggers
+        premium recalculation and generates a coverage-change endorsement.
+      tags:
+      - Coverage
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        description: Auto policy identifier
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Modify policy coverage selections request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                liability_limits:
+                  type: string
+                  description: New BI/PD split limits (e.g. 250/500/100)
+                  example: 250/500/100
+                comprehensive_deductible:
+                  type: integer
+                  description: New comprehensive deductible
+                  example: 250
+                collision_deductible:
+                  type: integer
+                  description: New collision deductible
+                  example: 500
+                add_coverages:
+                  type: array
+                  description: Coverage codes to add
+                  items:
+                    type: string
+                    example: RENTAL_REIMB
+                remove_coverages:
+                  type: array
+                  description: Coverage codes to remove
+                  items:
+                    type: string
+                    example: ROADSIDE
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endorsement_id:
+                    type: string
+                  premium_change:
+                    type: number
+                    format: double
+                  new_total_premium:
+                    type: number
+                    format: double
+                required:
+                - endorsement_id
+                - new_total_premium
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

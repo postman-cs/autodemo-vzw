@@ -1,0 +1,1330 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Insurance Agents API
+  description: Manage licensed insurance agent profiles, producer appointments, continuing education tracking, and commission
+    structures. Integrates with NIPR for national producer number verification and supports captive, independent, broker,
+    and managing general agent (MGA) hierarchies across all 50 states and territories.
+  version: 1.5.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-insurance-agents
+  x-acme-domain: insurance
+servers:
+- url: https://af-insurance-agents.api.acmefin.com/v1
+  description: Production
+- url: https://af-insurance-agents.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Agent Profiles
+  description: CRUD operations for agent records including NPN, licensing status, and territory assignments
+- name: Licensing
+  description: State license verification, continuing education tracking, and lines of authority management
+- name: Commissions
+  description: Commission schedules, earned commissions, overrides, and contingency bonus tracking
+paths:
+  /agents:
+    get:
+      operationId: listAgents
+      summary: List agents
+      description: Retrieve a paginated list of insurance agents. Filter by agent type, licensing state, appointed status,
+        or territory code to find producers meeting specific criteria.
+      tags:
+      - Agent Profiles
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: agent_type
+        in: query
+        required: false
+        description: Filter by agent classification (CAPTIVE, INDEPENDENT, BROKER, MGA)
+        schema:
+          type: string
+          enum:
+          - CAPTIVE
+          - INDEPENDENT
+          - BROKER
+          - MANAGING_GENERAL_AGENT
+      - name: status
+        in: query
+        required: false
+        description: Filter by agent status
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+          - SUSPENDED
+          - TERMINATED
+      - name: license_state
+        in: query
+        required: false
+        description: Filter by state where agent holds an active license
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        agent_id:
+                          type: string
+                          description: Unique agent identifier
+                          example: AGT-00482193
+                        npn:
+                          type: string
+                          description: National Producer Number assigned by NIPR
+                          example: '18294756'
+                        first_name:
+                          type: string
+                          description: Agent first name
+                          example: Sarah
+                        last_name:
+                          type: string
+                          description: Agent last name
+                          example: Mitchell
+                        email:
+                          type: string
+                          description: Primary contact email
+                          format: email
+                          example: s.mitchell@acmefin.com
+                        agent_type:
+                          type: string
+                          description: Agent classification
+                          example: INDEPENDENT
+                          enum:
+                          - CAPTIVE
+                          - INDEPENDENT
+                          - BROKER
+                          - MANAGING_GENERAL_AGENT
+                        status:
+                          type: string
+                          description: Current agent status
+                          example: ACTIVE
+                          enum:
+                          - ACTIVE
+                          - INACTIVE
+                          - SUSPENDED
+                          - TERMINATED
+                        appointed_date:
+                          type: string
+                          description: Date agent was appointed
+                          format: date
+                          example: '2019-06-15'
+                        territory_codes:
+                          type: array
+                          description: Assigned territory codes
+                          items:
+                            type: string
+                            example: NE-TER-04
+                        lines_of_authority:
+                          type: array
+                          description: Licensed lines of business
+                          items:
+                            type: string
+                            example: Property & Casualty
+                      required:
+                      - agent_id
+                      - npn
+                      - first_name
+                      - last_name
+                      - agent_type
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createAgent
+      summary: Register a new agent
+      description: Onboard a new insurance agent with their National Producer Number, contact details, lines of authority,
+        and initial territory assignments. The agent record enters ACTIVE status once at least one state license is verified
+        through NIPR.
+      tags:
+      - Agent Profiles
+      requestBody:
+        required: true
+        description: Register a new agent request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                npn:
+                  type: string
+                  description: National Producer Number assigned by NIPR
+                  example: '18294756'
+                first_name:
+                  type: string
+                  description: Agent first name
+                  example: Sarah
+                last_name:
+                  type: string
+                  description: Agent last name
+                  example: Mitchell
+                email:
+                  type: string
+                  description: Primary contact email
+                  format: email
+                  example: s.mitchell@acmefin.com
+                agent_type:
+                  type: string
+                  description: Agent classification
+                  example: INDEPENDENT
+                  enum:
+                  - CAPTIVE
+                  - INDEPENDENT
+                  - BROKER
+                  - MANAGING_GENERAL_AGENT
+                lines_of_authority:
+                  type: array
+                  description: Licensed lines of business
+                  items:
+                    type: string
+                    example: Property & Casualty
+              required:
+              - npn
+              - first_name
+              - last_name
+              - email
+              - agent_type
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                    description: Unique agent identifier
+                    example: AGT-00482193
+                  npn:
+                    type: string
+                    description: National Producer Number assigned by NIPR
+                    example: '18294756'
+                  first_name:
+                    type: string
+                    description: Agent first name
+                    example: Sarah
+                  last_name:
+                    type: string
+                    description: Agent last name
+                    example: Mitchell
+                  email:
+                    type: string
+                    description: Primary contact email
+                    format: email
+                    example: s.mitchell@acmefin.com
+                  agent_type:
+                    type: string
+                    description: Agent classification
+                    example: INDEPENDENT
+                    enum:
+                    - CAPTIVE
+                    - INDEPENDENT
+                    - BROKER
+                    - MANAGING_GENERAL_AGENT
+                  status:
+                    type: string
+                    description: Current agent status
+                    example: ACTIVE
+                    enum:
+                    - ACTIVE
+                    - INACTIVE
+                    - SUSPENDED
+                    - TERMINATED
+                  appointed_date:
+                    type: string
+                    description: Date agent was appointed
+                    format: date
+                    example: '2019-06-15'
+                  territory_codes:
+                    type: array
+                    description: Assigned territory codes
+                    items:
+                      type: string
+                      example: NE-TER-04
+                  lines_of_authority:
+                    type: array
+                    description: Licensed lines of business
+                    items:
+                      type: string
+                      example: Property & Casualty
+                required:
+                - agent_id
+                - npn
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /agents/{agent_id}:
+    get:
+      operationId: getAgent
+      summary: Retrieve agent details
+      description: Fetch complete agent profile including NPN, licensing summary, territory assignments, and appointment history.
+      tags:
+      - Agent Profiles
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        description: Unique agent id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                    description: Unique agent identifier
+                    example: AGT-00482193
+                  npn:
+                    type: string
+                    description: National Producer Number assigned by NIPR
+                    example: '18294756'
+                  first_name:
+                    type: string
+                    description: Agent first name
+                    example: Sarah
+                  last_name:
+                    type: string
+                    description: Agent last name
+                    example: Mitchell
+                  email:
+                    type: string
+                    description: Primary contact email
+                    format: email
+                    example: s.mitchell@acmefin.com
+                  agent_type:
+                    type: string
+                    description: Agent classification
+                    example: INDEPENDENT
+                    enum:
+                    - CAPTIVE
+                    - INDEPENDENT
+                    - BROKER
+                    - MANAGING_GENERAL_AGENT
+                  status:
+                    type: string
+                    description: Current agent status
+                    example: ACTIVE
+                    enum:
+                    - ACTIVE
+                    - INACTIVE
+                    - SUSPENDED
+                    - TERMINATED
+                  appointed_date:
+                    type: string
+                    description: Date agent was appointed
+                    format: date
+                    example: '2019-06-15'
+                  territory_codes:
+                    type: array
+                    description: Assigned territory codes
+                    items:
+                      type: string
+                      example: NE-TER-04
+                  lines_of_authority:
+                    type: array
+                    description: Licensed lines of business
+                    items:
+                      type: string
+                      example: Property & Casualty
+                required:
+                - agent_id
+                - npn
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: updateAgent
+      summary: Update agent profile
+      description: Modify agent contact information, territory assignments, or lines of authority. NPN changes require NIPR
+        re-verification.
+      tags:
+      - Agent Profiles
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        description: Unique agent id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Update agent profile request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  description: Primary contact email
+                  format: email
+                  example: s.mitchell@acmefin.com
+                territory_codes:
+                  type: array
+                  description: Assigned territory codes
+                  items:
+                    type: string
+                    example: NE-TER-04
+                status:
+                  type: string
+                  description: Current agent status
+                  example: ACTIVE
+                  enum:
+                  - ACTIVE
+                  - INACTIVE
+                  - SUSPENDED
+                  - TERMINATED
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                    description: Unique agent identifier
+                    example: AGT-00482193
+                  npn:
+                    type: string
+                    description: National Producer Number assigned by NIPR
+                    example: '18294756'
+                  first_name:
+                    type: string
+                    description: Agent first name
+                    example: Sarah
+                  last_name:
+                    type: string
+                    description: Agent last name
+                    example: Mitchell
+                  email:
+                    type: string
+                    description: Primary contact email
+                    format: email
+                    example: s.mitchell@acmefin.com
+                  agent_type:
+                    type: string
+                    description: Agent classification
+                    example: INDEPENDENT
+                    enum:
+                    - CAPTIVE
+                    - INDEPENDENT
+                    - BROKER
+                    - MANAGING_GENERAL_AGENT
+                  status:
+                    type: string
+                    description: Current agent status
+                    example: ACTIVE
+                    enum:
+                    - ACTIVE
+                    - INACTIVE
+                    - SUSPENDED
+                    - TERMINATED
+                  appointed_date:
+                    type: string
+                    description: Date agent was appointed
+                    format: date
+                    example: '2019-06-15'
+                  territory_codes:
+                    type: array
+                    description: Assigned territory codes
+                    items:
+                      type: string
+                      example: NE-TER-04
+                  lines_of_authority:
+                    type: array
+                    description: Licensed lines of business
+                    items:
+                      type: string
+                      example: Property & Casualty
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+    delete:
+      operationId: deactivateAgent
+      summary: Deactivate an agent
+      description: Soft-delete an agent record by setting status to TERMINATED. Active policies must be reassigned before
+        deactivation.
+      tags:
+      - Agent Profiles
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        description: Unique agent id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /agents/{agent_id}/licenses:
+    get:
+      operationId: listAgentLicenses
+      summary: List agent licenses
+      description: Retrieve all state licenses held by an agent, including active, expired, and pending renewal licenses.
+        Shows continuing education credit progress for each license.
+      tags:
+      - Licensing
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: state
+        in: query
+        required: false
+        description: Filter by state code
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        description: Filter by license status
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - EXPIRED
+          - REVOKED
+          - PENDING_RENEWAL
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        license_id:
+                          type: string
+                          description: State license identifier
+                          example: LIC-NY-29481
+                        state:
+                          type: string
+                          description: Two-letter state code
+                          example: NY
+                          minLength: 2
+                          maxLength: 2
+                        license_number:
+                          type: string
+                          description: State-issued license number
+                          example: LA-1084729
+                        line_of_authority:
+                          type: string
+                          description: Authorized line of insurance
+                          example: Life, Accident & Health
+                        status:
+                          type: string
+                          example: ACTIVE
+                          enum:
+                          - ACTIVE
+                          - EXPIRED
+                          - REVOKED
+                          - PENDING_RENEWAL
+                        effective_date:
+                          type: string
+                          format: date
+                          example: '2023-01-01'
+                        expiration_date:
+                          type: string
+                          format: date
+                          example: '2025-12-31'
+                        ce_credits_required:
+                          type: integer
+                          description: Continuing education credits required
+                          example: 24
+                        ce_credits_completed:
+                          type: integer
+                          description: CE credits completed in current cycle
+                          example: 18
+                      required:
+                      - license_id
+                      - state
+                      - license_number
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /agents/{agent_id}/licenses/verify:
+    post:
+      operationId: verifyAgentLicense
+      summary: Verify agent license via NIPR
+      description: Initiate a real-time license verification through the National Insurance Producer Registry. Returns verification
+        status and any discrepancies found between local records and NIPR data.
+      tags:
+      - Licensing
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        description: Unique agent id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Verify agent license via NIPR request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                state:
+                  type: string
+                  description: State code to verify
+                  example: NY
+                license_number:
+                  type: string
+                  description: License number to verify
+                  example: LA-1084729
+              required:
+              - state
+              - license_number
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                    description: Whether license was verified
+                    example: true
+                  verification_date:
+                    type: string
+                    format: date-time
+                    example: '2024-11-15T10:30:00Z'
+                  nipr_status:
+                    type: string
+                    example: CONFIRMED
+                    enum:
+                    - CONFIRMED
+                    - DISCREPANCY
+                    - NOT_FOUND
+                required:
+                - verified
+                - nipr_status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /agents/{agent_id}/commissions:
+    get:
+      operationId: listAgentCommissions
+      summary: List agent commissions
+      description: Retrieve commission history for an agent, including new business, renewal, override, and contingency bonus
+        payments. Supports filtering by pay period and commission type.
+      tags:
+      - Commissions
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: commission_type
+        in: query
+        required: false
+        description: Filter by commission type
+        schema:
+          type: string
+          enum:
+          - NEW_BUSINESS
+          - RENEWAL
+          - OVERRIDE
+          - BONUS
+          - CONTINGENCY
+      - name: pay_period
+        in: query
+        required: false
+        description: Filter by pay period (e.g. 2024-Q3)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        commission_id:
+                          type: string
+                          example: COM-2024-08471
+                        policy_id:
+                          type: string
+                          description: Associated policy
+                          example: POL-10029384
+                        commission_type:
+                          type: string
+                          example: NEW_BUSINESS
+                          enum:
+                          - NEW_BUSINESS
+                          - RENEWAL
+                          - OVERRIDE
+                          - BONUS
+                          - CONTINGENCY
+                        rate_pct:
+                          type: number
+                          description: Commission rate percentage
+                          format: double
+                          example: 12.5
+                        earned_amount:
+                          type: number
+                          description: Commission amount earned
+                          format: double
+                          example: 487.5
+                        status:
+                          type: string
+                          example: PAID
+                          enum:
+                          - PENDING
+                          - APPROVED
+                          - PAID
+                          - CLAWED_BACK
+                        pay_period:
+                          type: string
+                          description: Pay period
+                          example: 2024-Q3
+                      required:
+                      - commission_id
+                      - commission_type
+                      - earned_amount
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /agents/{agent_id}/book-of-business:
+    get:
+      operationId: getAgentBookOfBusiness
+      summary: Retrieve book of business summary
+      description: Returns an aggregate summary of the agent's book of business including total policies, premium volume,
+        retention rate, loss ratio, and line-of-business breakdown. Used for performance reviews and territory optimization.
+      tags:
+      - Commissions
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        description: Unique agent identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_policies:
+                    type: integer
+                    description: Total active policies in book
+                    example: 347
+                  total_premium_volume:
+                    type: number
+                    description: Total annual premium volume
+                    format: double
+                    example: 2845000.0
+                  retention_rate_pct:
+                    type: number
+                    description: Policy retention rate
+                    format: double
+                    example: 91.3
+                  loss_ratio_pct:
+                    type: number
+                    description: Book loss ratio
+                    format: double
+                    example: 58.7
+                  lines_breakdown:
+                    type: object
+                    description: Policy count by line of business
+                    properties:
+                      personal_auto:
+                        type: integer
+                        example: 142
+                      homeowners:
+                        type: integer
+                        example: 98
+                      commercial_property:
+                        type: integer
+                        example: 67
+                      general_liability:
+                        type: integer
+                        example: 40
+                  new_business_ytd:
+                    type: integer
+                    description: New policies written year-to-date
+                    example: 43
+                required:
+                - total_policies
+                - total_premium_volume
+                - retention_rate_pct
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /agents/{agent_id}/appointments:
+    post:
+      operationId: createAppointment
+      summary: Create carrier appointment
+      description: Record a new carrier appointment for the agent. An appointment authorizes the agent to write business on
+        behalf of a specific insurance carrier in designated states.
+      tags:
+      - Licensing
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        description: Unique agent id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Create carrier appointment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                carrier_name:
+                  type: string
+                  description: Appointing carrier name
+                  example: Acme Mutual Insurance
+                carrier_naic_code:
+                  type: string
+                  description: Carrier NAIC company code
+                  example: '12345'
+                states:
+                  type: array
+                  description: States covered by appointment
+                  items:
+                    type: string
+                    example: NY
+                effective_date:
+                  type: string
+                  format: date
+                  example: '2024-07-01'
+                lines_of_authority:
+                  type: array
+                  description: Lines the agent is appointed for
+                  items:
+                    type: string
+                    example: Property & Casualty
+              required:
+              - carrier_name
+              - carrier_naic_code
+              - states
+              - effective_date
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  appointment_id:
+                    type: string
+                    example: APT-00291847
+                  status:
+                    type: string
+                    example: PENDING
+                    enum:
+                    - PENDING
+                    - ACTIVE
+                required:
+                - appointment_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

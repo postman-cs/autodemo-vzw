@@ -1,0 +1,1590 @@
+openapi: 3.0.3
+info:
+  title: VZW Load Forecasting API
+  description: >-
+    Provides load and demand forecasting capabilities for grid operations, DER integration,
+    and medium-term to long-term capacity planning workflows. The API supports forecast
+    generation for region, feeder, and substation scopes, model registration and governance,
+    weather feed observability, and what-if scenario simulation for planning decisions.
+  version: 1.0.0
+  contact:
+    name: VZW Grid Intelligence API Team
+    email: grid-intel-api@verizon.example.com
+    url: https://developer.vzw.example.com/apis/load-forecasting
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/legal/api-terms
+  x-vzw-catalog-id: vzw-load-forecasting-api
+  x-vzw-domain: load-forecasting
+servers:
+  - url: https://vzw-load-forecasting-api.pm-demo.dev
+    description: Production
+  - url: https://vzw-load-forecasting-api.staging.pm-demo.dev
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Forecasts
+    description: Generate, retrieve, and list load forecasts
+  - name: Models
+    description: Register and evaluate forecasting models
+  - name: Weather Integration
+    description: Weather provider health and data freshness telemetry
+  - name: Scenarios
+    description: Run what-if demand and DER planning scenarios
+paths:
+  /v1/forecasts:
+    post:
+      operationId: createForecast
+      summary: Generate load forecast
+      description: >-
+        Triggers forecast generation for a specific planning scope. The scope may target a
+        region, feeder, or substation and can include weather sensitivity, DER assumptions,
+        and confidence interval controls. The service returns a submitted forecast resource
+        immediately and executes model inference asynchronously.
+      tags:
+        - Forecasts
+      requestBody:
+        required: true
+        description: Forecast generation request payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateForecastRequest"
+            examples:
+              feeder_day_ahead:
+                summary: Day-ahead feeder forecast with DER context
+                value:
+                  target_scope:
+                    scope_type: feeder
+                    scope_id: FEEDER-NE-1138
+                    utility_region: north-east
+                  forecast_horizon_hours: 24
+                  time_granularity_minutes: 15
+                  confidence_level_pct: 95
+                  weather_profile:
+                    source: noaa
+                    weather_station_id: KNYC
+                    include_temperature: true
+                    include_humidity: true
+                    include_wind_speed: false
+                  der_context:
+                    der_capacity_kw: 18250
+                    expected_der_dispatch_pct: 48.5
+                  demand_adjustments:
+                    baseline_growth_pct: 2.1
+                    event_overrides:
+                      - start_time: "2026-08-01T12:00:00Z"
+                        end_time: "2026-08-01T18:00:00Z"
+                        demand_shift_pct: 4.3
+                        reason: summer_peak_alert
+                  model_id: mdl-xgboost-hourly-v2
+                  requested_by: planner.ops@verizon.example.com
+      responses:
+        "201":
+          description: Forecast request accepted and queued for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastJob"
+              examples:
+                accepted:
+                  value:
+                    forecast_id: fct-24aa95e4
+                    status: queued
+                    target_scope:
+                      scope_type: feeder
+                      scope_id: FEEDER-NE-1138
+                      utility_region: north-east
+                    forecast_horizon_hours: 24
+                    model_id: mdl-xgboost-hourly-v2
+                    submitted_at: "2026-08-01T10:12:04Z"
+                    eta_seconds: 35
+                    trace_id: "d1524a56-b26b-4f13-8f1b-4fb7d2c4d7f4"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "503":
+          $ref: "#/components/responses/503"
+    get:
+      operationId: listForecasts
+      summary: List recent forecasts
+      description: >-
+        Returns recent forecast jobs and completed forecasts ordered by submission time.
+        Results support cursor-based pagination and optional filtering by status, scope type,
+        and utility region.
+      tags:
+        - Forecasts
+      parameters:
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+        - name: status
+          in: query
+          required: false
+          description: Filter forecasts by processing status
+          schema:
+            $ref: "#/components/schemas/ForecastStatus"
+        - name: scope_type
+          in: query
+          required: false
+          description: Filter by planning scope type
+          schema:
+            type: string
+            enum:
+              - region
+              - feeder
+              - substation
+        - name: utility_region
+          in: query
+          required: false
+          description: Utility region code used by planning operators
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 64
+            example: north-east
+      responses:
+        "200":
+          description: Paginated forecast list response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastListResponse"
+              examples:
+                first_page:
+                  value:
+                    data:
+                      - forecast_id: fct-24aa95e4
+                        status: completed
+                        target_scope:
+                          scope_type: feeder
+                          scope_id: FEEDER-NE-1138
+                          utility_region: north-east
+                        forecast_horizon_hours: 24
+                        model_id: mdl-xgboost-hourly-v2
+                        submitted_at: "2026-08-01T10:12:04Z"
+                        completed_at: "2026-08-01T10:12:44Z"
+                        peak_load_mw: 138.72
+                      - forecast_id: fct-ae98ddf2
+                        status: running
+                        target_scope:
+                          scope_type: substation
+                          scope_id: SUB-NE-0021
+                          utility_region: north-east
+                        forecast_horizon_hours: 72
+                        model_id: mdl-lstm-der-v4
+                        submitted_at: "2026-08-01T10:16:25Z"
+                    pagination:
+                      next_page_token: eyJvZmZzZXQiOjJ9
+                      page_size: 2
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "503":
+          $ref: "#/components/responses/503"
+  /v1/forecasts/{forecastId}:
+    get:
+      operationId: getForecastById
+      summary: Get forecast results
+      description: >-
+        Retrieves a forecast by identifier, including projected load values, confidence
+        intervals, weather feature snapshot, and model metadata. When a forecast is still
+        running, the response includes current progress and partial diagnostics.
+      tags:
+        - Forecasts
+      parameters:
+        - name: forecastId
+          in: path
+          required: true
+          description: Unique forecast identifier
+          schema:
+            type: string
+            minLength: 6
+            maxLength: 64
+            example: fct-24aa95e4
+      responses:
+        "200":
+          description: Forecast result retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastResultResponse"
+              examples:
+                completed_forecast:
+                  value:
+                    forecast_id: fct-24aa95e4
+                    status: completed
+                    target_scope:
+                      scope_type: feeder
+                      scope_id: FEEDER-NE-1138
+                      utility_region: north-east
+                    forecast_horizon_hours: 24
+                    time_granularity_minutes: 15
+                    model:
+                      model_id: mdl-xgboost-hourly-v2
+                      model_version: 2.4.1
+                      trained_at: "2026-07-28T02:30:00Z"
+                      mape_pct: 3.41
+                      rmse_mw: 4.62
+                    submitted_at: "2026-08-01T10:12:04Z"
+                    completed_at: "2026-08-01T10:12:44Z"
+                    confidence_level_pct: 95
+                    forecast_points:
+                      - timestamp: "2026-08-01T10:15:00Z"
+                        load_mw: 121.44
+                        lower_bound_mw: 115.73
+                        upper_bound_mw: 126.81
+                        temperature_c: 31.8
+                      - timestamp: "2026-08-01T10:30:00Z"
+                        load_mw: 123.28
+                        lower_bound_mw: 117.24
+                        upper_bound_mw: 128.65
+                        temperature_c: 32.1
+                    der_impact:
+                      der_capacity_kw: 18250
+                      expected_der_dispatch_pct: 48.5
+                      net_load_reduction_mw: 6.2
+                    diagnostics:
+                      weather_data_latency_minutes: 4
+                      missing_input_intervals: 0
+                      quality_flag: nominal
+                    trace_id: "d1524a56-b26b-4f13-8f1b-4fb7d2c4d7f4"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "503":
+          $ref: "#/components/responses/503"
+  /v1/models:
+    post:
+      operationId: registerForecastModel
+      summary: Register forecast model
+      description: >-
+        Registers a forecasting model and its operating parameters for production inference.
+        Registration captures model framework details, feature requirements, and operating
+        constraints for governance and runtime validation.
+      tags:
+        - Models
+      requestBody:
+        required: true
+        description: Model registration request payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterModelRequest"
+            examples:
+              register_lstm:
+                value:
+                  model_name: lstm_der_hourly
+                  model_version: 4.0.0
+                  framework: tensorflow
+                  forecast_horizon_hours: 168
+                  supported_scope_types:
+                    - region
+                    - feeder
+                  feature_set:
+                    - historical_load_mw
+                    - temperature_c
+                    - humidity_pct
+                    - holiday_flag
+                    - der_capacity_kw
+                  training_window_days: 730
+                  retrain_frequency_hours: 168
+                  default_confidence_level_pct: 95
+                  owner_team: grid-ml-ops
+                  parameters:
+                    learning_rate: 0.0008
+                    layer_count: 3
+                    hidden_units: 128
+                    dropout: 0.2
+      responses:
+        "201":
+          description: Model registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelRegistrationResponse"
+              examples:
+                created:
+                  value:
+                    model_id: mdl-lstm-der-v4
+                    model_name: lstm_der_hourly
+                    model_version: 4.0.0
+                    status: active
+                    created_at: "2026-07-25T16:18:09Z"
+                    owner_team: grid-ml-ops
+                    trace_id: "f6c70dc2-2684-4084-af65-7b5b8f4f184f"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/models/{modelId}/accuracy:
+    get:
+      operationId: getModelAccuracy
+      summary: Get model accuracy metrics
+      description: >-
+        Returns aggregate and slice-level model accuracy metrics for model governance,
+        including MAPE and RMSE across recent validation windows.
+      tags:
+        - Models
+      parameters:
+        - name: modelId
+          in: path
+          required: true
+          description: Unique registered model identifier
+          schema:
+            type: string
+            minLength: 6
+            maxLength: 64
+            example: mdl-lstm-der-v4
+        - name: evaluation_window_days
+          in: query
+          required: false
+          description: Number of trailing days used for metric calculation
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+        - name: scope_type
+          in: query
+          required: false
+          description: Optional scope slice for metric filtering
+          schema:
+            type: string
+            enum:
+              - region
+              - feeder
+              - substation
+      responses:
+        "200":
+          description: Accuracy metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelAccuracyResponse"
+              examples:
+                accuracy_30d:
+                  value:
+                    model_id: mdl-lstm-der-v4
+                    model_version: 4.0.0
+                    evaluation_window_days: 30
+                    aggregate_metrics:
+                      mape_pct: 3.28
+                      rmse_mw: 4.17
+                      mae_mw: 2.96
+                      bias_pct: -0.42
+                    slices:
+                      - scope_type: region
+                        scope_label: north-east
+                        mape_pct: 3.12
+                        rmse_mw: 5.01
+                        sample_count: 2880
+                      - scope_type: feeder
+                        scope_label: FEEDER-NE-1138
+                        mape_pct: 3.44
+                        rmse_mw: 3.88
+                        sample_count: 960
+                    computed_at: "2026-08-01T08:00:00Z"
+                    trace_id: "7c7fa9c6-cc49-4f6d-a9fd-480db4f93d8b"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /v1/weather/integration:
+    get:
+      operationId: getWeatherIntegrationStatus
+      summary: Get weather feed integration status
+      description: >-
+        Provides health and freshness status for configured weather data providers consumed
+        by forecasting jobs. Includes current latency, ingestion errors, and latest available
+        timestamp by provider and station.
+      tags:
+        - Weather Integration
+      parameters:
+        - name: provider
+          in: query
+          required: false
+          description: Filter by weather provider
+          schema:
+            type: string
+            enum:
+              - noaa
+              - weather_company
+              - local_meso
+      responses:
+        "200":
+          description: Weather integration status payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeatherIntegrationStatusResponse"
+              examples:
+                healthy:
+                  value:
+                    overall_status: healthy
+                    providers:
+                      - provider: noaa
+                        status: healthy
+                        data_latency_minutes: 4
+                        latest_observation_at: "2026-08-01T10:10:00Z"
+                        station_count: 64
+                        error_rate_pct_last_hour: 0
+                      - provider: local_meso
+                        status: degraded
+                        data_latency_minutes: 21
+                        latest_observation_at: "2026-08-01T09:52:00Z"
+                        station_count: 12
+                        error_rate_pct_last_hour: 2.7
+                    checked_at: "2026-08-01T10:15:00Z"
+                    trace_id: "26cc0f0f-2f2c-49da-b6fd-c6cf0595d6ad"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "503":
+          $ref: "#/components/responses/503"
+  /v1/scenarios:
+    post:
+      operationId: runForecastScenario
+      summary: Run load forecasting scenario
+      description: >-
+        Executes a what-if planning scenario using baseline forecasts and proposed changes
+        such as DER additions, demand shifts, conservation measures, and weather anomaly
+        assumptions. The response includes deltas versus baseline and resulting peak impact.
+      tags:
+        - Scenarios
+      requestBody:
+        required: true
+        description: Scenario execution request payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScenarioRequest"
+            examples:
+              der_growth_case:
+                value:
+                  scenario_name: q4-der-growth-northeast
+                  baseline_forecast_id: fct-24aa95e4
+                  target_scope:
+                    scope_type: feeder
+                    scope_id: FEEDER-NE-1138
+                    utility_region: north-east
+                  forecast_horizon_hours: 168
+                  assumptions:
+                    der_capacity_kw_delta: 5200
+                    expected_der_dispatch_pct: 56.2
+                    demand_shift_pct: -1.8
+                    weather_temperature_delta_c: 1.4
+                    conservation_program_uptake_pct: 7.5
+                  requested_by: capacity.planning@verizon.example.com
+      responses:
+        "201":
+          description: Scenario accepted and evaluated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioResultResponse"
+              examples:
+                scenario_result:
+                  value:
+                    scenario_id: scn-79bb641a
+                    scenario_name: q4-der-growth-northeast
+                    baseline_forecast_id: fct-24aa95e4
+                    status: completed
+                    target_scope:
+                      scope_type: feeder
+                      scope_id: FEEDER-NE-1138
+                      utility_region: north-east
+                    forecast_horizon_hours: 168
+                    assumptions:
+                      der_capacity_kw_delta: 5200
+                      expected_der_dispatch_pct: 56.2
+                      demand_shift_pct: -1.8
+                      weather_temperature_delta_c: 1.4
+                      conservation_program_uptake_pct: 7.5
+                    outcomes:
+                      baseline_peak_load_mw: 141.28
+                      scenario_peak_load_mw: 136.04
+                      peak_delta_mw: -5.24
+                      cumulative_energy_delta_mwh: -274.12
+                    evaluated_at: "2026-08-01T10:20:48Z"
+                    trace_id: "8e74348c-f0ca-4fca-a68b-67fcf0e0199d"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "422":
+          $ref: "#/components/responses/422"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Number of records returned per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    PageToken:
+      name: page_token
+      in: query
+      required: false
+      description: Opaque cursor token returned by a prior list request
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 4096
+  responses:
+    "400":
+      description: Bad request - malformed syntax or invalid field values
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            invalid_field:
+              value:
+                error:
+                  code: invalid_argument
+                  message: forecast_horizon_hours must be between 1 and 720
+                  details:
+                    field: forecast_horizon_hours
+                    value: 0
+                  trace_id: "aefdfac2-f66f-40d6-8f6c-fca89ec2eb72"
+    "401":
+      description: Unauthorized - missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            missing_token:
+              value:
+                error:
+                  code: unauthorized
+                  message: Bearer token is required
+                  trace_id: "017f5493-2312-44ad-8603-0f04500cbb58"
+    "403":
+      description: Forbidden - insufficient permissions for requested scope
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            scope_denied:
+              value:
+                error:
+                  code: forbidden
+                  message: Caller lacks permission for utility_region north-east
+                  trace_id: "1bd59f16-acce-4993-9804-cce623d7dfba"
+    "404":
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            not_found:
+              value:
+                error:
+                  code: not_found
+                  message: Requested resource was not found
+                  details:
+                    resource: forecast
+                    id: fct-unknown
+                  trace_id: "c6e9bc0f-b2d8-4748-b4c1-a70c5735d52b"
+    "409":
+      description: Conflict - resource state prevents request execution
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            duplicate_model:
+              value:
+                error:
+                  code: conflict
+                  message: Model name and version already registered
+                  details:
+                    model_name: lstm_der_hourly
+                    model_version: 4.0.0
+                  trace_id: "40b92ab4-f918-4d57-8cad-b675f4a6e5df"
+    "422":
+      description: Unprocessable entity - semantically invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            missing_dependency:
+              value:
+                error:
+                  code: unprocessable_entity
+                  message: weather_profile.weather_station_id is required when source is noaa
+                  details:
+                    field: weather_profile.weather_station_id
+                  trace_id: "60446fd4-411f-4c3a-ba01-4308954cb887"
+    "429":
+      description: Too many requests - rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            throttled:
+              value:
+                error:
+                  code: too_many_requests
+                  message: Rate limit exceeded, retry after 30 seconds
+                  details:
+                    retry_after_seconds: 30
+                  trace_id: "86ce5f7c-22fa-44e8-805f-df3f6e0bce73"
+    "500":
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            internal_error:
+              value:
+                error:
+                  code: internal_error
+                  message: An unexpected error occurred
+                  trace_id: "0a3dce6e-90c3-4aee-a13b-d7c9c4f91568"
+    "503":
+      description: Service unavailable - dependency outage or maintenance
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            dependency_unavailable:
+              value:
+                error:
+                  code: service_unavailable
+                  message: Weather ingestion dependency is temporarily unavailable
+                  details:
+                    dependency: weather-provider
+                  trace_id: "ddfcfc72-b5b2-44c0-a723-f2201cb1936e"
+  schemas:
+    ForecastStatus:
+      type: string
+      description: Forecast lifecycle state
+      enum:
+        - queued
+        - running
+        - completed
+        - failed
+        - cancelled
+      example: completed
+    ScopeType:
+      type: string
+      description: Geographic or network scope type for forecast targeting
+      enum:
+        - region
+        - feeder
+        - substation
+      example: feeder
+    ForecastScope:
+      type: object
+      description: Forecast target scope metadata
+      properties:
+        scope_type:
+          $ref: "#/components/schemas/ScopeType"
+        scope_id:
+          type: string
+          description: Identifier for target entity in utility topology
+          minLength: 2
+          maxLength: 128
+          example: FEEDER-NE-1138
+        utility_region:
+          type: string
+          description: Utility operating region identifier
+          minLength: 2
+          maxLength: 64
+          example: north-east
+      required:
+        - scope_type
+        - scope_id
+        - utility_region
+    WeatherProfile:
+      type: object
+      description: Weather feature integration settings for forecast input
+      properties:
+        source:
+          type: string
+          enum:
+            - noaa
+            - weather_company
+            - local_meso
+          example: noaa
+        weather_station_id:
+          type: string
+          description: Station code used for localized weather features
+          example: KNYC
+        include_temperature:
+          type: boolean
+          default: true
+        include_humidity:
+          type: boolean
+          default: true
+        include_wind_speed:
+          type: boolean
+          default: false
+      required:
+        - source
+    DerContext:
+      type: object
+      description: Distributed energy resource context used during inference
+      properties:
+        der_capacity_kw:
+          type: number
+          format: double
+          minimum: 0
+          description: Aggregated DER capacity in kilowatts
+          example: 18250
+        expected_der_dispatch_pct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          description: Expected DER dispatch as percent of DER capacity
+          example: 48.5
+      required:
+        - der_capacity_kw
+    DemandEventOverride:
+      type: object
+      description: Time-bound override applied to baseline demand
+      properties:
+        start_time:
+          type: string
+          format: date-time
+          example: "2026-08-01T12:00:00Z"
+        end_time:
+          type: string
+          format: date-time
+          example: "2026-08-01T18:00:00Z"
+        demand_shift_pct:
+          type: number
+          format: double
+          minimum: -100
+          maximum: 500
+          description: Relative demand shift percentage
+          example: 4.3
+        reason:
+          type: string
+          maxLength: 128
+          example: summer_peak_alert
+      required:
+        - start_time
+        - end_time
+        - demand_shift_pct
+    DemandAdjustments:
+      type: object
+      description: Adjustment controls for baseline demand forecast
+      properties:
+        baseline_growth_pct:
+          type: number
+          format: double
+          minimum: -100
+          maximum: 100
+          example: 2.1
+        event_overrides:
+          type: array
+          items:
+            $ref: "#/components/schemas/DemandEventOverride"
+      required:
+        - baseline_growth_pct
+    CreateForecastRequest:
+      type: object
+      description: Request payload used to generate a forecast
+      properties:
+        target_scope:
+          $ref: "#/components/schemas/ForecastScope"
+        forecast_horizon_hours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          description: Forecast horizon in hours
+          example: 24
+        time_granularity_minutes:
+          type: integer
+          minimum: 5
+          maximum: 60
+          description: Output interval granularity in minutes
+          example: 15
+        confidence_level_pct:
+          type: number
+          format: double
+          minimum: 50
+          maximum: 99.9
+          description: Requested confidence interval level
+          example: 95
+        weather_profile:
+          $ref: "#/components/schemas/WeatherProfile"
+        der_context:
+          $ref: "#/components/schemas/DerContext"
+        demand_adjustments:
+          $ref: "#/components/schemas/DemandAdjustments"
+        model_id:
+          type: string
+          description: Optional model identifier; defaults to current active model when omitted
+          minLength: 3
+          maxLength: 64
+          example: mdl-xgboost-hourly-v2
+        requested_by:
+          type: string
+          format: email
+          description: Requesting planner identity
+          example: planner.ops@verizon.example.com
+      required:
+        - target_scope
+        - forecast_horizon_hours
+        - time_granularity_minutes
+        - requested_by
+    ForecastJob:
+      type: object
+      description: Forecast job metadata returned on submission
+      properties:
+        forecast_id:
+          type: string
+          example: fct-24aa95e4
+        status:
+          $ref: "#/components/schemas/ForecastStatus"
+        target_scope:
+          $ref: "#/components/schemas/ForecastScope"
+        forecast_horizon_hours:
+          type: integer
+          example: 24
+        model_id:
+          type: string
+          example: mdl-xgboost-hourly-v2
+        submitted_at:
+          type: string
+          format: date-time
+          example: "2026-08-01T10:12:04Z"
+        eta_seconds:
+          type: integer
+          minimum: 0
+          example: 35
+        trace_id:
+          type: string
+          format: uuid
+          example: "d1524a56-b26b-4f13-8f1b-4fb7d2c4d7f4"
+      required:
+        - forecast_id
+        - status
+        - target_scope
+        - forecast_horizon_hours
+        - submitted_at
+    ForecastSummary:
+      type: object
+      description: Lightweight forecast listing item
+      properties:
+        forecast_id:
+          type: string
+          example: fct-24aa95e4
+        status:
+          $ref: "#/components/schemas/ForecastStatus"
+        target_scope:
+          $ref: "#/components/schemas/ForecastScope"
+        forecast_horizon_hours:
+          type: integer
+          example: 72
+        model_id:
+          type: string
+          example: mdl-lstm-der-v4
+        submitted_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        peak_load_mw:
+          type: number
+          format: double
+          nullable: true
+          description: Peak projected load in megawatts
+          example: 138.72
+      required:
+        - forecast_id
+        - status
+        - target_scope
+        - forecast_horizon_hours
+        - submitted_at
+    Pagination:
+      type: object
+      description: Cursor pagination response metadata
+      properties:
+        next_page_token:
+          type: string
+          nullable: true
+          example: eyJvZmZzZXQiOjJ9
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 200
+          example: 50
+      required:
+        - page_size
+    ForecastListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForecastSummary"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+      required:
+        - data
+        - pagination
+    ForecastModelInfo:
+      type: object
+      description: Model metadata used for a forecast result
+      properties:
+        model_id:
+          type: string
+          example: mdl-xgboost-hourly-v2
+        model_version:
+          type: string
+          example: 2.4.1
+        trained_at:
+          type: string
+          format: date-time
+        mape_pct:
+          type: number
+          format: double
+          minimum: 0
+          description: Mean absolute percentage error
+          example: 3.41
+        rmse_mw:
+          type: number
+          format: double
+          minimum: 0
+          description: Root mean squared error in MW
+          example: 4.62
+      required:
+        - model_id
+        - model_version
+    ForecastPoint:
+      type: object
+      description: Forecast datapoint with confidence interval
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        load_mw:
+          type: number
+          format: double
+          description: Forecasted load in megawatts
+          example: 121.44
+        lower_bound_mw:
+          type: number
+          format: double
+          description: Lower confidence bound of load forecast in MW
+          example: 115.73
+        upper_bound_mw:
+          type: number
+          format: double
+          description: Upper confidence bound of load forecast in MW
+          example: 126.81
+        temperature_c:
+          type: number
+          format: double
+          nullable: true
+          description: Forecasted temperature used by model
+          example: 31.8
+      required:
+        - timestamp
+        - load_mw
+        - lower_bound_mw
+        - upper_bound_mw
+    DerImpact:
+      type: object
+      description: DER impact interpretation for net load
+      properties:
+        der_capacity_kw:
+          type: number
+          format: double
+          minimum: 0
+          example: 18250
+        expected_der_dispatch_pct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          example: 48.5
+        net_load_reduction_mw:
+          type: number
+          format: double
+          description: Estimated net load reduction attributable to DER participation
+          example: 6.2
+      required:
+        - der_capacity_kw
+    ForecastDiagnostics:
+      type: object
+      description: Diagnostics and quality indicators for forecast execution
+      properties:
+        weather_data_latency_minutes:
+          type: integer
+          minimum: 0
+          example: 4
+        missing_input_intervals:
+          type: integer
+          minimum: 0
+          example: 0
+        quality_flag:
+          type: string
+          enum:
+            - nominal
+            - warning
+            - degraded
+          example: nominal
+      required:
+        - quality_flag
+    ForecastResultResponse:
+      type: object
+      description: Detailed forecast result resource
+      properties:
+        forecast_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/ForecastStatus"
+        target_scope:
+          $ref: "#/components/schemas/ForecastScope"
+        forecast_horizon_hours:
+          type: integer
+        time_granularity_minutes:
+          type: integer
+        model:
+          $ref: "#/components/schemas/ForecastModelInfo"
+        submitted_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        confidence_level_pct:
+          type: number
+          format: double
+          example: 95
+        forecast_points:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ForecastPoint"
+        der_impact:
+          $ref: "#/components/schemas/DerImpact"
+        diagnostics:
+          $ref: "#/components/schemas/ForecastDiagnostics"
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - forecast_id
+        - status
+        - target_scope
+        - forecast_horizon_hours
+        - time_granularity_minutes
+        - submitted_at
+    RegisterModelRequest:
+      type: object
+      description: Model registration payload
+      properties:
+        model_name:
+          type: string
+          minLength: 3
+          maxLength: 128
+          example: lstm_der_hourly
+        model_version:
+          type: string
+          minLength: 1
+          maxLength: 32
+          example: 4.0.0
+        framework:
+          type: string
+          enum:
+            - xgboost
+            - tensorflow
+            - pytorch
+            - prophet
+          example: tensorflow
+        forecast_horizon_hours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          example: 168
+        supported_scope_types:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ScopeType"
+        feature_set:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 2
+            maxLength: 64
+          example:
+            - historical_load_mw
+            - temperature_c
+            - humidity_pct
+            - holiday_flag
+            - der_capacity_kw
+        training_window_days:
+          type: integer
+          minimum: 7
+          maximum: 3650
+          example: 730
+        retrain_frequency_hours:
+          type: integer
+          minimum: 1
+          maximum: 8760
+          example: 168
+        default_confidence_level_pct:
+          type: number
+          format: double
+          minimum: 50
+          maximum: 99.9
+          example: 95
+        owner_team:
+          type: string
+          minLength: 2
+          maxLength: 128
+          example: grid-ml-ops
+        parameters:
+          type: object
+          description: Model-specific hyperparameters
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: integer
+              - type: boolean
+      required:
+        - model_name
+        - model_version
+        - framework
+        - forecast_horizon_hours
+        - supported_scope_types
+        - feature_set
+        - owner_team
+    ModelRegistrationResponse:
+      type: object
+      description: Model registration result
+      properties:
+        model_id:
+          type: string
+          example: mdl-lstm-der-v4
+        model_name:
+          type: string
+          example: lstm_der_hourly
+        model_version:
+          type: string
+          example: 4.0.0
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+            - archived
+          example: active
+        created_at:
+          type: string
+          format: date-time
+        owner_team:
+          type: string
+          example: grid-ml-ops
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - model_id
+        - model_name
+        - model_version
+        - status
+        - created_at
+    AccuracyAggregateMetrics:
+      type: object
+      properties:
+        mape_pct:
+          type: number
+          format: double
+          minimum: 0
+          description: Mean absolute percentage error in percent
+          example: 3.28
+        rmse_mw:
+          type: number
+          format: double
+          minimum: 0
+          description: Root mean squared error in MW
+          example: 4.17
+        mae_mw:
+          type: number
+          format: double
+          minimum: 0
+          description: Mean absolute error in MW
+          example: 2.96
+        bias_pct:
+          type: number
+          format: double
+          description: Signed bias percentage where negative is under-forecasting
+          example: -0.42
+      required:
+        - mape_pct
+        - rmse_mw
+    AccuracySlice:
+      type: object
+      properties:
+        scope_type:
+          $ref: "#/components/schemas/ScopeType"
+        scope_label:
+          type: string
+          example: FEEDER-NE-1138
+        mape_pct:
+          type: number
+          format: double
+          minimum: 0
+          example: 3.44
+        rmse_mw:
+          type: number
+          format: double
+          minimum: 0
+          example: 3.88
+        sample_count:
+          type: integer
+          minimum: 0
+          example: 960
+      required:
+        - scope_type
+        - scope_label
+        - mape_pct
+        - rmse_mw
+        - sample_count
+    ModelAccuracyResponse:
+      type: object
+      properties:
+        model_id:
+          type: string
+          example: mdl-lstm-der-v4
+        model_version:
+          type: string
+          example: 4.0.0
+        evaluation_window_days:
+          type: integer
+          minimum: 1
+          example: 30
+        aggregate_metrics:
+          $ref: "#/components/schemas/AccuracyAggregateMetrics"
+        slices:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccuracySlice"
+        computed_at:
+          type: string
+          format: date-time
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - model_id
+        - model_version
+        - evaluation_window_days
+        - aggregate_metrics
+        - computed_at
+    WeatherProviderStatus:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum:
+            - noaa
+            - weather_company
+            - local_meso
+          example: noaa
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - down
+          example: healthy
+        data_latency_minutes:
+          type: integer
+          minimum: 0
+          example: 4
+        latest_observation_at:
+          type: string
+          format: date-time
+          nullable: true
+        station_count:
+          type: integer
+          minimum: 0
+          example: 64
+        error_rate_pct_last_hour:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          example: 0
+      required:
+        - provider
+        - status
+        - data_latency_minutes
+        - station_count
+    WeatherIntegrationStatusResponse:
+      type: object
+      properties:
+        overall_status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - down
+          example: healthy
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeatherProviderStatus"
+        checked_at:
+          type: string
+          format: date-time
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - overall_status
+        - providers
+        - checked_at
+    ScenarioAssumptions:
+      type: object
+      description: Inputs applied to baseline forecast for what-if simulation
+      properties:
+        der_capacity_kw_delta:
+          type: number
+          format: double
+          description: Additional DER capacity added in scenario in kW
+          example: 5200
+        expected_der_dispatch_pct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          description: Scenario DER dispatch expectation
+          example: 56.2
+        demand_shift_pct:
+          type: number
+          format: double
+          minimum: -100
+          maximum: 500
+          description: Relative demand shift versus baseline
+          example: -1.8
+        weather_temperature_delta_c:
+          type: number
+          format: double
+          description: Temperature anomaly delta in Celsius
+          example: 1.4
+        conservation_program_uptake_pct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          description: Share of demand impacted by conservation actions
+          example: 7.5
+      required:
+        - der_capacity_kw_delta
+        - demand_shift_pct
+    CreateScenarioRequest:
+      type: object
+      properties:
+        scenario_name:
+          type: string
+          minLength: 3
+          maxLength: 128
+          example: q4-der-growth-northeast
+        baseline_forecast_id:
+          type: string
+          minLength: 6
+          maxLength: 64
+          example: fct-24aa95e4
+        target_scope:
+          $ref: "#/components/schemas/ForecastScope"
+        forecast_horizon_hours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          example: 168
+        assumptions:
+          $ref: "#/components/schemas/ScenarioAssumptions"
+        requested_by:
+          type: string
+          format: email
+          example: capacity.planning@verizon.example.com
+      required:
+        - scenario_name
+        - baseline_forecast_id
+        - target_scope
+        - forecast_horizon_hours
+        - assumptions
+        - requested_by
+    ScenarioOutcomes:
+      type: object
+      properties:
+        baseline_peak_load_mw:
+          type: number
+          format: double
+          example: 141.28
+        scenario_peak_load_mw:
+          type: number
+          format: double
+          example: 136.04
+        peak_delta_mw:
+          type: number
+          format: double
+          description: Scenario peak load minus baseline peak load
+          example: -5.24
+        cumulative_energy_delta_mwh:
+          type: number
+          format: double
+          description: Cumulative MWh difference versus baseline across horizon
+          example: -274.12
+      required:
+        - baseline_peak_load_mw
+        - scenario_peak_load_mw
+        - peak_delta_mw
+    ScenarioResultResponse:
+      type: object
+      properties:
+        scenario_id:
+          type: string
+          example: scn-79bb641a
+        scenario_name:
+          type: string
+          example: q4-der-growth-northeast
+        baseline_forecast_id:
+          type: string
+          example: fct-24aa95e4
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+          example: completed
+        target_scope:
+          $ref: "#/components/schemas/ForecastScope"
+        forecast_horizon_hours:
+          type: integer
+          example: 168
+        assumptions:
+          $ref: "#/components/schemas/ScenarioAssumptions"
+        outcomes:
+          $ref: "#/components/schemas/ScenarioOutcomes"
+        evaluated_at:
+          type: string
+          format: date-time
+          nullable: true
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - scenario_id
+        - scenario_name
+        - baseline_forecast_id
+        - status
+        - target_scope
+        - forecast_horizon_hours
+    ErrorEnvelope:
+      type: object
+      properties:
+        code:
+          type: string
+          example: invalid_argument
+        message:
+          type: string
+          example: Invalid request payload
+        details:
+          type: object
+          additionalProperties: true
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - code
+        - message
+        - trace_id
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorEnvelope"
+      required:
+        - error

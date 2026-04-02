@@ -1,0 +1,1686 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance OAuth 2.0 Authorization Server API
+  description: >-
+    Full-featured OAuth 2.0 authorization server implementing RFC 6749, RFC 7636 (PKCE), RFC 9126 (Pushed
+    Authorization Requests), and OpenID Connect Core 1.0. Supports authorization code, client credentials, device
+    authorization (RFC 8628), and refresh token grant types. Provides dynamic client registration (RFC 7591), JWKS
+    endpoint for token verification, and comprehensive consent management. Token signing uses RS256 with automatic
+    key rotation.
+  version: 5.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-identity-oauth
+  x-acme-domain: identity
+servers:
+  - url: https://af-identity-oauth.api.acmefin.com/v1
+    description: Production
+  - url: https://af-identity-oauth.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Authorization
+    description: OAuth 2.0 authorization flows and consent management
+  - name: Token
+    description: Token issuance, introspection, and revocation per RFC 6749/7009
+  - name: Client Registration
+    description: Dynamic client registration and management per RFC 7591
+  - name: Discovery
+    description: OIDC discovery, JWKS, and userinfo endpoints
+paths:
+  /oauth/authorize:
+    get:
+      operationId: initiateAuthorization
+      summary: Initiate authorization
+      description: >-
+        Start an OAuth 2.0 authorization code flow. Validates the client, scopes, redirect URI, and PKCE
+        challenge. Returns an authorization code via redirect on user consent.
+      tags:
+        - Authorization
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          description: Must be 'code' for authorization code flow
+          schema:
+            type: "string"
+            enum:
+              - code
+        - name: client_id
+          in: query
+          required: true
+          description: Registered client identifier
+          schema:
+            type: "string"
+        - name: redirect_uri
+          in: query
+          required: true
+          description: Client redirect URI (must match registration)
+          schema:
+            type: "string"
+            format: "uri"
+        - name: scope
+          in: query
+          required: false
+          description: Space-delimited requested scopes
+          schema:
+            type: "string"
+        - name: state
+          in: query
+          required: true
+          description: CSRF protection state parameter
+          schema:
+            type: "string"
+        - name: code_challenge
+          in: query
+          required: false
+          description: PKCE code challenge (RFC 7636)
+          schema:
+            type: "string"
+        - name: code_challenge_method
+          in: query
+          required: false
+          description: PKCE challenge method
+          schema:
+            type: "string"
+            enum:
+              - S256
+              - plain
+        - name: nonce
+          in: query
+          required: false
+          description: OIDC nonce for ID token binding
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_url:
+                    type: string
+                    description: Full authorization URL with parameters
+                    example: "https://auth.acmefin.com/oauth/authorize?response_type=code&client_id=cli_a1b2c3d4"
+                required:
+                  - authorization_url
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /oauth/token:
+    post:
+      operationId: issueToken
+      summary: Issue token
+      description: >-
+        Exchange an authorization code, client credentials, refresh token, or device code for an access
+        token per RFC 6749. PKCE verification is enforced for public clients.
+      tags:
+        - Token
+      requestBody:
+        required: true
+        description: Issue token request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    grant_type:
+                      type: string
+                      description: OAuth grant type
+                      example: "authorization_code"
+                      enum:
+                        - authorization_code
+                        - client_credentials
+                        - refresh_token
+                        - urn:ietf:params:oauth:grant-type:device_code
+                    code:
+                      type: string
+                      description: Authorization code (for authorization_code grant)
+                      example: "authz_x1y2z3"
+                    redirect_uri:
+                      type: string
+                      description: Redirect URI (must match authorize request)
+                      example: "https://app.acmefin.com/callback"
+                    client_id:
+                      type: string
+                      description: Client identifier
+                      example: "cli_a1b2c3d4"
+                    client_secret:
+                      type: string
+                      description: Client secret (confidential clients)
+                      example: "cs_s3cr3t"
+                    refresh_token:
+                      type: string
+                      description: Refresh token (for refresh_token grant)
+                      example: "rt_a1b2c3d4"
+                    code_verifier:
+                      type: string
+                      description: PKCE code verifier (RFC 7636)
+                      example: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+                    scope:
+                      type: string
+                      description: Requested scopes (for client_credentials)
+                      example: "read write"
+                    device_code:
+                      type: string
+                      description: Device code (for device_code grant)
+                      example: "dev_code_x1y2z3"
+              required:
+                - grant_type
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: OAuth 2.0 access token
+                    example: "eyJhbGciOiJSUzI1NiJ9..."
+                  token_type:
+                    type: string
+                    description: Token type
+                    example: "Bearer"
+                  expires_in:
+                    type: integer
+                    description: Token TTL in seconds
+                    example: 3600
+                  refresh_token:
+                    type: string
+                    description: Refresh token (if offline_access scope granted)
+                    example: "rt_a1b2c3d4"
+                  scope:
+                    type: string
+                    description: Granted scopes (space-delimited)
+                    example: "openid profile email"
+                  id_token:
+                    type: string
+                    description: OIDC ID token (if openid scope requested)
+                    example: "eyJhbGciOiJSUzI1NiJ9..."
+                required:
+                  - access_token
+                  - token_type
+                  - expires_in
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /oauth/token/introspect:
+    post:
+      operationId: introspectOAuthToken
+      summary: Introspect token
+      description: >-
+        Validate and decode a token per RFC 7662. Returns the token's claims, active status, and metadata.
+        Requires client authentication.
+      tags:
+        - Token
+      requestBody:
+        required: true
+        description: Introspect token request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    token:
+                      type: string
+                      description: Token to introspect
+                      example: "eyJhbGciOiJSUzI1NiJ9..."
+                    token_type_hint:
+                      type: string
+                      description: Token type hint
+                      example: "access_token"
+                      enum:
+                        - access_token
+                        - refresh_token
+              required:
+                - token
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                    description: Token validity
+                    example: true
+                  scope:
+                    type: string
+                    description: Granted scopes
+                    example: "openid profile"
+                  client_id:
+                    type: string
+                    description: Requesting client
+                    example: "cli_a1b2c3d4"
+                  sub:
+                    type: string
+                    description: Subject identifier
+                    example: "usr_4e5f6a7b"
+                  exp:
+                    type: integer
+                    description: Expiration (Unix)
+                    example: 1719835200
+                  iat:
+                    type: integer
+                    description: Issued at (Unix)
+                    example: 1719831600
+                  iss:
+                    type: string
+                    description: Issuer
+                    example: "https://auth.acmefin.com"
+                  aud:
+                    type: string
+                    description: Audience
+                    example: "https://api.acmefin.com"
+                  token_type:
+                    type: string
+                    description: Token type
+                    example: "access_token"
+                required:
+                  - active
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /oauth/token/revoke:
+    post:
+      operationId: revokeOAuthToken
+      summary: Revoke token
+      description: >-
+        Revoke an access or refresh token per RFC 7009. When a refresh token is revoked, all associated
+        access tokens are also invalidated.
+      tags:
+        - Token
+      requestBody:
+        required: true
+        description: Revoke token request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    token:
+                      type: string
+                      description: Token to revoke
+                      example: "eyJhbGciOiJSUzI1NiJ9..."
+                    token_type_hint:
+                      type: string
+                      description: Token type
+                      example: "refresh_token"
+                      enum:
+                        - access_token
+                        - refresh_token
+              required:
+                - token
+      responses:
+        "202":
+          description: Request accepted for processing
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /oauth/par:
+    post:
+      operationId: pushedAuthorizationRequest
+      summary: Pushed Authorization Request
+      description: >-
+        Submit authorization parameters via back-channel per RFC 9126 (PAR). Returns a request_uri that the
+        client uses in the authorization redirect, preventing parameter tampering and supporting complex
+        requests.
+      tags:
+        - Authorization
+      requestBody:
+        required: true
+        description: Pushed Authorization Request request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    client_id:
+                      type: string
+                      description: Client identifier
+                      example: "cli_a1b2c3d4"
+                    response_type:
+                      type: string
+                      description: Response type
+                      example: "code"
+                    redirect_uri:
+                      type: string
+                      description: Redirect URI
+                      example: "https://app.acmefin.com/callback"
+                    scope:
+                      type: string
+                      description: Requested scopes
+                      example: "openid profile"
+                    state:
+                      type: string
+                      description: State parameter
+                      example: "xyz789"
+                    code_challenge:
+                      type: string
+                      description: PKCE challenge
+                      example: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+                    code_challenge_method:
+                      type: string
+                      description: PKCE method
+                      example: "S256"
+              required:
+                - client_id
+                - response_type
+                - redirect_uri
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_uri:
+                    type: string
+                    description: PAR request URI (use in authorization redirect)
+                    example: "urn:ietf:params:oauth:request_uri:6esc_11ACC5bwc014ltc14eY22c"
+                  expires_in:
+                    type: integer
+                    description: Request URI TTL in seconds
+                    example: 60
+                required:
+                  - request_uri
+                  - expires_in
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /oauth/device/code:
+    post:
+      operationId: requestDeviceCode
+      summary: Request device authorization code
+      description: >-
+        Initiate the device authorization flow per RFC 8628 for input-constrained devices (smart TVs, CLIs).
+        Returns a device code and user-facing verification URI.
+      tags:
+        - Authorization
+      requestBody:
+        required: true
+        description: Request device authorization code request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    client_id:
+                      type: string
+                      description: Client identifier
+                      example: "cli_tv_app"
+                    scope:
+                      type: string
+                      description: Requested scopes
+                      example: "openid profile"
+              required:
+                - client_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_code:
+                    type: string
+                    description: Device verification code (for polling)
+                    example: "GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS"
+                  user_code:
+                    type: string
+                    description: User-facing code to enter
+                    example: "WDJB-MJHT"
+                  verification_uri:
+                    type: string
+                    description: URI for user to visit
+                    example: "https://auth.acmefin.com/device"
+                  verification_uri_complete:
+                    type: string
+                    description: URI with user_code pre-filled
+                    example: "https://auth.acmefin.com/device?user_code=WDJB-MJHT"
+                  expires_in:
+                    type: integer
+                    description: Code TTL in seconds
+                    example: 1800
+                  interval:
+                    type: integer
+                    description: Polling interval in seconds
+                    example: 5
+                required:
+                  - device_code
+                  - user_code
+                  - verification_uri
+                  - expires_in
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /oauth/clients:
+    get:
+      operationId: listClients
+      summary: List OAuth clients
+      description: >-
+        Retrieve registered OAuth clients with their configuration and status. Supports filtering by client
+        type and status.
+      tags:
+        - Client Registration
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: client_type
+          in: query
+          required: false
+          description: Filter by client type
+          schema:
+            type: "string"
+            enum:
+              - confidential
+              - public
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        client_id:
+                          type: string
+                          description: Unique client identifier
+                          example: "cli_a1b2c3d4"
+                          readOnly: true
+                        client_name:
+                          type: string
+                          description: Display name for consent screens
+                          example: "Acme Mobile Banking"
+                        client_type:
+                          type: string
+                          description: Client type per RFC 6749
+                          example: "confidential"
+                          enum:
+                            - confidential
+                            - public
+                        redirect_uris:
+                          type: array
+                          description: Registered redirect URIs
+                          items:
+                            type: string
+                            example: "https://app.acmefin.com/callback"
+                        grant_types:
+                          type: array
+                          description: Allowed grant types
+                          items:
+                            type: string
+                            example: "authorization_code"
+                        scopes:
+                          type: array
+                          description: Allowed scopes
+                          items:
+                            type: string
+                            example: "openid"
+                        token_endpoint_auth_method:
+                          type: string
+                          description: Client auth method
+                          example: "private_key_jwt"
+                          enum:
+                            - client_secret_basic
+                            - client_secret_post
+                            - private_key_jwt
+                            - none
+                        logo_uri:
+                          type: string
+                          description: Client logo URL for consent screen
+                          format: uri
+                          example: "https://app.acmefin.com/logo.png"
+                        status:
+                          type: string
+                          description: Client status
+                          example: "active"
+                          enum:
+                            - active
+                            - suspended
+                            - revoked
+                        created_at:
+                          type: string
+                          description: Client registration timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - client_id
+                        - client_name
+                        - client_type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: registerClient
+      summary: Register OAuth client
+      description: >-
+        Dynamically register a new OAuth client per RFC 7591. Returns client credentials (client_id and
+        secret for confidential clients).
+      tags:
+        - Client Registration
+      requestBody:
+        required: true
+        description: Register OAuth client request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    client_name:
+                      type: string
+                      description: Client display name
+                      example: "Acme Mobile Banking"
+                    client_type:
+                      type: string
+                      description: Client type
+                      example: "confidential"
+                      enum:
+                        - confidential
+                        - public
+                    redirect_uris:
+                      type: array
+                      description: Redirect URIs
+                      items:
+                        type: string
+                    grant_types:
+                      type: array
+                      description: Grant types
+                      items:
+                        type: string
+                        example: "authorization_code"
+                    scopes:
+                      type: array
+                      description: Allowed scopes
+                      items:
+                        type: string
+                    token_endpoint_auth_method:
+                      type: string
+                      description: Auth method
+                      example: "private_key_jwt"
+                      enum:
+                        - client_secret_basic
+                        - client_secret_post
+                        - private_key_jwt
+                        - none
+                    logo_uri:
+                      type: string
+                      description: Logo URL
+                      example: "https://app.acmefin.com/logo.png"
+              required:
+                - client_name
+                - redirect_uris
+                - grant_types
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client_id:
+                    type: string
+                    description: Unique client identifier
+                    example: "cli_a1b2c3d4"
+                    readOnly: true
+                  client_name:
+                    type: string
+                    description: Display name for consent screens
+                    example: "Acme Mobile Banking"
+                  client_type:
+                    type: string
+                    description: Client type per RFC 6749
+                    example: "confidential"
+                    enum:
+                      - confidential
+                      - public
+                  redirect_uris:
+                    type: array
+                    description: Registered redirect URIs
+                    items:
+                      type: string
+                      example: "https://app.acmefin.com/callback"
+                  grant_types:
+                    type: array
+                    description: Allowed grant types
+                    items:
+                      type: string
+                      example: "authorization_code"
+                  scopes:
+                    type: array
+                    description: Allowed scopes
+                    items:
+                      type: string
+                      example: "openid"
+                  token_endpoint_auth_method:
+                    type: string
+                    description: Client auth method
+                    example: "private_key_jwt"
+                    enum:
+                      - client_secret_basic
+                      - client_secret_post
+                      - private_key_jwt
+                      - none
+                  logo_uri:
+                    type: string
+                    description: Client logo URL for consent screen
+                    format: uri
+                    example: "https://app.acmefin.com/logo.png"
+                  status:
+                    type: string
+                    description: Client status
+                    example: "active"
+                    enum:
+                      - active
+                      - suspended
+                      - revoked
+                  created_at:
+                    type: string
+                    description: Client registration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  client_secret:
+                    type: string
+                    description: Client secret (confidential clients only, shown once)
+                    example: "cs_s3cr3t_v4lu3"
+                required:
+                  - client_id
+                  - client_name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /oauth/clients/{client_id}:
+    get:
+      operationId: getClient
+      summary: Get OAuth client
+      description: Retrieve configuration and metadata for a registered OAuth client.
+      tags:
+        - Client Registration
+      parameters:
+        - name: client_id
+          in: path
+          required: true
+          description: Unique client id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client_id:
+                    type: string
+                    description: Unique client identifier
+                    example: "cli_a1b2c3d4"
+                    readOnly: true
+                  client_name:
+                    type: string
+                    description: Display name for consent screens
+                    example: "Acme Mobile Banking"
+                  client_type:
+                    type: string
+                    description: Client type per RFC 6749
+                    example: "confidential"
+                    enum:
+                      - confidential
+                      - public
+                  redirect_uris:
+                    type: array
+                    description: Registered redirect URIs
+                    items:
+                      type: string
+                      example: "https://app.acmefin.com/callback"
+                  grant_types:
+                    type: array
+                    description: Allowed grant types
+                    items:
+                      type: string
+                      example: "authorization_code"
+                  scopes:
+                    type: array
+                    description: Allowed scopes
+                    items:
+                      type: string
+                      example: "openid"
+                  token_endpoint_auth_method:
+                    type: string
+                    description: Client auth method
+                    example: "private_key_jwt"
+                    enum:
+                      - client_secret_basic
+                      - client_secret_post
+                      - private_key_jwt
+                      - none
+                  logo_uri:
+                    type: string
+                    description: Client logo URL for consent screen
+                    format: uri
+                    example: "https://app.acmefin.com/logo.png"
+                  status:
+                    type: string
+                    description: Client status
+                    example: "active"
+                    enum:
+                      - active
+                      - suspended
+                      - revoked
+                  created_at:
+                    type: string
+                    description: Client registration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - client_id
+                  - client_name
+                  - client_type
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateClient
+      summary: Update OAuth client
+      description: >-
+        Update an OAuth client's configuration. Changes to redirect URIs or grant types take effect
+        immediately.
+      tags:
+        - Client Registration
+      parameters:
+        - name: client_id
+          in: path
+          required: true
+          description: Unique client id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update OAuth client request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    client_name:
+                      type: string
+                      description: Updated display name
+                      example: "Acme Banking App v2"
+                    redirect_uris:
+                      type: array
+                      description: Updated redirect URIs
+                      items:
+                        type: string
+                    scopes:
+                      type: array
+                      description: Updated allowed scopes
+                      items:
+                        type: string
+                    logo_uri:
+                      type: string
+                      description: Updated logo URL
+                      example: "https://app.acmefin.com/logo-v2.png"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client_id:
+                    type: string
+                    description: Unique client identifier
+                    example: "cli_a1b2c3d4"
+                    readOnly: true
+                  client_name:
+                    type: string
+                    description: Display name for consent screens
+                    example: "Acme Mobile Banking"
+                  client_type:
+                    type: string
+                    description: Client type per RFC 6749
+                    example: "confidential"
+                    enum:
+                      - confidential
+                      - public
+                  redirect_uris:
+                    type: array
+                    description: Registered redirect URIs
+                    items:
+                      type: string
+                      example: "https://app.acmefin.com/callback"
+                  grant_types:
+                    type: array
+                    description: Allowed grant types
+                    items:
+                      type: string
+                      example: "authorization_code"
+                  scopes:
+                    type: array
+                    description: Allowed scopes
+                    items:
+                      type: string
+                      example: "openid"
+                  token_endpoint_auth_method:
+                    type: string
+                    description: Client auth method
+                    example: "private_key_jwt"
+                    enum:
+                      - client_secret_basic
+                      - client_secret_post
+                      - private_key_jwt
+                      - none
+                  logo_uri:
+                    type: string
+                    description: Client logo URL for consent screen
+                    format: uri
+                    example: "https://app.acmefin.com/logo.png"
+                  status:
+                    type: string
+                    description: Client status
+                    example: "active"
+                    enum:
+                      - active
+                      - suspended
+                      - revoked
+                  created_at:
+                    type: string
+                    description: Client registration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteClient
+      summary: Delete OAuth client
+      description: >-
+        Permanently delete an OAuth client registration. All associated tokens and consents are revoked.
+      tags:
+        - Client Registration
+      parameters:
+        - name: client_id
+          in: path
+          required: true
+          description: Unique client id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /oauth/clients/{client_id}/rotate-secret:
+    post:
+      operationId: rotateClientSecret
+      summary: Rotate client secret
+      description: >-
+        Generate a new client secret with a configurable grace period during which the old secret remains
+        valid.
+      tags:
+        - Client Registration
+      parameters:
+        - name: client_id
+          in: path
+          required: true
+          description: Unique client id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Rotate client secret request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    grace_period_hours:
+                      type: integer
+                      description: Hours old secret remains valid
+                      example: 24
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client_id:
+                    type: string
+                    description: Unique client identifier
+                    example: "cli_a1b2c3d4"
+                    readOnly: true
+                  new_client_secret:
+                    type: string
+                    description: New client secret (shown once)
+                    example: "cs_n3w_s3cr3t"
+                  old_secret_expires_at:
+                    type: string
+                    description: When old secret expires
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - client_id
+                  - new_client_secret
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /.well-known/openid-configuration:
+    get:
+      operationId: getOpenIDConfiguration
+      summary: Get OpenID Connect discovery document
+      description: >-
+        Returns the OpenID Connect Provider configuration per RFC 8414 / OpenID Connect Discovery 1.0.
+        Includes issuer, supported grant types, signing algorithms, and endpoint URLs.
+      tags:
+        - Discovery
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuer:
+                    type: string
+                    description: Authorization server issuer identifier
+                    example: "https://auth.acmefin.com"
+                  authorization_endpoint:
+                    type: string
+                    description: Authorization endpoint
+                    example: "https://auth.acmefin.com/oauth/authorize"
+                  token_endpoint:
+                    type: string
+                    description: Token endpoint
+                    example: "https://auth.acmefin.com/oauth/token"
+                  userinfo_endpoint:
+                    type: string
+                    description: Userinfo endpoint
+                    example: "https://auth.acmefin.com/oauth/userinfo"
+                  jwks_uri:
+                    type: string
+                    description: JWKS endpoint
+                    example: "https://auth.acmefin.com/oauth/jwks"
+                  scopes_supported:
+                    type: array
+                    description: Supported scopes
+                    items:
+                      type: string
+                      example: "openid"
+                  response_types_supported:
+                    type: array
+                    description: Supported response types
+                    items:
+                      type: string
+                      example: "code"
+                  grant_types_supported:
+                    type: array
+                    description: Supported grant types
+                    items:
+                      type: string
+                      example: "authorization_code"
+                  id_token_signing_alg_values_supported:
+                    type: array
+                    description: Supported signing algorithms
+                    items:
+                      type: string
+                      example: "RS256"
+                required:
+                  - issuer
+                  - authorization_endpoint
+                  - token_endpoint
+                  - jwks_uri
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /oauth/jwks:
+    get:
+      operationId: getJWKS
+      summary: Get JSON Web Key Set
+      description: >-
+        Returns the public keys used to verify JWT token signatures per RFC 7517. Keys are rotated
+        periodically; clients should cache with the max-age directive.
+      tags:
+        - Discovery
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    description: JSON Web Keys
+                    items:
+                      type: object
+                required:
+                  - keys
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /oauth/userinfo:
+    get:
+      operationId: getUserInfo
+      summary: Get user info
+      description: >-
+        Returns claims about the authenticated user per OpenID Connect Core Section 5.3. Requires a valid
+        access token with the openid scope.
+      tags:
+        - Discovery
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sub:
+                    type: string
+                    description: Subject identifier
+                    example: "usr_4e5f6a7b"
+                  name:
+                    type: string
+                    description: Full name
+                    example: "Jane Smith"
+                  email:
+                    type: string
+                    description: Email address
+                    example: "j.smith@acmefin.com"
+                  email_verified:
+                    type: boolean
+                    description: Whether email is verified
+                    example: true
+                  preferred_username:
+                    type: string
+                    description: Preferred username
+                    example: "jsmith"
+                  updated_at:
+                    type: integer
+                    description: Last profile update (Unix timestamp)
+                    example: 1719831600
+                required:
+                  - sub
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /oauth/consents:
+    get:
+      operationId: listUserConsents
+      summary: List user consents
+      description: >-
+        Retrieve all active OAuth consents granted by the authenticated user, showing which clients have
+        access and their granted scopes.
+      tags:
+        - Authorization
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        consent_id:
+                          type: string
+                          description: Unique consent identifier
+                          example: "con_a1b2c3d4"
+                          readOnly: true
+                        client_id:
+                          type: string
+                          description: Client that received consent
+                          example: "cli_a1b2c3d4"
+                        client_name:
+                          type: string
+                          description: Client display name
+                          example: "Acme Mobile Banking"
+                        scopes:
+                          type: array
+                          description: Consented scopes
+                          items:
+                            type: string
+                            example: "profile"
+                        granted_at:
+                          type: string
+                          description: Consent grant timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        expires_at:
+                          type: string
+                          description: Consent expiration
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - consent_id
+                        - client_id
+                        - scopes
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /oauth/consents/{consent_id}:
+    delete:
+      operationId: revokeConsent
+      summary: Revoke user consent
+      description: >-
+        Revoke a specific consent grant, immediately preventing the client from accessing the user's
+        resources. Associated refresh tokens are invalidated.
+      tags:
+        - Authorization
+      parameters:
+        - name: consent_id
+          in: path
+          required: true
+          description: Unique consent id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

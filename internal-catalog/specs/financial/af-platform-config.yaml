@@ -1,0 +1,973 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Configuration Service API
+  description: >-
+    Centralized configuration management with namespace isolation, version history, rollback capability, real-time
+    change propagation via webhooks, and comprehensive audit trail. Supports typed configuration values (string,
+    number, boolean, JSON) with environment-specific overrides and encrypted secret storage.
+  version: 2.0.1
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-platform-config
+  x-acme-domain: platform
+servers:
+  - url: https://af-platform-config.api.acmefin.com/v1
+    description: Production
+  - url: https://af-platform-config.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Configuration Management
+    description: Manage application configuration across namespaces with versioning and audit
+paths:
+  /configs/{namespace}:
+    get:
+      operationId: listConfigs
+      summary: List config entries
+      description: >-
+        List all configuration key-value pairs within a namespace. Supports filtering by key prefix and
+        environment override.
+      tags:
+        - Configuration Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: prefix
+          in: query
+          required: false
+          description: "Filter by key prefix"
+          schema:
+            type: "string"
+        - name: environment
+          in: query
+          required: false
+          description: "Environment to resolve overrides"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                          description: "Configuration key"
+                          example: "database.pool.max_size"
+                        value:
+                          type: string
+                          description: "Configuration value"
+                          example: "25"
+                        type:
+                          type: string
+                          description: "Value type"
+                          example: "string"
+                          enum:
+                            - string
+                            - integer
+                            - boolean
+                            - json
+                            - secret
+                        environment:
+                          type: string
+                          description: "Environment override"
+                          example: "production"
+                        version:
+                          type: integer
+                          description: "Current version number"
+                          example: 5
+                        updated_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - key
+                        - value
+                        - type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createConfig
+      summary: Create config entry
+      description: >-
+        Create a new configuration entry in the namespace. Emits a config.created event for subscribed
+        services.
+      tags:
+        - Configuration Management
+      requestBody:
+        required: true
+        description: Create config entry request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    key:
+                      type: string
+                      description: "Configuration key"
+                      example: "api.timeout_ms"
+                    value:
+                      type: string
+                      description: "Value"
+                      example: "30000"
+                    type:
+                      type: string
+                      description: "Value type"
+                      example: "string"
+                      enum:
+                        - string
+                        - integer
+                        - boolean
+                        - json
+                        - secret
+                    description:
+                      type: string
+                      description: "Key description"
+                      example: "API request timeout in milliseconds"
+                    environment:
+                      type: string
+                      description: "Environment override (optional)"
+                      example: "production"
+              required:
+                - key
+                - value
+                - type
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: "Key"
+                    example: "api.timeout_ms"
+                  value:
+                    type: string
+                    description: "Value"
+                    example: "30000"
+                  version:
+                    type: integer
+                    description: "Initial version"
+                    example: 1
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - key
+                  - value
+                  - version
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /configs/{namespace}/{key}:
+    get:
+      operationId: getConfig
+      summary: Get config value
+      description: >-
+        Retrieve a configuration value by namespace and key with environment-specific resolution.
+      tags:
+        - Configuration Management
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: "Configuration namespace"
+          schema:
+            type: "string"
+        - name: key
+          in: path
+          required: true
+          description: "Configuration key"
+          schema:
+            type: "string"
+        - name: environment
+          in: query
+          required: false
+          description: "Environment for override resolution"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: "Key"
+                    example: "database.pool.max_size"
+                  value:
+                    type: string
+                    description: "Resolved value"
+                    example: "25"
+                  type:
+                    type: string
+                    description: "Type"
+                    example: "integer"
+                  version:
+                    type: integer
+                    description: "Version"
+                    example: 5
+                  source:
+                    type: string
+                    description: "Value source"
+                    example: "base"
+                    enum:
+                      - base
+                      - environment_override
+                required:
+                  - key
+                  - value
+                  - version
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: updateConfig
+      summary: Update config value
+      description: >-
+        Update a configuration value. Creates a new version automatically. Emits a config.updated event with
+        old and new values.
+      tags:
+        - Configuration Management
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: "Namespace"
+          schema:
+            type: "string"
+        - name: key
+          in: path
+          required: true
+          description: "Key"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update config value request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    value:
+                      type: string
+                      description: "New value"
+                      example: "50"
+                    comment:
+                      type: string
+                      description: "Change reason"
+                      example: "Increased pool size for peak traffic"
+              required:
+                - value
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: "Key"
+                    example: "database.pool.max_size"
+                  value:
+                    type: string
+                    description: "New value"
+                    example: "50"
+                  version:
+                    type: integer
+                    description: "New version"
+                    example: 6
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - key
+                  - value
+                  - version
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteConfig
+      summary: Delete config entry
+      description: >-
+        Delete a configuration entry. History is preserved for audit. Emits a config.deleted event.
+      tags:
+        - Configuration Management
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: "Namespace"
+          schema:
+            type: "string"
+        - name: key
+          in: path
+          required: true
+          description: "Key"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Config entry deleted
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /configs/{namespace}/versions:
+    get:
+      operationId: listConfigVersions
+      summary: List config versions
+      description: >-
+        List the version history for all configuration keys in a namespace. Each version records the
+        previous and new values, who made the change, and when.
+      tags:
+        - Configuration Management
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: "Namespace"
+          schema:
+            type: "string"
+        - name: key
+          in: query
+          required: false
+          description: "Filter by specific key"
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: "Page number"
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Items per page"
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                          description: "Config key"
+                          example: "database.pool.max_size"
+                        version:
+                          type: integer
+                          description: "Version number"
+                          example: 5
+                        old_value:
+                          type: string
+                          description: "Previous value"
+                          example: "20"
+                        new_value:
+                          type: string
+                          description: "New value"
+                          example: "25"
+                        changed_by:
+                          type: string
+                          description: "User who made the change"
+                          example: "admin@acmefin.com"
+                        changed_at:
+                          type: string
+                          description: "Change timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        comment:
+                          type: string
+                          description: "Change comment"
+                          example: "Increased for load test"
+                      required:
+                        - key
+                        - version
+                        - new_value
+                        - changed_at
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /configs/{namespace}/rollback:
+    post:
+      operationId: rollbackConfig
+      summary: Rollback config
+      description: >-
+        Rollback a configuration key to a specific previous version. Creates a new version with the
+        historical value. Useful for quick revert of bad configuration changes.
+      tags:
+        - Configuration Management
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: "Unique namespace"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Rollback config request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    key:
+                      type: string
+                      description: "Key to rollback"
+                      example: "database.pool.max_size"
+                    target_version:
+                      type: integer
+                      description: "Version to rollback to"
+                      example: 4
+                    reason:
+                      type: string
+                      description: "Rollback reason"
+                      example: "Increased pool size caused connection exhaustion"
+              required:
+                - key
+                - target_version
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: "Key"
+                    example: "database.pool.max_size"
+                  value:
+                    type: string
+                    description: "Restored value"
+                    example: "20"
+                  new_version:
+                    type: integer
+                    description: "New version number"
+                    example: 7
+                  rolled_back_from:
+                    type: integer
+                    description: "Previous version"
+                    example: 6
+                required:
+                  - key
+                  - value
+                  - new_version
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /configs/{namespace}/audit:
+    get:
+      operationId: getConfigAudit
+      summary: Get config audit trail
+      description: >-
+        Retrieve the complete audit trail for a configuration namespace showing all changes, access events,
+        and administrative actions with user attribution and timestamps.
+      tags:
+        - Configuration Management
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: "Namespace"
+          schema:
+            type: "string"
+        - name: from
+          in: query
+          required: false
+          description: "Start of audit period"
+          schema:
+            type: "string"
+            format: "date-time"
+        - name: to
+          in: query
+          required: false
+          description: "End of audit period"
+          schema:
+            type: "string"
+            format: "date-time"
+        - name: action
+          in: query
+          required: false
+          description: "Filter by action type"
+          schema:
+            type: "string"
+            enum:
+              - create
+              - update
+              - delete
+              - rollback
+              - access
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event_id:
+                          type: string
+                          description: "Audit event ID"
+                          format: uuid
+                          example: "aud-5a6b7c8d"
+                        action:
+                          type: string
+                          description: "Action performed"
+                          example: "create"
+                          enum:
+                            - create
+                            - update
+                            - delete
+                            - rollback
+                            - access
+                        key:
+                          type: string
+                          description: "Affected key"
+                          example: "database.pool.max_size"
+                        actor:
+                          type: string
+                          description: "User/service that performed action"
+                          example: "admin@acmefin.com"
+                        timestamp:
+                          type: string
+                          description: "Event timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        details:
+                          type: object
+                          description: "Action-specific details"
+                      required:
+                        - event_id
+                        - action
+                        - actor
+                        - timestamp
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

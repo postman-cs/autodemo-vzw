@@ -1,0 +1,247 @@
+name: ECS Shared Infrastructure Teardown
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: AWS region for shared ECS infrastructure
+        required: true
+        default: eu-west-2
+        type: string
+      resource_prefix:
+        description: Prefix for shared ECS resources
+        required: true
+        default: vzw-partner-demo
+        type: string
+      airtable_record_id:
+        description: Airtable Infrastructure record id
+        required: true
+        type: string
+
+concurrency:
+  group: ecs-infra-lifecycle
+  cancel-in-progress: false
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      RESOURCE_PREFIX: ${{ inputs.resource_prefix }}
+      AIRTABLE_RECORD_ID: ${{ inputs.airtable_record_id }}
+      AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.0.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Read Airtable record
+        id: airtable_read
+        run: |
+          set -euo pipefail
+          RESP="$(curl -sS "https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Infrastructure/${AIRTABLE_RECORD_ID}" \
+            -H "Authorization: Bearer ${AIRTABLE_API_KEY}")"
+
+          if echo "${RESP}" | jq -e '.error' >/dev/null; then
+            echo "${RESP}"
+            echo "Failed to read Airtable Infrastructure record ${AIRTABLE_RECORD_ID}"
+            exit 1
+          fi
+
+          CLUSTER_NAME="$(echo "${RESP}" | jq -r '.fields.cluster_name // empty')"
+          LISTENER_ARN="$(echo "${RESP}" | jq -r '.fields.alb_listener_arn // empty')"
+          ALB_ARN="$(echo "${RESP}" | jq -r '.fields.alb_arn // empty')"
+          ECR_REPOSITORY="$(echo "${RESP}" | jq -r '.fields.ecr_repository // empty')"
+          ALB_SG_ID="$(echo "${RESP}" | jq -r '.fields.alb_sg_id // empty')"
+          ECS_SG_ID="$(echo "${RESP}" | jq -r '.fields.ecs_sg_id // empty')"
+          EXEC_ROLE_ARN="$(echo "${RESP}" | jq -r '.fields.execution_role_arn // empty')"
+          TASK_ROLE_ARN="$(echo "${RESP}" | jq -r '.fields.task_role_arn // empty')"
+
+          {
+            echo "cluster_name=${CLUSTER_NAME}"
+            echo "listener_arn=${LISTENER_ARN}"
+            echo "alb_arn=${ALB_ARN}"
+            echo "ecr_repository=${ECR_REPOSITORY}"
+            echo "alb_sg_id=${ALB_SG_ID}"
+            echo "ecs_sg_id=${ECS_SG_ID}"
+            echo "execution_role_arn=${EXEC_ROLE_ARN}"
+            echo "task_role_arn=${TASK_ROLE_ARN}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Mark Airtable tearing_down
+        run: |
+          set -euo pipefail
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          PAYLOAD="$(jq -n --arg status "tearing_down" --arg updated_at "${NOW}" '{fields:{status:$status,updated_at:$updated_at}}')"
+          curl -sS -X PATCH "https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Infrastructure/${AIRTABLE_RECORD_ID}" \
+            -H "Authorization: Bearer ${AIRTABLE_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}" >/dev/null
+
+      - name: Check for active ECS services
+        env:
+          CLUSTER_NAME: ${{ steps.airtable_read.outputs.cluster_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLUSTER_NAME}" ]; then
+            echo "No cluster_name present in Airtable record, continuing teardown."
+            exit 0
+          fi
+
+          ACTIVE_SERVICES="$(aws ecs list-services \
+            --region "${AWS_REGION}" \
+            --cluster "${CLUSTER_NAME}" \
+            --query 'serviceArns[]' \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "${ACTIVE_SERVICES}" ] && [ "${ACTIVE_SERVICES}" != "None" ]; then
+            echo "Active ECS services must be removed first: ${ACTIVE_SERVICES}"
+            exit 1
+          fi
+
+      - name: Delete ALB listener rules
+        env:
+          LISTENER_ARN: ${{ steps.airtable_read.outputs.listener_arn }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LISTENER_ARN}" ]; then
+            exit 0
+          fi
+          RULE_ARNS="$(aws elbv2 describe-rules \
+            --region "${AWS_REGION}" \
+            --listener-arn "${LISTENER_ARN}" \
+            --query "Rules[?IsDefault==\`false\`].RuleArn" \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "${RULE_ARNS}" ] && [ "${RULE_ARNS}" != "None" ]; then
+            for RULE_ARN in ${RULE_ARNS}; do
+              aws elbv2 delete-rule --region "${AWS_REGION}" --rule-arn "${RULE_ARN}" >/dev/null 2>&1 || true
+            done
+          fi
+
+      - name: Delete ALB listener
+        env:
+          LISTENER_ARN: ${{ steps.airtable_read.outputs.listener_arn }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LISTENER_ARN}" ]; then
+            exit 0
+          fi
+          aws elbv2 delete-listener --region "${AWS_REGION}" --listener-arn "${LISTENER_ARN}" >/dev/null 2>&1 || true
+
+      - name: Delete ALB
+        env:
+          ALB_ARN: ${{ steps.airtable_read.outputs.alb_arn }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ALB_ARN}" ]; then
+            exit 0
+          fi
+          aws elbv2 delete-load-balancer --region "${AWS_REGION}" --load-balancer-arn "${ALB_ARN}" >/dev/null 2>&1 || true
+          aws elbv2 wait load-balancers-deleted --region "${AWS_REGION}" --load-balancer-arns "${ALB_ARN}" >/dev/null 2>&1 || true
+
+      - name: Delete target groups
+        run: |
+          set -euo pipefail
+          TG_ARNS="$(aws resourcegroupstaggingapi get-resources \
+            --region "${AWS_REGION}" \
+            --resource-type-filters elasticloadbalancing:targetgroup \
+            --tag-filters Key=ResourceGroup,Values=vzw-partner-demo \
+            --query 'ResourceTagMappingList[].ResourceARN' \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "${TG_ARNS}" ] && [ "${TG_ARNS}" != "None" ]; then
+            for TG_ARN in ${TG_ARNS}; do
+              aws elbv2 delete-target-group --region "${AWS_REGION}" --target-group-arn "${TG_ARN}" >/dev/null 2>&1 || true
+            done
+          fi
+
+      - name: Delete ECS cluster
+        env:
+          CLUSTER_NAME: ${{ steps.airtable_read.outputs.cluster_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLUSTER_NAME}" ]; then
+            CLUSTER_NAME="${RESOURCE_PREFIX}-cluster"
+          fi
+          aws ecs delete-cluster --region "${AWS_REGION}" --cluster "${CLUSTER_NAME}" >/dev/null 2>&1 || true
+
+      - name: Delete ECR repository
+        env:
+          ECR_REPOSITORY: ${{ steps.airtable_read.outputs.ecr_repository }}
+        run: |
+          set -euo pipefail
+          REPO_NAME="${ECR_REPOSITORY:-${RESOURCE_PREFIX}}"
+          aws ecr delete-repository --region "${AWS_REGION}" --repository-name "${REPO_NAME}" --force >/dev/null 2>&1 || true
+
+      - name: Delete security groups
+        env:
+          ALB_SG_ID: ${{ steps.airtable_read.outputs.alb_sg_id }}
+          ECS_SG_ID: ${{ steps.airtable_read.outputs.ecs_sg_id }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ECS_SG_ID}" ]; then
+            aws ec2 delete-security-group --region "${AWS_REGION}" --group-id "${ECS_SG_ID}" >/dev/null 2>&1 || true
+          fi
+          if [ -n "${ALB_SG_ID}" ]; then
+            aws ec2 delete-security-group --region "${AWS_REGION}" --group-id "${ALB_SG_ID}" >/dev/null 2>&1 || true
+          fi
+
+      - name: Delete IAM roles
+        env:
+          EXEC_ROLE_ARN: ${{ steps.airtable_read.outputs.execution_role_arn }}
+          TASK_ROLE_ARN: ${{ steps.airtable_read.outputs.task_role_arn }}
+        run: |
+          set -euo pipefail
+          delete_role() {
+            local role_name="$1"
+            if [ -z "${role_name}" ]; then
+              return 0
+            fi
+            if ! aws iam get-role --role-name "${role_name}" >/dev/null 2>&1; then
+              return 0
+            fi
+
+            ATTACHED="$(aws iam list-attached-role-policies --role-name "${role_name}" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null || true)"
+            if [ -n "${ATTACHED}" ] && [ "${ATTACHED}" != "None" ]; then
+              for policy_arn in ${ATTACHED}; do
+                aws iam detach-role-policy --role-name "${role_name}" --policy-arn "${policy_arn}" >/dev/null 2>&1 || true
+              done
+            fi
+
+            INLINE="$(aws iam list-role-policies --role-name "${role_name}" --query 'PolicyNames[]' --output text 2>/dev/null || true)"
+            if [ -n "${INLINE}" ] && [ "${INLINE}" != "None" ]; then
+              for policy_name in ${INLINE}; do
+                aws iam delete-role-policy --role-name "${role_name}" --policy-name "${policy_name}" >/dev/null 2>&1 || true
+              done
+            fi
+
+            aws iam delete-role --role-name "${role_name}" >/dev/null 2>&1 || true
+          }
+
+          EXEC_ROLE_NAME="$(basename "${EXEC_ROLE_ARN:-}")"
+          TASK_ROLE_NAME="$(basename "${TASK_ROLE_ARN:-}")"
+          if [ -z "${EXEC_ROLE_NAME}" ]; then EXEC_ROLE_NAME="${RESOURCE_PREFIX}-ecs-execution-role"; fi
+          if [ -z "${TASK_ROLE_NAME}" ]; then TASK_ROLE_NAME="${RESOURCE_PREFIX}-ecs-task-role"; fi
+
+          delete_role "${EXEC_ROLE_NAME}"
+          delete_role "${TASK_ROLE_NAME}"
+
+      - name: Delete CloudWatch log group
+        run: |
+          set -euo pipefail
+          LOG_GROUP="/ecs/${RESOURCE_PREFIX}"
+          aws logs delete-log-group --region "${AWS_REGION}" --log-group-name "${LOG_GROUP}" >/dev/null 2>&1 || true
+
+      - name: Delete Airtable record
+        if: ${{ success() }}
+        run: |
+          set -euo pipefail
+          curl -sS -X DELETE "https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Infrastructure/${AIRTABLE_RECORD_ID}" \
+            -H "Authorization: Bearer ${AIRTABLE_API_KEY}" >/dev/null

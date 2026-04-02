@@ -1,0 +1,1598 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Cash Management API
+  description: >-
+    Enterprise cash management platform providing real-time cash position visibility across all bank accounts,
+    automated sweep configurations for optimal liquidity distribution, concentration account management for
+    centralized funding, disbursement scheduling, and zero-balance account (ZBA) structures for efficient
+    subsidiary cash management.
+  version: 3.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-treasury-cash-management
+  x-acme-domain: treasury
+servers:
+  - url: https://af-treasury-cash-management.api.acmefin.com/v1
+    description: Production
+  - url: https://af-treasury-cash-management.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Cash Positions
+    description: Real-time and end-of-day cash position reporting across accounts and currencies
+  - name: Cash Sweeps
+    description: Automated sweep rules, concentration accounts, and disbursement management
+paths:
+  /cash-positions:
+    get:
+      operationId: listCashPositions
+      summary: List cash positions
+      description: >-
+        Retrieve current cash positions across all monitored accounts with real-time and projected balances.
+        Supports filtering by currency, entity, and bank.
+      tags:
+        - Cash Positions
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: currency
+          in: query
+          required: false
+          description: "Filter by currency code"
+          schema:
+            type: "string"
+        - name: entity
+          in: query
+          required: false
+          description: "Filter by legal entity"
+          schema:
+            type: "string"
+        - name: bank
+          in: query
+          required: false
+          description: "Filter by bank"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        account_id:
+                          type: string
+                          description: "Account ID"
+                          format: uuid
+                          example: "acct-4a5b6c7d-8e9f-0a1b-2c3d"
+                        bank_name:
+                          type: string
+                          description: "Bank name"
+                          example: "JPMorgan Chase"
+                        account_number:
+                          type: string
+                          description: "Masked account number"
+                          example: "****4521"
+                        currency:
+                          type: string
+                          description: "Account currency (ISO 4217)"
+                          example: "USD"
+                        current_balance:
+                          type: number
+                          description: "Real-time available balance"
+                          format: double
+                          example: 2450000.0
+                        ledger_balance:
+                          type: number
+                          description: "Ledger balance (EOD)"
+                          format: double
+                          example: 2500000.0
+                        projected_balance:
+                          type: number
+                          description: "Projected EOD balance"
+                          format: double
+                          example: 2320000.0
+                        entity:
+                          type: string
+                          description: "Legal entity"
+                          example: "Acme Finance Corp"
+                        as_of:
+                          type: string
+                          description: "Balance timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - account_id
+                        - currency
+                        - current_balance
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /cash-positions/{account_id}:
+    get:
+      operationId: getCashPosition
+      summary: Get account position
+      description: >-
+        Retrieve detailed cash position for a specific account including intraday transaction history,
+        holds, and projected flows.
+      tags:
+        - Cash Positions
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: "Unique account id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: "Account ID"
+                    format: uuid
+                    example: "acct-4a5b6c7d"
+                  bank_name:
+                    type: string
+                    description: "Bank"
+                    example: "JPMorgan Chase"
+                  currency:
+                    type: string
+                    description: "Currency"
+                    example: "USD"
+                  current_balance:
+                    type: number
+                    description: "Available balance"
+                    format: double
+                    example: 2450000.0
+                  ledger_balance:
+                    type: number
+                    description: "Ledger balance"
+                    format: double
+                    example: 2500000.0
+                  held_amount:
+                    type: number
+                    description: "Amount on hold"
+                    format: double
+                    example: 50000.0
+                  intraday_credits:
+                    type: number
+                    description: "Today's credits"
+                    format: double
+                    example: 750000.0
+                  intraday_debits:
+                    type: number
+                    description: "Today's debits"
+                    format: double
+                    example: 800000.0
+                  projected_eod:
+                    type: number
+                    description: "Projected EOD balance"
+                    format: double
+                    example: 2320000.0
+                  as_of:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - account_id
+                  - currency
+                  - current_balance
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /sweeps:
+    get:
+      operationId: listSweeps
+      summary: List sweep rules
+      description: >-
+        List all automated sweep configurations governing how excess cash is moved between accounts based on
+        target balances and triggers.
+      tags:
+        - Cash Sweeps
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sweep_id:
+                          type: string
+                          description: "Sweep ID"
+                          format: uuid
+                          example: "swp-2a3b4c5d-6e7f"
+                        name:
+                          type: string
+                          description: "Sweep rule name"
+                          example: "USD Daily Concentration"
+                        source_account:
+                          type: string
+                          description: "Source account"
+                          format: uuid
+                          example: "acct-4a5b6c7d"
+                        target_account:
+                          type: string
+                          description: "Target account"
+                          format: uuid
+                          example: "acct-9a0b1c2d"
+                        sweep_type:
+                          type: string
+                          description: "Sweep type"
+                          example: "target_balance"
+                          enum:
+                            - target_balance
+                            - zero_balance
+                            - threshold
+                            - percentage
+                        target_balance:
+                          type: number
+                          description: "Target balance to maintain"
+                          format: double
+                          example: 100000.0
+                        currency:
+                          type: string
+                          description: "Currency"
+                          example: "USD"
+                        frequency:
+                          type: string
+                          description: "Execution frequency"
+                          example: "daily"
+                          enum:
+                            - daily
+                            - intraday
+                            - weekly
+                        status:
+                          type: string
+                          description: "Rule status"
+                          example: "active"
+                          enum:
+                            - active
+                            - paused
+                            - disabled
+                        last_executed_at:
+                          type: string
+                          description: "Last sweep execution"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - sweep_id
+                        - name
+                        - sweep_type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSweep
+      summary: Create sweep rule
+      description: >-
+        Create an automated sweep rule to transfer excess cash between accounts based on target balances,
+        thresholds, or percentages. Sweeps execute at the configured frequency.
+      tags:
+        - Cash Sweeps
+      requestBody:
+        required: true
+        description: Create sweep rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Rule name"
+                      example: "EUR Excess Sweep"
+                    source_account:
+                      type: string
+                      description: "Source"
+                      format: uuid
+                      example: "acct-4a5b6c7d"
+                    target_account:
+                      type: string
+                      description: "Target"
+                      format: uuid
+                      example: "acct-9a0b1c2d"
+                    sweep_type:
+                      type: string
+                      description: "Type"
+                      example: "target_balance"
+                      enum:
+                        - target_balance
+                        - zero_balance
+                        - threshold
+                        - percentage
+                    target_balance:
+                      type: number
+                      description: "Target balance"
+                      format: double
+                      example: 50000.0
+                    currency:
+                      type: string
+                      description: "Currency"
+                      example: "EUR"
+                    frequency:
+                      type: string
+                      description: "Frequency"
+                      example: "daily"
+                      enum:
+                        - daily
+                        - intraday
+                        - weekly
+                    min_transfer:
+                      type: number
+                      description: "Minimum transfer amount"
+                      format: double
+                      example: 1000.0
+              required:
+                - name
+                - source_account
+                - target_account
+                - sweep_type
+                - currency
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sweep_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "swp-2a3b4c5d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "EUR Excess Sweep"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - sweep_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sweeps/{sweep_id}:
+    get:
+      operationId: getSweep
+      summary: Get sweep rule
+      description: Retrieve sweep rule details including execution history and transfer statistics.
+      tags:
+        - Cash Sweeps
+      parameters:
+        - name: sweep_id
+          in: path
+          required: true
+          description: "Unique sweep id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sweep_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "swp-2a3b4c5d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "USD Daily Concentration"
+                  sweep_type:
+                    type: string
+                    description: "Type"
+                    example: "target_balance"
+                  target_balance:
+                    type: number
+                    description: "Target"
+                    format: double
+                    example: 100000.0
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                  total_swept:
+                    type: number
+                    description: "Lifetime amount swept"
+                    format: double
+                    example: 45000000.0
+                  execution_count:
+                    type: integer
+                    description: "Total executions"
+                    example: 245
+                required:
+                  - sweep_id
+                  - name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateSweep
+      summary: Update sweep rule
+      description: Modify sweep parameters. Changes take effect at the next scheduled execution.
+      tags:
+        - Cash Sweeps
+      parameters:
+        - name: sweep_id
+          in: path
+          required: true
+          description: "Unique sweep id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update sweep rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    target_balance:
+                      type: number
+                      description: "Updated target"
+                      format: double
+                      example: 75000.0
+                    frequency:
+                      type: string
+                      description: "Frequency"
+                      example: "daily"
+                      enum:
+                        - daily
+                        - intraday
+                        - weekly
+                    status:
+                      type: string
+                      description: "Status"
+                      example: "active"
+                      enum:
+                        - active
+                        - paused
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sweep_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "swp-2a3b4c5d"
+                  target_balance:
+                    type: number
+                    description: "Target"
+                    format: double
+                    example: 75000.0
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - sweep_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /concentration-accounts:
+    get:
+      operationId: listConcentrationAccounts
+      summary: List concentration accounts
+      description: >-
+        List concentration (header) accounts used for cash pooling and centralized liquidity management.
+      tags:
+        - Cash Positions
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        account_id:
+                          type: string
+                          description: "Account ID"
+                          format: uuid
+                          example: "con-6a7b8c9d"
+                        name:
+                          type: string
+                          description: "Account name"
+                          example: "USD Master Concentration"
+                        bank_name:
+                          type: string
+                          description: "Bank"
+                          example: "Citibank"
+                        currency:
+                          type: string
+                          description: "Currency"
+                          example: "USD"
+                        current_balance:
+                          type: number
+                          description: "Current balance"
+                          format: double
+                          example: 15000000.0
+                        subsidiary_count:
+                          type: integer
+                          description: "Connected subsidiary accounts"
+                          example: 12
+                        pool_type:
+                          type: string
+                          description: "Pooling type"
+                          example: "physical"
+                          enum:
+                            - physical
+                            - notional
+                            - hybrid
+                      required:
+                        - account_id
+                        - name
+                        - currency
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createConcentrationAccount
+      summary: Create concentration account
+      description: Designate a bank account as a concentration account for cash pooling.
+      tags:
+        - Cash Positions
+      requestBody:
+        required: true
+        description: Create concentration account request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Account name"
+                      example: "EUR Master Pool"
+                    bank_account_id:
+                      type: string
+                      description: "Bank account"
+                      format: uuid
+                      example: "acct-4a5b6c7d"
+                    pool_type:
+                      type: string
+                      description: "Pool type"
+                      example: "physical"
+                      enum:
+                        - physical
+                        - notional
+                        - hybrid
+                    auto_sweep:
+                      type: boolean
+                      description: "Enable automatic sweeps from subsidiaries"
+                      example: true
+              required:
+                - name
+                - bank_account_id
+                - pool_type
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "con-6a7b8c9d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "EUR Master Pool"
+                  pool_type:
+                    type: string
+                    description: "Type"
+                    example: "physical"
+                required:
+                  - account_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /concentration-accounts/{account_id}:
+    get:
+      operationId: getConcentrationAccount
+      summary: Get concentration account
+      description: >-
+        Retrieve concentration account details with connected subsidiaries and pool balances.
+      tags:
+        - Cash Positions
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: "Unique account id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "con-6a7b8c9d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "USD Master Concentration"
+                  currency:
+                    type: string
+                    description: "Currency"
+                    example: "USD"
+                  current_balance:
+                    type: number
+                    description: "Balance"
+                    format: double
+                    example: 15000000.0
+                  subsidiaries:
+                    type: array
+                    description: "Connected subsidiary accounts"
+                    items:
+                      type: object
+                required:
+                  - account_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateConcentrationAccount
+      summary: Update concentration account
+      description: Update concentration account configuration.
+      tags:
+        - Cash Positions
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: "Unique account id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update concentration account request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    auto_sweep:
+                      type: boolean
+                      description: "Auto-sweep enabled"
+                      example: true
+                    pool_type:
+                      type: string
+                      description: "Pool type"
+                      example: "physical"
+                      enum:
+                        - physical
+                        - notional
+                        - hybrid
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "con-6a7b8c9d"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - account_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /disbursements:
+    get:
+      operationId: listDisbursements
+      summary: List disbursements
+      description: List scheduled and completed disbursement payments from operating accounts.
+      tags:
+        - Cash Sweeps
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        disbursement_id:
+                          type: string
+                          description: "Disbursement ID"
+                          format: uuid
+                          example: "dsb-8a9b0c1d"
+                        source_account:
+                          type: string
+                          description: "Source account"
+                          format: uuid
+                          example: "acct-4a5b6c7d"
+                        beneficiary:
+                          type: string
+                          description: "Beneficiary name"
+                          example: "Vendor Corp"
+                        amount:
+                          type: number
+                          description: "Payment amount"
+                          format: double
+                          example: 125000.0
+                        currency:
+                          type: string
+                          description: "Currency"
+                          example: "USD"
+                        payment_method:
+                          type: string
+                          description: "Payment rail"
+                          example: "wire"
+                          enum:
+                            - wire
+                            - ach
+                            - check
+                            - rtp
+                        status:
+                          type: string
+                          description: "Status"
+                          example: "scheduled"
+                          enum:
+                            - scheduled
+                            - pending_approval
+                            - approved
+                            - sent
+                            - completed
+                            - failed
+                        scheduled_date:
+                          type: string
+                          description: "Scheduled payment date"
+                          example: "2025-06-20"
+                        value_date:
+                          type: string
+                          description: "Value date"
+                          example: "2025-06-20"
+                      required:
+                        - disbursement_id
+                        - beneficiary
+                        - amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createDisbursement
+      summary: Schedule disbursement
+      description: >-
+        Schedule a disbursement payment. Payments above the threshold require dual approval.
+      tags:
+        - Cash Sweeps
+      requestBody:
+        required: true
+        description: Schedule disbursement request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    source_account:
+                      type: string
+                      description: "Source"
+                      format: uuid
+                      example: "acct-4a5b6c7d"
+                    beneficiary_name:
+                      type: string
+                      description: "Beneficiary"
+                      example: "Vendor Corp"
+                    beneficiary_account:
+                      type: string
+                      description: "Beneficiary account"
+                      example: "****7890"
+                    amount:
+                      type: number
+                      description: "Amount"
+                      format: double
+                      example: 125000.0
+                    currency:
+                      type: string
+                      description: "Currency"
+                      example: "USD"
+                    payment_method:
+                      type: string
+                      description: "Rail"
+                      example: "wire"
+                      enum:
+                        - wire
+                        - ach
+                        - check
+                        - rtp
+                    scheduled_date:
+                      type: string
+                      description: "Payment date"
+                      example: "2025-06-20"
+                    reference:
+                      type: string
+                      description: "Payment reference"
+                      example: "INV-2025-0456"
+              required:
+                - source_account
+                - beneficiary_name
+                - amount
+                - currency
+                - payment_method
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  disbursement_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "dsb-8a9b0c1d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "scheduled"
+                required:
+                  - disbursement_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /zero-balance-accounts:
+    get:
+      operationId: listZeroBalanceAccounts
+      summary: List zero-balance accounts
+      description: >-
+        List all ZBA (zero-balance account) structures where subsidiary accounts are automatically swept
+        to/from a master account to maintain a zero closing balance.
+      tags:
+        - Cash Sweeps
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        zba_id:
+                          type: string
+                          description: "ZBA ID"
+                          format: uuid
+                          example: "zba-5a6b7c8d"
+                        subsidiary_account:
+                          type: string
+                          description: "Subsidiary account"
+                          format: uuid
+                          example: "acct-3a4b5c6d"
+                        master_account:
+                          type: string
+                          description: "Master account"
+                          format: uuid
+                          example: "con-6a7b8c9d"
+                        subsidiary_name:
+                          type: string
+                          description: "Subsidiary entity"
+                          example: "Acme Finance UK Ltd"
+                        currency:
+                          type: string
+                          description: "Currency"
+                          example: "GBP"
+                        status:
+                          type: string
+                          description: "ZBA status"
+                          example: "active"
+                          enum:
+                            - active
+                            - suspended
+                        last_sweep_amount:
+                          type: number
+                          description: "Last sweep amount"
+                          format: double
+                          example: 45230.0
+                      required:
+                        - zba_id
+                        - subsidiary_account
+                        - master_account
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createZeroBalanceAccount
+      summary: Create ZBA structure
+      description: >-
+        Establish a zero-balance account relationship where the subsidiary is automatically swept to zero
+        against the master at end-of-day.
+      tags:
+        - Cash Sweeps
+      requestBody:
+        required: true
+        description: Create ZBA structure request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    subsidiary_account:
+                      type: string
+                      description: "Subsidiary"
+                      format: uuid
+                      example: "acct-3a4b5c6d"
+                    master_account:
+                      type: string
+                      description: "Master"
+                      format: uuid
+                      example: "con-6a7b8c9d"
+                    sweep_direction:
+                      type: string
+                      description: "Sweep direction"
+                      example: "to_master"
+                      enum:
+                        - to_master
+                        - from_master
+                        - bidirectional
+              required:
+                - subsidiary_account
+                - master_account
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  zba_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "zba-5a6b7c8d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - zba_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

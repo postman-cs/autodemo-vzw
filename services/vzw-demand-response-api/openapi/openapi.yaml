@@ -1,0 +1,1481 @@
+openapi: 3.0.3
+info:
+  title: VZW Demand Response API
+  description: |
+    The VZW Demand Response API enables utility and grid-operations partners to initiate,
+    coordinate, and monitor demand-response and load-shed events across enrolled customer
+    and infrastructure segments.
+
+    The API provides lifecycle controls for event creation, participant signal dispatch,
+    measured-performance reporting, and controlled event termination during grid stress,
+    generation shortfalls, or distribution contingency windows.
+  version: 1.0.0
+  contact:
+    name: Verizon Grid Automation API Team
+    email: demand-response-api-support@verizon.com
+    url: https://developer.verizon.com
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/api
+  x-verizon-catalog-id: vzw-demand-response-api
+  x-verizon-domain: demand-response
+servers:
+  - url: https://vzw-demand-response-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-demand-response-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Events
+    description: Create, list, inspect, and terminate demand-response event lifecycles
+  - name: Signals
+    description: Dispatch control signals to event participants and segments
+  - name: Performance
+    description: Retrieve baseline and realized event-performance telemetry
+paths:
+  /v1/events:
+    post:
+      operationId: createDemandResponseEvent
+      summary: Create demand-response event
+      description: |
+        Creates a new demand-response event with dispatch constraints, participant targeting,
+        baseline assumptions, and expected reduction objectives.
+
+        Use this endpoint when a grid stress condition has been identified and event orchestration
+        must begin with a predictable control window and auditable initiation record.
+      tags:
+        - Events
+      requestBody:
+        required: true
+        description: Demand-response event definition payload.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventRequest'
+            examples:
+              transmissionPeakShave:
+                summary: Peak-load mitigation event across C&I and municipal segments
+                value:
+                  request_id: req_01HYGMPY10S5F5N6VH3DSQ8K8J
+                  event_name: mid-atlantic-evening-peak-shave
+                  event_type: load_shed
+                  region_code: us-ne-midatlantic
+                  event_start_at: '2026-07-16T21:00:00Z'
+                  event_end_at: '2026-07-16T23:30:00Z'
+                  target_reduction_mw: 42.5
+                  baseline_demand_kw: 615000.0
+                  participant_segments:
+                    - segment_id: seg_ci_large
+                      segment_name: Commercial and industrial large load
+                      priority: high
+                      enrollment_count: 144
+                    - segment_id: seg_muni_pumping
+                      segment_name: Municipal pumping stations
+                      priority: medium
+                      enrollment_count: 39
+                  dispatch_constraints:
+                    max_notice_minutes: 25
+                    min_event_duration_minutes: 30
+                    max_event_duration_minutes: 300
+                    rebound_protection_enabled: true
+                    rebound_cap_kw: 32000
+                  metadata:
+                    market: pjm
+                    initiator: noc-operator-17
+      responses:
+        '201':
+          description: Event created and accepted for dispatch planning.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+              examples:
+                created:
+                  summary: Event created in scheduled state
+                  value:
+                    data:
+                      event_id: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      event_name: mid-atlantic-evening-peak-shave
+                      event_type: load_shed
+                      event_status: scheduled
+                      region_code: us-ne-midatlantic
+                      event_start_at: '2026-07-16T21:00:00Z'
+                      event_end_at: '2026-07-16T23:30:00Z'
+                      target_reduction_mw: 42.5
+                      baseline_demand_kw: 615000.0
+                      actual_reduction_kw: 0.0
+                      participant_segments:
+                        - segment_id: seg_ci_large
+                          segment_name: Commercial and industrial large load
+                          priority: high
+                          enrollment_count: 144
+                          dispatched_count: 0
+                        - segment_id: seg_muni_pumping
+                          segment_name: Municipal pumping stations
+                          priority: medium
+                          enrollment_count: 39
+                          dispatched_count: 0
+                      created_at: '2026-07-16T20:34:02Z'
+                      updated_at: '2026-07-16T20:34:02Z'
+                    links:
+                      self: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      signals: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A/signals
+                      performance: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A/performance
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      operationId: listDemandResponseEvents
+      summary: List demand-response events
+      description: |
+        Returns paginated demand-response event records with optional status, type,
+        region, and time-window filtering.
+
+        Use this endpoint for operational dashboards, reconciliation processes,
+        and post-event analytics queueing.
+      tags:
+        - Events
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortBy'
+        - $ref: '#/components/parameters/SortOrder'
+        - $ref: '#/components/parameters/EventStatusFilter'
+        - $ref: '#/components/parameters/EventTypeFilter'
+        - $ref: '#/components/parameters/RegionCodeFilter'
+        - $ref: '#/components/parameters/StartAfterFilter'
+        - $ref: '#/components/parameters/StartBeforeFilter'
+      responses:
+        '200':
+          description: Paginated event list returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+              examples:
+                activeAndScheduled:
+                  summary: Mixed event set sorted by start time
+                  value:
+                    data:
+                      - event_id: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                        event_name: mid-atlantic-evening-peak-shave
+                        event_type: load_shed
+                        event_status: active
+                        region_code: us-ne-midatlantic
+                        event_start_at: '2026-07-16T21:00:00Z'
+                        event_end_at: '2026-07-16T23:30:00Z'
+                        target_reduction_mw: 42.5
+                        baseline_demand_kw: 615000.0
+                        actual_reduction_kw: 18350.0
+                        participant_segments:
+                          - segment_id: seg_ci_large
+                            segment_name: Commercial and industrial large load
+                            priority: high
+                            enrollment_count: 144
+                            dispatched_count: 138
+                        updated_at: '2026-07-16T21:22:09Z'
+                      - event_id: evt_01HYGQATD8DMB97A3Z00KD9J11
+                        event_name: early-morning-frequency-balance
+                        event_type: demand_response
+                        event_status: scheduled
+                        region_code: us-ne-midatlantic
+                        event_start_at: '2026-07-17T09:00:00Z'
+                        event_end_at: '2026-07-17T10:15:00Z'
+                        target_reduction_mw: 18.0
+                        baseline_demand_kw: 302500.0
+                        actual_reduction_kw: 0.0
+                        participant_segments:
+                          - segment_id: seg_public_buildings
+                            segment_name: Public buildings and campuses
+                            priority: medium
+                            enrollment_count: 93
+                            dispatched_count: 0
+                        updated_at: '2026-07-16T20:58:11Z'
+                    meta:
+                      page: 1
+                      per_page: 20
+                      total: 2
+                      total_pages: 1
+                    links:
+                      self: /v1/events?page=1&per_page=20&sort_by=event_start_at&sort_order=asc
+                      next: null
+                      prev: null
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/events/{eventId}:
+    get:
+      operationId: getDemandResponseEventById
+      summary: Get demand-response event
+      description: |
+        Returns full detail for a single demand-response event including lifecycle status,
+        segment-level enrollment counts, dispatch policy, and reduction tracking values.
+      tags:
+        - Events
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Event detail returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+              examples:
+                eventDetail:
+                  summary: Active event with in-progress reduction realization
+                  value:
+                    data:
+                      event_id: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      event_name: mid-atlantic-evening-peak-shave
+                      event_type: load_shed
+                      event_status: active
+                      region_code: us-ne-midatlantic
+                      event_start_at: '2026-07-16T21:00:00Z'
+                      event_end_at: '2026-07-16T23:30:00Z'
+                      target_reduction_mw: 42.5
+                      baseline_demand_kw: 615000.0
+                      actual_reduction_kw: 26410.0
+                      termination_reason: null
+                      participant_segments:
+                        - segment_id: seg_ci_large
+                          segment_name: Commercial and industrial large load
+                          priority: high
+                          enrollment_count: 144
+                          dispatched_count: 141
+                          acknowledged_count: 135
+                        - segment_id: seg_muni_pumping
+                          segment_name: Municipal pumping stations
+                          priority: medium
+                          enrollment_count: 39
+                          dispatched_count: 34
+                          acknowledged_count: 31
+                      dispatch_constraints:
+                        max_notice_minutes: 25
+                        min_event_duration_minutes: 30
+                        max_event_duration_minutes: 300
+                        rebound_protection_enabled: true
+                        rebound_cap_kw: 32000
+                      metadata:
+                        market: pjm
+                        initiator: noc-operator-17
+                      created_at: '2026-07-16T20:34:02Z'
+                      updated_at: '2026-07-16T21:36:08Z'
+                    links:
+                      self: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      signals: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A/signals
+                      performance: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A/performance
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/events/{eventId}/signals:
+    post:
+      operationId: createDemandResponseSignal
+      summary: Dispatch demand-response signal
+      description: |
+        Dispatches one control signal to participants in a specific event. Signals can be
+        scoped to all participants, a subset of participant segments, or explicit participant
+        identifiers and can request sheds, ramps, holds, or release actions.
+      tags:
+        - Signals
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        description: Signal dispatch instruction and target definition.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSignalRequest'
+            examples:
+              initialShedSignal:
+                summary: Initial high-priority shed command for two segments
+                value:
+                  request_id: req_01HYGPPD5E5HH31MVFQ51DQG9A
+                  signal_type: shed
+                  signal_reason: grid_stress_peak
+                  target_reduction_kw: 24000
+                  effective_at: '2026-07-16T21:05:00Z'
+                  expires_at: '2026-07-16T21:35:00Z'
+                  participant_segments:
+                    - seg_ci_large
+                    - seg_muni_pumping
+                  priority: high
+                  control_profile:
+                    ramp_strategy: immediate
+                    ramp_minutes: 5
+                    rebound_limit_kw: 15000
+      responses:
+        '202':
+          description: Signal accepted for dispatch fan-out.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignalDispatchResponse'
+              examples:
+                accepted:
+                  summary: Signal queued for segment fan-out and acknowledgement tracking
+                  value:
+                    data:
+                      signal_id: sig_01HYGPR7M8PC6S9W3QSX36A7T2
+                      event_id: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      signal_type: shed
+                      signal_status: accepted
+                      signal_reason: grid_stress_peak
+                      target_reduction_kw: 24000
+                      effective_at: '2026-07-16T21:05:00Z'
+                      expires_at: '2026-07-16T21:35:00Z'
+                      priority: high
+                      participant_segments:
+                        - seg_ci_large
+                        - seg_muni_pumping
+                      accepted_targets: 175
+                      rejected_targets: 0
+                      created_at: '2026-07-16T21:01:54Z'
+                    links:
+                      event: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      performance: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A/performance
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/events/{eventId}/performance:
+    get:
+      operationId: getDemandResponseEventPerformance
+      summary: Get demand-response event performance
+      description: |
+        Returns event-level and segment-level baseline versus actual performance metrics.
+
+        Metrics include baseline_demand_kw, actual_reduction_kw, and achievement ratios for
+        settlement, reporting, and control-loop tuning workloads.
+      tags:
+        - Performance
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - name: granularity
+          in: query
+          required: false
+          description: Time-series rollup interval for trend points.
+          schema:
+            type: string
+            enum:
+              - one_minute
+              - five_minutes
+              - fifteen_minutes
+            default: five_minutes
+      responses:
+        '200':
+          description: Event performance snapshot and trend points returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventPerformanceResponse'
+              examples:
+                activePerformance:
+                  summary: Active event with near-real-time performance trend
+                  value:
+                    data:
+                      event_id: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      event_status: active
+                      target_reduction_mw: 42.5
+                      baseline_demand_kw: 615000.0
+                      actual_reduction_kw: 28750.0
+                      reduction_achievement_pct: 67.65
+                      evaluated_at: '2026-07-16T21:38:00Z'
+                      participant_segments:
+                        - segment_id: seg_ci_large
+                          baseline_demand_kw: 401250.0
+                          actual_reduction_kw: 19830.0
+                          reduction_achievement_pct: 74.83
+                        - segment_id: seg_muni_pumping
+                          baseline_demand_kw: 213750.0
+                          actual_reduction_kw: 8920.0
+                          reduction_achievement_pct: 56.33
+                      trend_points:
+                        - measured_at: '2026-07-16T21:20:00Z'
+                          baseline_demand_kw: 614200.0
+                          actual_demand_kw: 593400.0
+                          actual_reduction_kw: 20800.0
+                        - measured_at: '2026-07-16T21:25:00Z'
+                          baseline_demand_kw: 615100.0
+                          actual_demand_kw: 588900.0
+                          actual_reduction_kw: 26200.0
+                        - measured_at: '2026-07-16T21:30:00Z'
+                          baseline_demand_kw: 615300.0
+                          actual_demand_kw: 586550.0
+                          actual_reduction_kw: 28750.0
+                    links:
+                      event: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/events/{eventId}:terminate:
+    post:
+      operationId: terminateDemandResponseEvent
+      summary: Terminate demand-response event
+      description: |
+        Initiates controlled termination for an event and transitions it to a terminal status.
+
+        Termination includes stop-signal dispatch, optional staged ramp release, and recording
+        of a termination reason for audit and settlement workflows.
+      tags:
+        - Events
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        description: Event termination request payload.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminateEventRequest'
+            examples:
+              controlledRelease:
+                summary: Controlled event end after reaching stability target
+                value:
+                  request_id: req_01HYGR4E7THABNZWZV8PRB6W15
+                  termination_reason: objective_met
+                  effective_at: '2026-07-16T22:10:00Z'
+                  release_strategy: staged
+                  release_window_minutes: 15
+                  notes: Frequency recovery sustained for 12 minutes.
+      responses:
+        '202':
+          description: Event termination accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminateEventResponse'
+              examples:
+                terminationAccepted:
+                  summary: Event moved to terminating state
+                  value:
+                    data:
+                      event_id: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      previous_status: active
+                      event_status: terminating
+                      termination_reason: objective_met
+                      effective_at: '2026-07-16T22:10:00Z'
+                      release_strategy: staged
+                      release_window_minutes: 15
+                      accepted_at: '2026-07-16T22:09:11Z'
+                    links:
+                      event: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A
+                      performance: /v1/events/evt_01HYGMSW53K93AK9FCMK1ANZ5A/performance
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      description: Unique demand-response event identifier.
+      schema:
+        type: string
+        pattern: '^evt_[A-Z0-9a-z]{24,40}$'
+      example: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number for paginated results.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Number of records per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    SortBy:
+      name: sort_by
+      in: query
+      required: false
+      description: Field used to sort event list results.
+      schema:
+        type: string
+        enum:
+          - event_start_at
+          - event_end_at
+          - created_at
+          - updated_at
+        default: event_start_at
+    SortOrder:
+      name: sort_order
+      in: query
+      required: false
+      description: Direction for event list sorting.
+      schema:
+        type: string
+        enum:
+          - asc
+          - desc
+        default: desc
+    EventStatusFilter:
+      name: event_status
+      in: query
+      required: false
+      description: Filter events by lifecycle status.
+      schema:
+        $ref: '#/components/schemas/EventStatus'
+    EventTypeFilter:
+      name: event_type
+      in: query
+      required: false
+      description: Filter events by event type.
+      schema:
+        $ref: '#/components/schemas/EventType'
+    RegionCodeFilter:
+      name: region_code
+      in: query
+      required: false
+      description: Filter events by region code.
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 48
+    StartAfterFilter:
+      name: start_after
+      in: query
+      required: false
+      description: Return events starting at or after this UTC timestamp.
+      schema:
+        type: string
+        format: date-time
+    StartBeforeFilter:
+      name: start_before
+      in: query
+      required: false
+      description: Return events starting at or before this UTC timestamp.
+      schema:
+        type: string
+        format: date-time
+  responses:
+    BadRequestError:
+      description: The request payload or parameters are malformed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidTimeWindow:
+              summary: Event end time is before start time
+              value:
+                error:
+                  code: bad_request
+                  message: event_end_at must be later than event_start_at.
+                  details:
+                    - field: event_end_at
+                      issue: invalid_range
+                  request_id: req_01HYGRR3F2Z2PA8MRF3X0QGMN0
+    UnauthorizedError:
+      description: Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missingToken:
+              value:
+                error:
+                  code: unauthorized
+                  message: Bearer token is required.
+                  request_id: req_01HYGRVKSS4S8RH8WBGVQFBMJ7
+    ForbiddenError:
+      description: Authenticated identity is not allowed to perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missingScope:
+              value:
+                error:
+                  code: forbidden
+                  message: Missing required scope demand-response:write.
+                  request_id: req_01HYGRWVCJTPZ9RF9CNQ4W8QV3
+    NotFoundError:
+      description: Requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unknownEvent:
+              value:
+                error:
+                  code: not_found
+                  message: Event not found for eventId evt_01HYG000000000000000000000.
+                  request_id: req_01HYGRY4F5D8Z8T84YH7S1AA50
+    ConflictError:
+      description: Request conflicts with current resource state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            stateConflict:
+              summary: Event has already reached terminal state
+              value:
+                error:
+                  code: conflict
+                  message: Event cannot be terminated from completed state.
+                  details:
+                    - field: event_status
+                      issue: invalid_transition
+                  request_id: req_01HYGS0MCTWR4WW9CX7QE9GCJY
+    ValidationError:
+      description: Semantically invalid payload content.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            reductionOutOfBounds:
+              value:
+                error:
+                  code: validation_error
+                  message: target_reduction_mw exceeds allowed threshold for region.
+                  details:
+                    - field: target_reduction_mw
+                      issue: out_of_bounds
+                      allowed_max: 65
+                  request_id: req_01HYGS1VKJ8M8YYH0DTRH76AC3
+    RateLimitError:
+      description: Too many requests were submitted in a short period.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            throttled:
+              value:
+                error:
+                  code: rate_limited
+                  message: Too many requests. Retry later.
+                  request_id: req_01HYGS33ZGVS0V8JCK4R4QAK6Q
+    InternalServerError:
+      description: Unexpected internal processing error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            generic:
+              value:
+                error:
+                  code: internal_error
+                  message: An unexpected error occurred.
+                  request_id: req_01HYGS43K9F64B5MXX7J8M4Q6D
+  schemas:
+    EventStatus:
+      type: string
+      description: Lifecycle status for demand-response events.
+      enum:
+        - draft
+        - scheduled
+        - active
+        - terminating
+        - completed
+        - cancelled
+    EventType:
+      type: string
+      description: Type of grid action requested for the event.
+      enum:
+        - load_shed
+        - demand_response
+        - frequency_support
+    SignalType:
+      type: string
+      description: Control intent encoded by a signal.
+      enum:
+        - shed
+        - ramp_down
+        - hold
+        - release
+    SignalStatus:
+      type: string
+      description: Lifecycle status of a dispatch signal.
+      enum:
+        - accepted
+        - dispatching
+        - delivered
+        - partially_delivered
+        - expired
+        - failed
+    SegmentPriority:
+      type: string
+      enum:
+        - high
+        - medium
+        - low
+    SegmentReference:
+      type: object
+      additionalProperties: false
+      properties:
+        segment_id:
+          type: string
+          minLength: 3
+          maxLength: 64
+          description: Unique participant segment identifier.
+          example: seg_ci_large
+        segment_name:
+          type: string
+          minLength: 3
+          maxLength: 120
+          description: Human-readable segment label.
+          example: Commercial and industrial large load
+        priority:
+          $ref: '#/components/schemas/SegmentPriority'
+        enrollment_count:
+          type: integer
+          minimum: 0
+          description: Number of enrolled participants in this segment.
+          example: 144
+        dispatched_count:
+          type: integer
+          minimum: 0
+          description: Number of participants receiving a signal.
+          example: 138
+        acknowledged_count:
+          type: integer
+          minimum: 0
+          description: Number of participants acknowledging signal receipt.
+          example: 135
+      required:
+        - segment_id
+        - segment_name
+        - priority
+        - enrollment_count
+    SegmentReductionPerformance:
+      type: object
+      additionalProperties: false
+      properties:
+        segment_id:
+          type: string
+          example: seg_ci_large
+        baseline_demand_kw:
+          type: number
+          format: double
+          minimum: 0
+          example: 401250.0
+        actual_reduction_kw:
+          type: number
+          format: double
+          minimum: 0
+          example: 19830.0
+        reduction_achievement_pct:
+          type: number
+          format: double
+          minimum: 0
+          example: 74.83
+      required:
+        - segment_id
+        - baseline_demand_kw
+        - actual_reduction_kw
+        - reduction_achievement_pct
+    DispatchConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        max_notice_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          description: Maximum notice period before event activation.
+          example: 25
+        min_event_duration_minutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+          description: Minimum event duration in minutes.
+          example: 30
+        max_event_duration_minutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+          description: Maximum event duration in minutes.
+          example: 300
+        rebound_protection_enabled:
+          type: boolean
+          description: Enables staged-release protection for rebound demand.
+          example: true
+        rebound_cap_kw:
+          type: number
+          format: double
+          minimum: 0
+          description: Maximum allowed rebound load during release window.
+          example: 32000
+      required:
+        - max_notice_minutes
+        - min_event_duration_minutes
+        - max_event_duration_minutes
+        - rebound_protection_enabled
+    EventSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        event_id:
+          type: string
+          example: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+        event_name:
+          type: string
+          example: mid-atlantic-evening-peak-shave
+        event_type:
+          $ref: '#/components/schemas/EventType'
+        event_status:
+          $ref: '#/components/schemas/EventStatus'
+        region_code:
+          type: string
+          example: us-ne-midatlantic
+        event_start_at:
+          type: string
+          format: date-time
+        event_end_at:
+          type: string
+          format: date-time
+        target_reduction_mw:
+          type: number
+          format: double
+          minimum: 0
+          description: Target aggregate reduction in megawatts.
+          example: 42.5
+        baseline_demand_kw:
+          type: number
+          format: double
+          minimum: 0
+          description: Forecast baseline demand for event window in kilowatts.
+          example: 615000.0
+        actual_reduction_kw:
+          type: number
+          format: double
+          minimum: 0
+          description: Observed aggregate reduction in kilowatts.
+          example: 18350.0
+        participant_segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentReference'
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - event_id
+        - event_name
+        - event_type
+        - event_status
+        - region_code
+        - event_start_at
+        - event_end_at
+        - target_reduction_mw
+        - baseline_demand_kw
+        - actual_reduction_kw
+        - participant_segments
+        - updated_at
+    EventDetail:
+      allOf:
+        - $ref: '#/components/schemas/EventSummary'
+        - type: object
+          additionalProperties: false
+          properties:
+            termination_reason:
+              type: string
+              nullable: true
+              description: Reason recorded when event was terminated.
+              example: objective_met
+            dispatch_constraints:
+              $ref: '#/components/schemas/DispatchConstraints'
+            metadata:
+              type: object
+              additionalProperties:
+                type: string
+              description: Service metadata supplied during event creation.
+            created_at:
+              type: string
+              format: date-time
+          required:
+            - dispatch_constraints
+            - created_at
+    PerformanceTrendPoint:
+      type: object
+      additionalProperties: false
+      properties:
+        measured_at:
+          type: string
+          format: date-time
+        baseline_demand_kw:
+          type: number
+          format: double
+          minimum: 0
+        actual_demand_kw:
+          type: number
+          format: double
+          minimum: 0
+        actual_reduction_kw:
+          type: number
+          format: double
+          minimum: 0
+      required:
+        - measured_at
+        - baseline_demand_kw
+        - actual_demand_kw
+        - actual_reduction_kw
+    CreateEventRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        request_id:
+          type: string
+          minLength: 8
+          maxLength: 64
+          description: Client-provided idempotency and trace key.
+          example: req_01HYGMPY10S5F5N6VH3DSQ8K8J
+        event_name:
+          type: string
+          minLength: 3
+          maxLength: 120
+          example: mid-atlantic-evening-peak-shave
+        event_type:
+          $ref: '#/components/schemas/EventType'
+        region_code:
+          type: string
+          minLength: 3
+          maxLength: 48
+          example: us-ne-midatlantic
+        event_start_at:
+          type: string
+          format: date-time
+        event_end_at:
+          type: string
+          format: date-time
+        target_reduction_mw:
+          type: number
+          format: double
+          minimum: 0.1
+          maximum: 1000
+          description: Requested reduction objective in megawatts.
+          example: 42.5
+        baseline_demand_kw:
+          type: number
+          format: double
+          minimum: 0
+          description: Baseline load forecast for event interval.
+          example: 615000.0
+        participant_segments:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SegmentReference'
+        dispatch_constraints:
+          $ref: '#/components/schemas/DispatchConstraints'
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional partner-defined metadata.
+      required:
+        - request_id
+        - event_name
+        - event_type
+        - region_code
+        - event_start_at
+        - event_end_at
+        - target_reduction_mw
+        - baseline_demand_kw
+        - participant_segments
+        - dispatch_constraints
+    EventResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/EventDetail'
+        links:
+          type: object
+          additionalProperties:
+            type: string
+          properties:
+            self:
+              type: string
+            signals:
+              type: string
+            performance:
+              type: string
+          required:
+            - self
+      required:
+        - data
+    EventListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventSummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+      required:
+        - data
+        - meta
+    ControlProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        ramp_strategy:
+          type: string
+          enum:
+            - immediate
+            - staged
+            - linear
+          default: immediate
+        ramp_minutes:
+          type: integer
+          minimum: 1
+          maximum: 180
+          example: 5
+        rebound_limit_kw:
+          type: number
+          format: double
+          minimum: 0
+          example: 15000
+    CreateSignalRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        request_id:
+          type: string
+          minLength: 8
+          maxLength: 64
+          description: Client-provided idempotency key.
+        signal_type:
+          $ref: '#/components/schemas/SignalType'
+        signal_reason:
+          type: string
+          minLength: 3
+          maxLength: 120
+          example: grid_stress_peak
+        target_reduction_kw:
+          type: number
+          format: double
+          minimum: 0
+          description: Requested reduction to be achieved by this signal.
+          example: 24000
+        effective_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        participant_segments:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 3
+            maxLength: 64
+        participant_ids:
+          type: array
+          description: Explicit participant identifiers for targeted delivery.
+          items:
+            type: string
+            minLength: 3
+            maxLength: 96
+        priority:
+          $ref: '#/components/schemas/SegmentPriority'
+        control_profile:
+          $ref: '#/components/schemas/ControlProfile'
+      required:
+        - request_id
+        - signal_type
+        - signal_reason
+        - effective_at
+    SignalDispatch:
+      type: object
+      additionalProperties: false
+      properties:
+        signal_id:
+          type: string
+          example: sig_01HYGPR7M8PC6S9W3QSX36A7T2
+        event_id:
+          type: string
+          example: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+        signal_type:
+          $ref: '#/components/schemas/SignalType'
+        signal_status:
+          $ref: '#/components/schemas/SignalStatus'
+        signal_reason:
+          type: string
+          example: grid_stress_peak
+        target_reduction_kw:
+          type: number
+          format: double
+          minimum: 0
+        effective_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        priority:
+          $ref: '#/components/schemas/SegmentPriority'
+        participant_segments:
+          type: array
+          items:
+            type: string
+        accepted_targets:
+          type: integer
+          minimum: 0
+        rejected_targets:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - signal_id
+        - event_id
+        - signal_type
+        - signal_status
+        - signal_reason
+        - effective_at
+        - accepted_targets
+        - rejected_targets
+        - created_at
+    SignalDispatchResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/SignalDispatch'
+        links:
+          type: object
+          additionalProperties:
+            type: string
+          properties:
+            event:
+              type: string
+            performance:
+              type: string
+      required:
+        - data
+    EventPerformance:
+      type: object
+      additionalProperties: false
+      properties:
+        event_id:
+          type: string
+          example: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+        event_status:
+          $ref: '#/components/schemas/EventStatus'
+        target_reduction_mw:
+          type: number
+          format: double
+          minimum: 0
+          example: 42.5
+        baseline_demand_kw:
+          type: number
+          format: double
+          minimum: 0
+          example: 615000.0
+        actual_reduction_kw:
+          type: number
+          format: double
+          minimum: 0
+          example: 28750.0
+        reduction_achievement_pct:
+          type: number
+          format: double
+          minimum: 0
+          example: 67.65
+        evaluated_at:
+          type: string
+          format: date-time
+        participant_segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentReductionPerformance'
+        trend_points:
+          type: array
+          items:
+            $ref: '#/components/schemas/PerformanceTrendPoint'
+      required:
+        - event_id
+        - event_status
+        - target_reduction_mw
+        - baseline_demand_kw
+        - actual_reduction_kw
+        - reduction_achievement_pct
+        - evaluated_at
+        - participant_segments
+        - trend_points
+    EventPerformanceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/EventPerformance'
+        links:
+          type: object
+          additionalProperties:
+            type: string
+          properties:
+            event:
+              type: string
+          required:
+            - event
+      required:
+        - data
+        - links
+    TerminateEventRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        request_id:
+          type: string
+          minLength: 8
+          maxLength: 64
+          description: Client-provided idempotency and trace key.
+          example: req_01HYGR4E7THABNZWZV8PRB6W15
+        termination_reason:
+          type: string
+          enum:
+            - objective_met
+            - safety_constraint
+            - operator_cancelled
+            - market_instruction
+            - network_condition_change
+          example: objective_met
+        effective_at:
+          type: string
+          format: date-time
+        release_strategy:
+          type: string
+          enum:
+            - immediate
+            - staged
+          default: immediate
+        release_window_minutes:
+          type: integer
+          minimum: 0
+          maximum: 240
+          description: Required when release_strategy is staged.
+          example: 15
+        notes:
+          type: string
+          maxLength: 512
+      required:
+        - request_id
+        - termination_reason
+        - effective_at
+    TerminateEventResult:
+      type: object
+      additionalProperties: false
+      properties:
+        event_id:
+          type: string
+          example: evt_01HYGMSW53K93AK9FCMK1ANZ5A
+        previous_status:
+          $ref: '#/components/schemas/EventStatus'
+        event_status:
+          $ref: '#/components/schemas/EventStatus'
+        termination_reason:
+          type: string
+          example: objective_met
+        effective_at:
+          type: string
+          format: date-time
+        release_strategy:
+          type: string
+          enum:
+            - immediate
+            - staged
+        release_window_minutes:
+          type: integer
+          minimum: 0
+          maximum: 240
+        accepted_at:
+          type: string
+          format: date-time
+      required:
+        - event_id
+        - previous_status
+        - event_status
+        - termination_reason
+        - effective_at
+        - release_strategy
+        - accepted_at
+    TerminateEventResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/TerminateEventResult'
+        links:
+          type: object
+          additionalProperties:
+            type: string
+          properties:
+            event:
+              type: string
+            performance:
+              type: string
+      required:
+        - data
+    PaginationMeta:
+      type: object
+      additionalProperties: false
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        per_page:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+    PaginationLinks:
+      type: object
+      additionalProperties: false
+      properties:
+        self:
+          type: string
+        next:
+          type: string
+          nullable: true
+        prev:
+          type: string
+          nullable: true
+      required:
+        - self
+        - next
+        - prev
+    ErrorDetail:
+      type: object
+      additionalProperties: true
+      properties:
+        field:
+          type: string
+        issue:
+          type: string
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          example: validation_error
+        message:
+          type: string
+          example: target_reduction_mw exceeds allowed threshold for region.
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+        request_id:
+          type: string
+          example: req_01HYGS1VKJ8M8YYH0DTRH76AC3
+      required:
+        - code
+        - message
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorEnvelope'
+      required:
+        - error

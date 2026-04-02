@@ -1,0 +1,1014 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Session Management API
+  description: >-
+    Distributed session management with configurable idle and absolute timeouts, device binding, and session
+    attribute storage. Sessions are backed by Redis with AES-256 encrypted session data and support concurrent
+    session limits, forced logout, and cross-device session visibility. Implements sliding window idle timeout
+    with absolute maximum lifetime enforcement.
+  version: 3.1.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-identity-session
+  x-acme-domain: identity
+servers:
+  - url: https://af-identity-session.api.acmefin.com/v1
+    description: Production
+  - url: https://af-identity-session.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Sessions
+    description: Session lifecycle management and monitoring
+  - name: Session Attributes
+    description: Key-value attribute storage within sessions
+paths:
+  /sessions:
+    get:
+      operationId: listSessions
+      summary: List active sessions
+      description: >-
+        Retrieve all active sessions for a user or organization. Useful for concurrent session monitoring
+        and management.
+      tags:
+        - Sessions
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: user_id
+          in: query
+          required: false
+          description: Filter by session owner
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: "string"
+            enum:
+              - active
+              - expired
+              - invalidated
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        session_id:
+                          type: string
+                          description: Unique session identifier
+                          example: "sess_a1b2c3d4"
+                          readOnly: true
+                        user_id:
+                          type: string
+                          description: Session owner
+                          example: "usr_4e5f6a7b"
+                        status:
+                          type: string
+                          description: Session status
+                          example: "active"
+                          enum:
+                            - active
+                            - expired
+                            - invalidated
+                        ip_address:
+                          type: string
+                          description: Client IP address
+                          example: "203.0.113.42"
+                        user_agent:
+                          type: string
+                          description: Client user agent
+                          example: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)"
+                        device_fingerprint:
+                          type: string
+                          description: Device fingerprint hash
+                          example: "fp_e3b0c44298fc"
+                        idle_timeout_seconds:
+                          type: integer
+                          description: Idle timeout before session expires
+                          example: 1800
+                        absolute_timeout_seconds:
+                          type: integer
+                          description: Maximum session lifetime
+                          example: 28800
+                        mfa_completed:
+                          type: boolean
+                          description: Whether MFA verification was completed in this session
+                          example: true
+                        created_at:
+                          type: string
+                          description: Session creation timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        last_activity_at:
+                          type: string
+                          description: Last request timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        expires_at:
+                          type: string
+                          description: Session expiration timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - session_id
+                        - user_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSession
+      summary: Create session
+      description: >-
+        Create a new authenticated session after successful credential verification. Binds the session to
+        the client's IP, user agent, and device fingerprint.
+      tags:
+        - Sessions
+      requestBody:
+        required: true
+        description: Create session request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: Authenticated user
+                      example: "usr_4e5f6a7b"
+                    ip_address:
+                      type: string
+                      description: Client IP
+                      example: "203.0.113.42"
+                    user_agent:
+                      type: string
+                      description: Client user agent
+                      example: "Mozilla/5.0"
+                    device_fingerprint:
+                      type: string
+                      description: Device fingerprint
+                      example: "fp_e3b0c44298fc"
+                    idle_timeout_seconds:
+                      type: integer
+                      description: Custom idle timeout (default 1800)
+                      example: 1800
+                    mfa_completed:
+                      type: boolean
+                      description: Whether MFA was verified
+                      example: true
+              required:
+                - user_id
+                - ip_address
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Unique session identifier
+                    example: "sess_a1b2c3d4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Session owner
+                    example: "usr_4e5f6a7b"
+                  status:
+                    type: string
+                    description: Session status
+                    example: "active"
+                    enum:
+                      - active
+                      - expired
+                      - invalidated
+                  ip_address:
+                    type: string
+                    description: Client IP address
+                    example: "203.0.113.42"
+                  user_agent:
+                    type: string
+                    description: Client user agent
+                    example: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)"
+                  device_fingerprint:
+                    type: string
+                    description: Device fingerprint hash
+                    example: "fp_e3b0c44298fc"
+                  idle_timeout_seconds:
+                    type: integer
+                    description: Idle timeout before session expires
+                    example: 1800
+                  absolute_timeout_seconds:
+                    type: integer
+                    description: Maximum session lifetime
+                    example: 28800
+                  mfa_completed:
+                    type: boolean
+                    description: Whether MFA verification was completed in this session
+                    example: true
+                  created_at:
+                    type: string
+                    description: Session creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  last_activity_at:
+                    type: string
+                    description: Last request timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  expires_at:
+                    type: string
+                    description: Session expiration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - session_id
+                  - user_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sessions/{session_id}:
+    get:
+      operationId: getSession
+      summary: Get session details
+      description: >-
+        Retrieve full session details including activity timestamps, device binding, and MFA status.
+      tags:
+        - Sessions
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Unique session id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Unique session identifier
+                    example: "sess_a1b2c3d4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Session owner
+                    example: "usr_4e5f6a7b"
+                  status:
+                    type: string
+                    description: Session status
+                    example: "active"
+                    enum:
+                      - active
+                      - expired
+                      - invalidated
+                  ip_address:
+                    type: string
+                    description: Client IP address
+                    example: "203.0.113.42"
+                  user_agent:
+                    type: string
+                    description: Client user agent
+                    example: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)"
+                  device_fingerprint:
+                    type: string
+                    description: Device fingerprint hash
+                    example: "fp_e3b0c44298fc"
+                  idle_timeout_seconds:
+                    type: integer
+                    description: Idle timeout before session expires
+                    example: 1800
+                  absolute_timeout_seconds:
+                    type: integer
+                    description: Maximum session lifetime
+                    example: 28800
+                  mfa_completed:
+                    type: boolean
+                    description: Whether MFA verification was completed in this session
+                    example: true
+                  created_at:
+                    type: string
+                    description: Session creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  last_activity_at:
+                    type: string
+                    description: Last request timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  expires_at:
+                    type: string
+                    description: Session expiration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - session_id
+                  - user_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    delete:
+      operationId: invalidateSession
+      summary: Invalidate session
+      description: >-
+        Immediately invalidate a session, preventing further use. The session data is retained for audit
+        purposes.
+      tags:
+        - Sessions
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Unique session id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /sessions/{session_id}/validate:
+    post:
+      operationId: validateSession
+      summary: Validate session
+      description: >-
+        Check if a session is still valid (not expired, not invalidated, within idle timeout). Updates
+        last_activity_at to implement sliding window timeout.
+      tags:
+        - Sessions
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Unique session id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    description: Whether the session is valid
+                    example: true
+                  session_id:
+                    type: string
+                    description: Unique session identifier
+                    example: "sess_a1b2c3d4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Session owner
+                    example: "usr_4e5f6a7b"
+                  remaining_idle_seconds:
+                    type: integer
+                    description: Seconds until idle expiration
+                    example: 1650
+                  remaining_absolute_seconds:
+                    type: integer
+                    description: Seconds until absolute expiration
+                    example: 25200
+                required:
+                  - valid
+                  - session_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sessions/{session_id}/extend:
+    post:
+      operationId: extendSession
+      summary: Extend session lifetime
+      description: >-
+        Extend the absolute timeout of an active session. Useful for long-running operations that require
+        uninterrupted access. Subject to maximum extension policy.
+      tags:
+        - Sessions
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Unique session id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Extend session lifetime request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    extend_by_seconds:
+                      type: integer
+                      description: Additional seconds to add to session lifetime
+                      example: 3600
+                      minimum: 60
+                      maximum: 86400
+              required:
+                - extend_by_seconds
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Unique session identifier
+                    example: "sess_a1b2c3d4"
+                    readOnly: true
+                  new_expires_at:
+                    type: string
+                    description: Updated expiration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  extended_by_seconds:
+                    type: integer
+                    description: Actual extension applied
+                    example: 3600
+                required:
+                  - session_id
+                  - new_expires_at
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sessions/force-logout:
+    post:
+      operationId: forceLogoutUser
+      summary: Force logout all sessions
+      description: >-
+        Invalidate all active sessions for a specific user across all devices. Used for security incidents,
+        password changes, or administrative actions.
+      tags:
+        - Sessions
+      requestBody:
+        required: true
+        description: Force logout all sessions request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: User to force logout
+                      example: "usr_4e5f6a7b"
+                    reason:
+                      type: string
+                      description: Reason for forced logout
+                      example: "Password changed"
+                    exclude_session_id:
+                      type: string
+                      description: Session to preserve (e.g., current admin session)
+                      example: "sess_current"
+              required:
+                - user_id
+                - reason
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions_invalidated:
+                    type: integer
+                    description: Number of sessions terminated
+                    example: 4
+                  user_id:
+                    type: string
+                    description: Affected user
+                    example: "usr_4e5f6a7b"
+                required:
+                  - sessions_invalidated
+                  - user_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /sessions/{session_id}/attributes:
+    get:
+      operationId: getSessionAttributes
+      summary: Get session attributes
+      description: >-
+        Retrieve all key-value attributes stored in a session. Attributes are arbitrary metadata attached to
+        the session for application use.
+      tags:
+        - Session Attributes
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Session identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                          description: Attribute key
+                          example: "preferred_currency"
+                        value:
+                          type: string
+                          description: Attribute value
+                          example: "USD"
+                        set_at:
+                          type: string
+                          description: When the attribute was set
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - key
+                        - value
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: setSessionAttribute
+      summary: Set session attribute
+      description: >-
+        Set or update a key-value attribute on a session. Attributes are stored encrypted alongside the
+        session data.
+      tags:
+        - Session Attributes
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Session identifier
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Set session attribute request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    key:
+                      type: string
+                      description: Attribute key
+                      example: "preferred_currency"
+                    value:
+                      type: string
+                      description: Attribute value
+                      example: "USD"
+              required:
+                - key
+                - value
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: Attribute key
+                    example: "preferred_currency"
+                  value:
+                    type: string
+                    description: Attribute value
+                    example: "USD"
+                  set_at:
+                    type: string
+                    description: When the attribute was set
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - key
+                  - value
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

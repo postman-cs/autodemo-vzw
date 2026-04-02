@@ -1,0 +1,1880 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Credit Decisioning API
+  description: >-
+    Automate credit application decisions using configurable policy rules, risk scoring models, and regulatory
+    compliance checks. Supports the full application lifecycle from submission through automated decisioning,
+    manual review queues, decision overrides, and ECOA-compliant adverse action notices. Integrates with credit
+    scoring and bureau APIs for real-time data during the decision process.
+  version: 2.0.3
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-credit-decisioning
+  x-acme-domain: credit
+servers:
+  - url: https://af-credit-decisioning.api.acmefin.com/v1
+    description: Production
+  - url: https://af-credit-decisioning.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Applications
+    description: Submit, review, and manage credit applications through the decisioning pipeline
+  - name: Decision Engine
+    description: Automated decisioning, manual review queues, overrides, and audit trails
+  - name: Policy Management
+    description: Configure and manage business rules that govern automated credit decisions
+paths:
+  /applications:
+    get:
+      operationId: listApplications
+      summary: List applications
+      description: >-
+        Retrieve credit applications with filtering by decision status, product type, date range, and risk
+        score threshold. Default sort is by submission date descending.
+      tags:
+        - Applications
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: decision
+          in: query
+          required: false
+          description: Filter by decision status
+          schema:
+            type: "string"
+            enum:
+              - pending
+              - approved
+              - conditionally_approved
+              - declined
+              - referred_to_review
+        - name: product_type
+          in: query
+          required: false
+          description: Filter by product type
+          schema:
+            type: "string"
+        - name: submitted_after
+          in: query
+          required: false
+          description: Applications submitted after this date
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        application_id:
+                          type: string
+                          description: Application identifier
+                          format: uuid
+                          example: "app-4d5e6f7a-b8c9-0123-defa-456789012345"
+                        consumer_id:
+                          type: string
+                          description: Applicant consumer ID
+                          format: uuid
+                          example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                        product_type:
+                          type: string
+                          description: Credit product being applied for
+                          example: "credit_card"
+                          enum:
+                            - credit_card
+                            - personal_loan
+                            - auto_loan
+                            - mortgage
+                            - heloc
+                            - business_line
+                        requested_amount:
+                          type: number
+                          description: Requested credit amount in USD
+                          example: 25000.0
+                        decision:
+                          type: string
+                          description: Current decision status
+                          example: "pending"
+                          enum:
+                            - pending
+                            - approved
+                            - conditionally_approved
+                            - declined
+                            - referred_to_review
+                            - withdrawn
+                        risk_score:
+                          type: integer
+                          description: Internal risk score from decisioning model
+                          example: 78
+                          minimum: 0
+                          maximum: 100
+                        debt_to_income:
+                          type: number
+                          description: Applicant's debt-to-income ratio
+                          example: 32.5
+                        decision_method:
+                          type: string
+                          description: How the decision was rendered
+                          example: "automated"
+                          enum:
+                            - automated
+                            - manual_review
+                            - override
+                            - policy_exception
+                        adverse_action_reasons:
+                          type: array
+                          description: Reasons for decline or conditional approval per ECOA
+                          items:
+                            type: string
+                            example: "Insufficient credit history"
+                        submitted_at:
+                          type: string
+                          description: Application submission timestamp
+                          format: date-time
+                          example: "2025-03-14T09:00:00Z"
+                        decided_at:
+                          type: string
+                          description: Decision timestamp
+                          format: date-time
+                          example: "2025-03-14T09:00:45Z"
+                      required:
+                        - application_id
+                        - consumer_id
+                        - decision
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: submitApplication
+      summary: Submit credit application
+      description: >-
+        Submit a new credit application for decisioning. The system pulls the applicant's credit score and
+        report, evaluates against active policy rules, and renders an automated decision within seconds.
+        Applications that cannot be auto-decided are routed to the manual review queue.
+      tags:
+        - Applications
+      requestBody:
+        required: true
+        description: Submit credit application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    consumer_id:
+                      type: string
+                      description: Applicant
+                      format: uuid
+                      example: "con-8b3c4d5e"
+                    product_type:
+                      type: string
+                      description: Product
+                      example: "credit_card"
+                      enum:
+                        - credit_card
+                        - personal_loan
+                        - auto_loan
+                        - mortgage
+                        - heloc
+                    requested_amount:
+                      type: number
+                      description: Requested amount in USD
+                      example: 25000.0
+                    annual_income:
+                      type: number
+                      description: Stated annual income in USD
+                      example: 85000.0
+                    employment_status:
+                      type: string
+                      description: Employment status
+                      example: "employed"
+                      enum:
+                        - employed
+                        - self_employed
+                        - retired
+                        - student
+                        - unemployed
+                    housing_status:
+                      type: string
+                      description: Housing status
+                      example: "own"
+                      enum:
+                        - own
+                        - rent
+                        - other
+                    monthly_housing_payment:
+                      type: number
+                      description: Monthly housing payment
+                      example: 1450.0
+              required:
+                - consumer_id
+                - product_type
+                - requested_amount
+                - annual_income
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application identifier
+                    format: uuid
+                    example: "app-4d5e6f7a-b8c9-0123-defa-456789012345"
+                  consumer_id:
+                    type: string
+                    description: Applicant consumer ID
+                    format: uuid
+                    example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                  product_type:
+                    type: string
+                    description: Credit product being applied for
+                    example: "credit_card"
+                    enum:
+                      - credit_card
+                      - personal_loan
+                      - auto_loan
+                      - mortgage
+                      - heloc
+                      - business_line
+                  requested_amount:
+                    type: number
+                    description: Requested credit amount in USD
+                    example: 25000.0
+                  decision:
+                    type: string
+                    description: Current decision status
+                    example: "pending"
+                    enum:
+                      - pending
+                      - approved
+                      - conditionally_approved
+                      - declined
+                      - referred_to_review
+                      - withdrawn
+                  risk_score:
+                    type: integer
+                    description: Internal risk score from decisioning model
+                    example: 78
+                    minimum: 0
+                    maximum: 100
+                  debt_to_income:
+                    type: number
+                    description: Applicant's debt-to-income ratio
+                    example: 32.5
+                  decision_method:
+                    type: string
+                    description: How the decision was rendered
+                    example: "automated"
+                    enum:
+                      - automated
+                      - manual_review
+                      - override
+                      - policy_exception
+                  adverse_action_reasons:
+                    type: array
+                    description: Reasons for decline or conditional approval per ECOA
+                    items:
+                      type: string
+                      example: "Insufficient credit history"
+                  submitted_at:
+                    type: string
+                    description: Application submission timestamp
+                    format: date-time
+                    example: "2025-03-14T09:00:00Z"
+                  decided_at:
+                    type: string
+                    description: Decision timestamp
+                    format: date-time
+                    example: "2025-03-14T09:00:45Z"
+                required:
+                  - application_id
+                  - decision
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}:
+    get:
+      operationId: getApplication
+      summary: Get application details
+      description: >-
+        Retrieve complete application details including the applicant's submitted information, credit data
+        used in decisioning, the decision outcome, and any adverse action reasons.
+      tags:
+        - Applications
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: Unique application id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application identifier
+                    format: uuid
+                    example: "app-4d5e6f7a-b8c9-0123-defa-456789012345"
+                  consumer_id:
+                    type: string
+                    description: Applicant consumer ID
+                    format: uuid
+                    example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                  product_type:
+                    type: string
+                    description: Credit product being applied for
+                    example: "credit_card"
+                    enum:
+                      - credit_card
+                      - personal_loan
+                      - auto_loan
+                      - mortgage
+                      - heloc
+                      - business_line
+                  requested_amount:
+                    type: number
+                    description: Requested credit amount in USD
+                    example: 25000.0
+                  decision:
+                    type: string
+                    description: Current decision status
+                    example: "pending"
+                    enum:
+                      - pending
+                      - approved
+                      - conditionally_approved
+                      - declined
+                      - referred_to_review
+                      - withdrawn
+                  risk_score:
+                    type: integer
+                    description: Internal risk score from decisioning model
+                    example: 78
+                    minimum: 0
+                    maximum: 100
+                  debt_to_income:
+                    type: number
+                    description: Applicant's debt-to-income ratio
+                    example: 32.5
+                  decision_method:
+                    type: string
+                    description: How the decision was rendered
+                    example: "automated"
+                    enum:
+                      - automated
+                      - manual_review
+                      - override
+                      - policy_exception
+                  adverse_action_reasons:
+                    type: array
+                    description: Reasons for decline or conditional approval per ECOA
+                    items:
+                      type: string
+                      example: "Insufficient credit history"
+                  submitted_at:
+                    type: string
+                    description: Application submission timestamp
+                    format: date-time
+                    example: "2025-03-14T09:00:00Z"
+                  decided_at:
+                    type: string
+                    description: Decision timestamp
+                    format: date-time
+                    example: "2025-03-14T09:00:45Z"
+                required:
+                  - application_id
+                  - consumer_id
+                  - decision
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateApplication
+      summary: Update application
+      description: >-
+        Update a pending application with corrected applicant information. Only applications in 'pending' or
+        'referred_to_review' status can be updated. Updating triggers a re-evaluation against current policy
+        rules.
+      tags:
+        - Applications
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: Unique application id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    annual_income:
+                      type: number
+                      description: Corrected annual income
+                      example: 92000.0
+                    employment_status:
+                      type: string
+                      description: Updated employment status
+                      example: "employed"
+                      enum:
+                        - employed
+                        - self_employed
+                        - retired
+                    additional_income:
+                      type: number
+                      description: Additional documented income
+                      example: 12000.0
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application identifier
+                    format: uuid
+                    example: "app-4d5e6f7a-b8c9-0123-defa-456789012345"
+                  consumer_id:
+                    type: string
+                    description: Applicant consumer ID
+                    format: uuid
+                    example: "con-8b3c4d5e-f6a7-5432-bcde-2345678901bc"
+                  product_type:
+                    type: string
+                    description: Credit product being applied for
+                    example: "credit_card"
+                    enum:
+                      - credit_card
+                      - personal_loan
+                      - auto_loan
+                      - mortgage
+                      - heloc
+                      - business_line
+                  requested_amount:
+                    type: number
+                    description: Requested credit amount in USD
+                    example: 25000.0
+                  decision:
+                    type: string
+                    description: Current decision status
+                    example: "pending"
+                    enum:
+                      - pending
+                      - approved
+                      - conditionally_approved
+                      - declined
+                      - referred_to_review
+                      - withdrawn
+                  risk_score:
+                    type: integer
+                    description: Internal risk score from decisioning model
+                    example: 78
+                    minimum: 0
+                    maximum: 100
+                  debt_to_income:
+                    type: number
+                    description: Applicant's debt-to-income ratio
+                    example: 32.5
+                  decision_method:
+                    type: string
+                    description: How the decision was rendered
+                    example: "automated"
+                    enum:
+                      - automated
+                      - manual_review
+                      - override
+                      - policy_exception
+                  adverse_action_reasons:
+                    type: array
+                    description: Reasons for decline or conditional approval per ECOA
+                    items:
+                      type: string
+                      example: "Insufficient credit history"
+                  submitted_at:
+                    type: string
+                    description: Application submission timestamp
+                    format: date-time
+                    example: "2025-03-14T09:00:00Z"
+                  decided_at:
+                    type: string
+                    description: Decision timestamp
+                    format: date-time
+                    example: "2025-03-14T09:00:45Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/decide:
+    post:
+      operationId: autoDecide
+      summary: Run automated decision
+      description: >-
+        Trigger the automated decisioning engine for a pending application. Evaluates the application
+        against all active policy rules in priority order, pulls fresh credit data if stale, and renders a
+        decision. Returns the decision along with the matched policy rules and adverse action reasons if
+        applicable.
+      tags:
+        - Decision Engine
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: Unique application id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application
+                    format: uuid
+                    example: "app-4d5e6f7a"
+                  decision:
+                    type: string
+                    description: Rendered decision
+                    example: "approved"
+                    enum:
+                      - approved
+                      - conditionally_approved
+                      - declined
+                      - referred_to_review
+                  matched_policies:
+                    type: array
+                    description: Policy rules that matched
+                    items:
+                      type: string
+                      example: "pol-5e6f7a8b"
+                  risk_score:
+                    type: integer
+                    description: Calculated risk score
+                    example: 78
+                  adverse_action_reasons:
+                    type: array
+                    description: ECOA adverse action reasons
+                    items:
+                      type: string
+                      example: "Insufficient credit history"
+                  decided_at:
+                    type: string
+                    description: Decision timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                required:
+                  - application_id
+                  - decision
+                  - risk_score
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/review:
+    post:
+      operationId: manualReview
+      summary: Submit manual review
+      description: >-
+        Submit a manual underwriter review decision for an application in the review queue. Requires a
+        decision, justification notes, and optional conditions. Manual reviews are fully audited and subject
+        to supervisory approval for overrides.
+      tags:
+        - Decision Engine
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: Unique application id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Submit manual review request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    decision:
+                      type: string
+                      description: Review decision
+                      example: "approved"
+                      enum:
+                        - approved
+                        - conditionally_approved
+                        - declined
+                    reviewer_notes:
+                      type: string
+                      description: Underwriter justification
+                      example: "Verified income documentation supports approval at reduced limit"
+                    conditions:
+                      type: array
+                      description: Conditions for conditional approval
+                      items:
+                        type: string
+                        example: "Provide 2 months bank statements"
+                    approved_amount:
+                      type: number
+                      description: Approved amount (may differ from requested)
+                      example: 20000.0
+              required:
+                - decision
+                - reviewer_notes
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application
+                    format: uuid
+                    example: "app-4d5e6f7a"
+                  decision:
+                    type: string
+                    description: Final decision
+                    example: "approved"
+                    enum:
+                      - approved
+                      - conditionally_approved
+                      - declined
+                  reviewed_by:
+                    type: string
+                    description: Reviewer user ID
+                    example: "user-underwriter-42"
+                  reviewed_at:
+                    type: string
+                    description: Review timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                required:
+                  - application_id
+                  - decision
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/override:
+    post:
+      operationId: overrideDecision
+      summary: Override decision
+      description: >-
+        Override a previous automated or manual decision on an application. Overrides require supervisor-
+        level authorization and a documented business justification. All overrides are flagged for
+        compliance review and appear on the application's audit trail.
+      tags:
+        - Decision Engine
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: Unique application id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Override decision request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    new_decision:
+                      type: string
+                      description: Overridden decision
+                      example: "approved"
+                      enum:
+                        - approved
+                        - conditionally_approved
+                        - declined
+                    justification:
+                      type: string
+                      description: Business justification for override
+                      example: "Customer provided updated income documentation showing $120K annual income"
+                    supervisor_id:
+                      type: string
+                      description: Approving supervisor user ID
+                      example: "user-supervisor-7"
+                    override_type:
+                      type: string
+                      description: Override classification
+                      example: "policy_exception"
+                      enum:
+                        - policy_exception
+                        - data_correction
+                        - escalation_resolution
+              required:
+                - new_decision
+                - justification
+                - supervisor_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application_id:
+                    type: string
+                    description: Application
+                    format: uuid
+                    example: "app-4d5e6f7a"
+                  previous_decision:
+                    type: string
+                    description: Previous decision
+                    example: "declined"
+                    enum:
+                      - declined
+                      - referred_to_review
+                  new_decision:
+                    type: string
+                    description: New decision
+                    example: "approved"
+                    enum:
+                      - approved
+                      - conditionally_approved
+                  override_id:
+                    type: string
+                    description: Override record ID
+                    format: uuid
+                    example: "ovr-6f7a8b9c"
+                required:
+                  - application_id
+                  - new_decision
+                  - override_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{application_id}/audit-trail:
+    get:
+      operationId: getApplicationAuditTrail
+      summary: Get audit trail
+      description: >-
+        Retrieve the complete audit trail for an application, including every status change, policy
+        evaluation, manual review, override, and data access event. Required for ECOA, FCRA, and fair
+        lending compliance audits.
+      tags:
+        - Decision Engine
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          description: Application identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event_id:
+                          type: string
+                          description: Audit event identifier
+                          format: uuid
+                          example: "evt-7a8b9c0d"
+                        event_type:
+                          type: string
+                          description: Type of audit event
+                          example: "submitted"
+                          enum:
+                            - submitted
+                            - policy_evaluated
+                            - decision_rendered
+                            - manual_review
+                            - override
+                            - status_changed
+                        actor:
+                          type: string
+                          description: User or system that performed the action
+                          example: "system:decisioning-engine"
+                        description:
+                          type: string
+                          description: Event description
+                          example: "Automated decision: approved at $25,000"
+                        timestamp:
+                          type: string
+                          description: Event timestamp
+                          format: date-time
+                          example: "2025-01-15T09:30:00Z"
+                      required:
+                        - event_id
+                        - event_type
+                        - timestamp
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /review-queue:
+    get:
+      operationId: getReviewQueue
+      summary: Get manual review queue
+      description: >-
+        Retrieve applications waiting for manual underwriter review, sorted by priority. Priority is
+        determined by product type, requested amount, and time in queue. Applications approaching SLA
+        deadlines are flagged.
+      tags:
+        - Decision Engine
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: priority
+          in: query
+          required: false
+          description: Filter by priority level
+          schema:
+            type: "string"
+            enum:
+              - critical
+              - high
+              - medium
+              - low
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        application_id:
+                          type: string
+                          description: Application
+                          format: uuid
+                          example: "app-4d5e6f7a"
+                        consumer_id:
+                          type: string
+                          description: Applicant
+                          format: uuid
+                          example: "con-8b3c4d5e"
+                        product_type:
+                          type: string
+                          description: Product type
+                          example: "mortgage"
+                        requested_amount:
+                          type: number
+                          description: Requested amount
+                          example: 350000.0
+                        risk_score:
+                          type: integer
+                          description: Risk score
+                          example: 62
+                        queue_priority:
+                          type: string
+                          description: Queue priority
+                          example: "critical"
+                          enum:
+                            - critical
+                            - high
+                            - medium
+                            - low
+                        queued_at:
+                          type: string
+                          description: When the application entered the queue
+                          format: date-time
+                          example: "2025-01-15T09:30:00Z"
+                        sla_deadline:
+                          type: string
+                          description: SLA deadline for review
+                          format: date-time
+                          example: "2025-03-16T09:00:00Z"
+                      required:
+                        - application_id
+                        - queue_priority
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /policies:
+    get:
+      operationId: listPolicies
+      summary: List policy rules
+      description: >-
+        Retrieve all configured decisioning policy rules. Policies are evaluated in priority order during
+        automated decisioning. Inactive policies are retained for audit but not evaluated.
+      tags:
+        - Policy Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: policy_type
+          in: query
+          required: false
+          description: Filter by policy category
+          schema:
+            type: "string"
+        - name: is_active
+          in: query
+          required: false
+          description: Filter by active status
+          schema:
+            type: "boolean"
+        - name: product_type
+          in: query
+          required: false
+          description: Filter by applicable product
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        policy_id:
+                          type: string
+                          description: Policy rule identifier
+                          format: uuid
+                          example: "pol-5e6f7a8b-c9d0-1234-efab-567890123456"
+                        policy_name:
+                          type: string
+                          description: Policy rule name
+                          example: "Minimum FICO Score Requirement"
+                        policy_type:
+                          type: string
+                          description: Policy category
+                          example: "eligibility"
+                          enum:
+                            - eligibility
+                            - pricing
+                            - limit_assignment
+                            - fraud_screening
+                            - regulatory_compliance
+                        product_types:
+                          type: array
+                          description: Products this policy applies to
+                          items:
+                            type: string
+                            example: "credit_card"
+                        condition_expression:
+                          type: string
+                          description: Business rule condition in expression language
+                          example: "credit_score >= 640 AND debt_to_income <= 43"
+                        action_on_match:
+                          type: string
+                          description: Action when condition is met
+                          example: "approve"
+                          enum:
+                            - approve
+                            - decline
+                            - refer_to_review
+                            - apply_pricing_tier
+                            - flag_for_fraud
+                        priority:
+                          type: integer
+                          description: Rule evaluation priority (lower = higher priority)
+                          example: 10
+                          minimum: 1
+                          maximum: 1000
+                        is_active:
+                          type: boolean
+                          description: Whether this policy is currently active
+                          example: true
+                        effective_date:
+                          type: string
+                          description: Date this policy takes effect
+                          format: date-time
+                          example: "2025-01-01T00:00:00Z"
+                      required:
+                        - policy_id
+                        - policy_name
+                        - is_active
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createPolicy
+      summary: Create policy rule
+      description: >-
+        Create a new decisioning policy rule. New policies are created in inactive state and must be
+        explicitly activated after review. The condition expression uses the Acme Finance rule expression
+        language (AFREL).
+      tags:
+        - Policy Management
+      requestBody:
+        required: true
+        description: Create policy rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    policy_name:
+                      type: string
+                      description: Policy name
+                      example: "High DTI Decline Rule"
+                    policy_type:
+                      type: string
+                      description: Category
+                      example: "eligibility"
+                      enum:
+                        - eligibility
+                        - pricing
+                        - limit_assignment
+                        - fraud_screening
+                    product_types:
+                      type: array
+                      description: Applicable products
+                      items:
+                        type: string
+                        example: "personal_loan"
+                    condition_expression:
+                      type: string
+                      description: AFREL condition
+                      example: "debt_to_income > 50"
+                    action_on_match:
+                      type: string
+                      description: Action
+                      example: "approve"
+                      enum:
+                        - approve
+                        - decline
+                        - refer_to_review
+                    priority:
+                      type: integer
+                      description: Evaluation priority
+                      example: 20
+              required:
+                - policy_name
+                - policy_type
+                - condition_expression
+                - action_on_match
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Policy rule identifier
+                    format: uuid
+                    example: "pol-5e6f7a8b-c9d0-1234-efab-567890123456"
+                  policy_name:
+                    type: string
+                    description: Policy rule name
+                    example: "Minimum FICO Score Requirement"
+                  policy_type:
+                    type: string
+                    description: Policy category
+                    example: "eligibility"
+                    enum:
+                      - eligibility
+                      - pricing
+                      - limit_assignment
+                      - fraud_screening
+                      - regulatory_compliance
+                  product_types:
+                    type: array
+                    description: Products this policy applies to
+                    items:
+                      type: string
+                      example: "credit_card"
+                  condition_expression:
+                    type: string
+                    description: Business rule condition in expression language
+                    example: "credit_score >= 640 AND debt_to_income <= 43"
+                  action_on_match:
+                    type: string
+                    description: Action when condition is met
+                    example: "approve"
+                    enum:
+                      - approve
+                      - decline
+                      - refer_to_review
+                      - apply_pricing_tier
+                      - flag_for_fraud
+                  priority:
+                    type: integer
+                    description: Rule evaluation priority (lower = higher priority)
+                    example: 10
+                    minimum: 1
+                    maximum: 1000
+                  is_active:
+                    type: boolean
+                    description: Whether this policy is currently active
+                    example: true
+                  effective_date:
+                    type: string
+                    description: Date this policy takes effect
+                    format: date-time
+                    example: "2025-01-01T00:00:00Z"
+                required:
+                  - policy_id
+                  - policy_name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /policies/{policy_id}:
+    get:
+      operationId: getPolicy
+      summary: Get policy rule
+      description: >-
+        Retrieve a specific policy rule including its condition expression, action configuration, applicable
+        products, and activation status.
+      tags:
+        - Policy Management
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Policy rule identifier
+                    format: uuid
+                    example: "pol-5e6f7a8b-c9d0-1234-efab-567890123456"
+                  policy_name:
+                    type: string
+                    description: Policy rule name
+                    example: "Minimum FICO Score Requirement"
+                  policy_type:
+                    type: string
+                    description: Policy category
+                    example: "eligibility"
+                    enum:
+                      - eligibility
+                      - pricing
+                      - limit_assignment
+                      - fraud_screening
+                      - regulatory_compliance
+                  product_types:
+                    type: array
+                    description: Products this policy applies to
+                    items:
+                      type: string
+                      example: "credit_card"
+                  condition_expression:
+                    type: string
+                    description: Business rule condition in expression language
+                    example: "credit_score >= 640 AND debt_to_income <= 43"
+                  action_on_match:
+                    type: string
+                    description: Action when condition is met
+                    example: "approve"
+                    enum:
+                      - approve
+                      - decline
+                      - refer_to_review
+                      - apply_pricing_tier
+                      - flag_for_fraud
+                  priority:
+                    type: integer
+                    description: Rule evaluation priority (lower = higher priority)
+                    example: 10
+                    minimum: 1
+                    maximum: 1000
+                  is_active:
+                    type: boolean
+                    description: Whether this policy is currently active
+                    example: true
+                  effective_date:
+                    type: string
+                    description: Date this policy takes effect
+                    format: date-time
+                    example: "2025-01-01T00:00:00Z"
+                required:
+                  - policy_id
+                  - policy_name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updatePolicy
+      summary: Update policy rule
+      description: >-
+        Update an existing policy rule. Changes to active policies take effect immediately for new
+        applications. Policy changes are versioned for audit compliance.
+      tags:
+        - Policy Management
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update policy rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    policy_name:
+                      type: string
+                      description: Updated name
+                      example: "High DTI Decline Rule v2"
+                    condition_expression:
+                      type: string
+                      description: Updated condition
+                      example: "debt_to_income > 45"
+                    priority:
+                      type: integer
+                      description: Updated priority
+                      example: 15
+                    is_active:
+                      type: boolean
+                      description: Active status
+                      example: true
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: Policy rule identifier
+                    format: uuid
+                    example: "pol-5e6f7a8b-c9d0-1234-efab-567890123456"
+                  policy_name:
+                    type: string
+                    description: Policy rule name
+                    example: "Minimum FICO Score Requirement"
+                  policy_type:
+                    type: string
+                    description: Policy category
+                    example: "eligibility"
+                    enum:
+                      - eligibility
+                      - pricing
+                      - limit_assignment
+                      - fraud_screening
+                      - regulatory_compliance
+                  product_types:
+                    type: array
+                    description: Products this policy applies to
+                    items:
+                      type: string
+                      example: "credit_card"
+                  condition_expression:
+                    type: string
+                    description: Business rule condition in expression language
+                    example: "credit_score >= 640 AND debt_to_income <= 43"
+                  action_on_match:
+                    type: string
+                    description: Action when condition is met
+                    example: "approve"
+                    enum:
+                      - approve
+                      - decline
+                      - refer_to_review
+                      - apply_pricing_tier
+                      - flag_for_fraud
+                  priority:
+                    type: integer
+                    description: Rule evaluation priority (lower = higher priority)
+                    example: 10
+                    minimum: 1
+                    maximum: 1000
+                  is_active:
+                    type: boolean
+                    description: Whether this policy is currently active
+                    example: true
+                  effective_date:
+                    type: string
+                    description: Date this policy takes effect
+                    format: date-time
+                    example: "2025-01-01T00:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deletePolicy
+      summary: Delete policy rule
+      description: >-
+        Soft-delete a policy rule. Deleted policies are deactivated and archived for regulatory retention
+        but no longer appear in active policy lists.
+      tags:
+        - Policy Management
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

@@ -1,0 +1,800 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Web Banking BFF API
+  description: >-
+    Backend-for-frontend optimized for the web banking single-page application. Manages browser sessions with CSRF
+    protection, serves layout configurations for responsive breakpoints, controls feature toggle rollouts with
+    percentage-based targeting, delivers personalized content variants, and orchestrates A/B test assignments for
+    conversion optimization.
+  version: 2.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-digital-web-bff
+  x-acme-domain: digital
+servers:
+  - url: https://af-digital-web-bff.api.acmefin.com/v1
+    description: Production
+  - url: https://af-digital-web-bff.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Session
+    description: Manage browser sessions and keep-alive heartbeats
+  - name: Layout
+    description: Serve responsive layout configurations for the web SPA
+  - name: Feature Toggles
+    description: Control feature flag rollouts and targeting rules
+  - name: Personalization
+    description: Deliver personalized content and A/B test variant assignments
+paths:
+  /session:
+    get:
+      operationId: getSession
+      summary: Get current session
+      description: >-
+        Retrieve the current browser session with user context, CSRF token, permissions, and session expiry.
+      tags:
+        - Session
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  user_id:
+                    type: string
+                  csrf_token:
+                    type: string
+                    description: "CSRF token for state-changing requests"
+                  permissions:
+                    type: array
+                    description: "Granted UI permissions"
+                    items:
+                      type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+                  last_activity_at:
+                    type: string
+                    format: date-time
+                required:
+                  - session_id
+                  - csrf_token
+                  - expires_at
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSession
+      summary: Create session
+      description: >-
+        Initialize a new browser session after authentication. Returns session token, CSRF protection token,
+        and initial UI configuration.
+      tags:
+        - Session
+      requestBody:
+        required: true
+        description: Create session request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    auth_token:
+                      type: string
+                      description: "OAuth2 access token"
+                    device_fingerprint:
+                      type: string
+                      description: "Browser fingerprint for fraud detection"
+                    timezone:
+                      type: string
+                      description: "Client timezone (IANA)"
+              required:
+                - auth_token
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  csrf_token:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+                  user_id:
+                    type: string
+                  permissions:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - session_id
+                  - csrf_token
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /session/heartbeat:
+    post:
+      operationId: sessionHeartbeat
+      summary: Session heartbeat
+      description: >-
+        Extend the session TTL and report client-side activity. Used by the SPA to prevent session timeout
+        during active use.
+      tags:
+        - Session
+      requestBody:
+        required: true
+        description: Session heartbeat request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    session_id:
+                      type: string
+                      format: uuid
+                    active_page:
+                      type: string
+                      description: "Current page route"
+              required:
+                - session_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  extended_until:
+                    type: string
+                    format: date-time
+                  remaining_seconds:
+                    type: integer
+                required:
+                  - extended_until
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /layout/config:
+    get:
+      operationId: getLayoutConfig
+      summary: Get layout configuration
+      description: >-
+        Retrieve the responsive layout configuration for the web SPA including navigation structure, widget
+        placement, and breakpoint-specific overrides.
+      tags:
+        - Layout
+      parameters:
+        - name: viewport
+          in: query
+          required: false
+          description: Client viewport width for server-side layout selection
+          schema:
+            type: "integer"
+        - name: version
+          in: query
+          required: false
+          description: Config version for cache busting
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  navigation:
+                    type: array
+                    description: "Navigation menu structure with sections and items"
+                    items:
+                      type: object
+                  widgets:
+                    type: array
+                    description: "Dashboard widget configuration with placement coordinates"
+                    items:
+                      type: object
+                  breakpoints:
+                    type: object
+                    description: "Responsive breakpoint overrides (sm, md, lg, xl)"
+                  theme:
+                    type: object
+                    description: "Brand theme tokens (colors, typography, spacing)"
+                required:
+                  - navigation
+                  - widgets
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /feature-toggles:
+    get:
+      operationId: listFeatureToggles
+      summary: List feature toggles
+      description: >-
+        Retrieve all feature toggles with enabled state, rollout percentage, and targeting rules resolved
+        for the current user.
+      tags:
+        - Feature Toggles
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        toggle_id:
+                          type: string
+                        name:
+                          type: string
+                          example: "new_transfer_flow"
+                        description:
+                          type: string
+                        is_enabled:
+                          type: boolean
+                        rollout_percentage:
+                          type: integer
+                          description: "Percentage of users seeing this feature (0-100)"
+                        targeting_rules:
+                          type: object
+                          description: "User segment targeting criteria"
+                        variant:
+                          type: string
+                          description: "Assigned variant for multi-variate toggles"
+                          nullable: true
+                      required:
+                        - toggle_id
+                        - name
+                        - is_enabled
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /feature-toggles/{toggle_id}:
+    get:
+      operationId: getFeatureToggle
+      summary: Get feature toggle
+      description: >-
+        Retrieve a feature toggle with full targeting rules, variant assignments, and evaluation history for
+        the current user.
+      tags:
+        - Feature Toggles
+      parameters:
+        - name: toggle_id
+          in: path
+          required: true
+          description: Unique toggle id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  toggle_id:
+                    type: string
+                  name:
+                    type: string
+                  is_enabled:
+                    type: boolean
+                  rollout_percentage:
+                    type: integer
+                  variant:
+                    type: string
+                    nullable: true
+                  evaluation_reason:
+                    type: string
+                    description: "Why this toggle resolved to its current state"
+                required:
+                  - toggle_id
+                  - name
+                  - is_enabled
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /personalization/profile:
+    get:
+      operationId: getPersonalizationProfile
+      summary: Get personalization profile
+      description: >-
+        Retrieve the personalized content profile for the current user including recommended products,
+        content preferences, and interaction history signals.
+      tags:
+        - Personalization
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                  segments:
+                    type: array
+                    description: "Assigned customer segments"
+                    items:
+                      type: string
+                  recommended_products:
+                    type: array
+                    description: "Personalized product recommendations"
+                    items:
+                      type: object
+                  content_preferences:
+                    type: object
+                    description: "Content category preferences derived from behavior"
+                  interaction_score:
+                    type: number
+                    description: "Engagement score (0-100)"
+                    format: double
+                required:
+                  - user_id
+                  - segments
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /ab-variants:
+    get:
+      operationId: listABVariants
+      summary: List A/B test variants
+      description: >-
+        Retrieve active A/B test variant assignments for the current user session with experiment metadata.
+      tags:
+        - Personalization
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        experiment_id:
+                          type: string
+                        experiment_name:
+                          type: string
+                          example: "checkout_redesign_v2"
+                        variant:
+                          type: string
+                          description: "Assigned variant (control, variant_a, variant_b, etc.)"
+                        is_control:
+                          type: boolean
+                        started_at:
+                          type: string
+                          format: date-time
+                        expires_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - experiment_id
+                        - variant
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

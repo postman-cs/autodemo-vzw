@@ -1,0 +1,1670 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Customer Verification and Identity Proofing API
+  description: Comprehensive identity verification and proofing platform for Acme Finance. Supports multi-factor identity
+    verification including document authentication, biometric matching, phone/email confirmation, address verification, sanctions
+    screening, and PEP (Politically Exposed Person) checks. Compliant with BSA/AML CIP requirements, NIST SP 800-63 identity
+    assurance levels, and FinCEN guidelines.
+  version: 2.5.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-customer-verification
+  x-acme-domain: customer
+servers:
+- url: https://af-customer-verification.api.acmefin.com/v1
+  description: Production
+- url: https://af-customer-verification.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Identity Verification
+  description: Core identity verification and document authentication
+- name: Contact Verification
+  description: Phone, email, and address verification with OTP confirmation
+- name: Compliance Screening
+  description: Sanctions, PEP, and adverse media screening
+- name: Management
+  description: Verification status tracking, retry, and batch operations
+paths:
+  /verification/identity:
+    post:
+      operationId: verifyIdentity
+      summary: Verify customer identity
+      description: Performs comprehensive identity verification using government-issued ID document authentication, facial
+        biometric comparison, and database cross-referencing. Meets NIST IAL2 identity assurance requirements for financial
+        services.
+      tags:
+      - Identity Verification
+      requestBody:
+        required: true
+        description: Verify customer identity request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                  example: CIF-10042389
+                document_type:
+                  type: string
+                  description: Identity document type
+                  enum:
+                  - passport
+                  - drivers_license
+                  - national_id
+                  - residence_permit
+                document_front_base64:
+                  type: string
+                  description: Base64-encoded front image of ID document
+                document_back_base64:
+                  type: string
+                  description: Base64-encoded back image (if applicable)
+                  nullable: true
+                selfie_base64:
+                  type: string
+                  description: Base64-encoded selfie for facial comparison
+                country_of_issue:
+                  type: string
+                  description: ISO 3166-1 alpha-2 country code
+                  example: US
+                  minLength: 2
+                  maxLength: 2
+              required:
+              - customer_id
+              - document_type
+              - document_front_base64
+              - selfie_base64
+              - country_of_issue
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification record ID
+                    example: VRF-20250610-88421
+                  status:
+                    type: string
+                    description: Verification result
+                    enum:
+                    - passed
+                    - failed
+                    - manual_review
+                    - pending
+                  document_authenticity:
+                    type: string
+                    description: Document check result
+                    enum:
+                    - authentic
+                    - suspicious
+                    - forged
+                    - expired
+                  facial_match_score:
+                    type: number
+                    description: Selfie-to-document match score 0.0-1.0
+                    format: double
+                    example: 0.97
+                  identity_assurance_level:
+                    type: string
+                    description: Achieved NIST IAL level
+                    enum:
+                    - IAL1
+                    - IAL2
+                    - IAL3
+                  extracted_data:
+                    type: object
+                    description: Data extracted from document
+                    properties:
+                      full_name:
+                        type: string
+                        example: Margaret Chen
+                      date_of_birth:
+                        type: string
+                        example: '1985-03-22'
+                      document_number:
+                        type: string
+                        example: D12345678
+                      expiration_date:
+                        type: string
+                        example: '2028-03-22'
+                  completed_at:
+                    type: string
+                    description: Verification completion timestamp
+                    format: date-time
+                required:
+                - verification_id
+                - status
+                - document_authenticity
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/{verification_id}:
+    get:
+      operationId: getVerificationStatus
+      summary: Get verification status
+      description: Returns the current status and details of a verification request including individual check results, confidence
+        scores, and any manual review flags.
+      tags:
+      - Management
+      parameters:
+      - name: verification_id
+        in: path
+        required: true
+        description: Unique verification id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification record ID
+                  type:
+                    type: string
+                    description: Verification type
+                    enum:
+                    - identity
+                    - address
+                    - phone
+                    - email
+                    - document
+                    - biometric
+                    - sanctions
+                    - pep
+                  status:
+                    type: string
+                    description: Overall verification status
+                    enum:
+                    - passed
+                    - failed
+                    - pending
+                    - manual_review
+                    - expired
+                  customer_id:
+                    type: string
+                    description: Associated customer CIF
+                  checks_performed:
+                    type: array
+                    description: Individual check results
+                    items:
+                      type: object
+                  initiated_at:
+                    type: string
+                    description: When verification was initiated
+                    format: date-time
+                  completed_at:
+                    type: string
+                    description: When verification completed
+                    format: date-time
+                    nullable: true
+                  expires_at:
+                    type: string
+                    description: When verification result expires
+                    format: date-time
+                required:
+                - verification_id
+                - type
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /verification/address:
+    post:
+      operationId: verifyAddress
+      summary: Verify customer address
+      description: Verifies a customer's residential address through USPS database lookup, utility bill cross- reference,
+        or document-based proof. Returns standardized address and confidence score.
+      tags:
+      - Contact Verification
+      requestBody:
+        required: true
+        description: Verify customer address request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                address:
+                  type: object
+                  description: Address to verify
+                  properties:
+                    line1:
+                      type: string
+                      example: 123 Main Street
+                    line2:
+                      type: string
+                      nullable: true
+                    city:
+                      type: string
+                      example: New York
+                    state:
+                      type: string
+                      example: NY
+                    postal_code:
+                      type: string
+                      example: '10001'
+                    country:
+                      type: string
+                      example: US
+                method:
+                  type: string
+                  description: Verification method
+                  enum:
+                  - database
+                  - document
+                  - utility_bill
+              required:
+              - customer_id
+              - address
+              - method
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification record ID
+                  status:
+                    type: string
+                    description: Result
+                    enum:
+                    - verified
+                    - unverified
+                    - partial_match
+                  match_confidence:
+                    type: number
+                    description: Address match confidence
+                    format: double
+                    example: 0.95
+                  standardized_address:
+                    type: object
+                    description: USPS-standardized address
+                    properties:
+                      line1:
+                        type: string
+                      city:
+                        type: string
+                      state:
+                        type: string
+                      postal_code:
+                        type: string
+                required:
+                - verification_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/phone:
+    post:
+      operationId: verifyPhone
+      summary: Initiate phone verification
+      description: Sends a one-time passcode (OTP) to the customer's phone via SMS or voice call. The OTP must be confirmed
+        via the confirm endpoint within 10 minutes.
+      tags:
+      - Contact Verification
+      requestBody:
+        required: true
+        description: Initiate phone verification request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                phone_number:
+                  type: string
+                  description: Phone number to verify
+                  example: +1-555-0142
+                delivery_method:
+                  type: string
+                  description: OTP delivery method
+                  enum:
+                  - sms
+                  - voice_call
+                  default: sms
+              required:
+              - customer_id
+              - phone_number
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification session ID
+                  status:
+                    type: string
+                    description: OTP delivery status
+                    example: sent
+                  expires_at:
+                    type: string
+                    description: OTP expiration time (10 minutes)
+                    format: date-time
+                  attempts_remaining:
+                    type: integer
+                    description: Confirmation attempts allowed
+                    example: 3
+                required:
+                - verification_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/phone/{verification_id}/confirm:
+    post:
+      operationId: confirmPhoneOtp
+      summary: Confirm phone OTP
+      description: Confirms the one-time passcode sent during phone verification. Marks the phone number as verified on the
+        customer profile if the OTP matches.
+      tags:
+      - Contact Verification
+      parameters:
+      - name: verification_id
+        in: path
+        required: true
+        description: Unique verification id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Confirm phone OTP request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                otp_code:
+                  type: string
+                  description: 6-digit OTP code
+                  example: '482193'
+                  minLength: 6
+                  maxLength: 6
+              required:
+              - otp_code
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification ID
+                  status:
+                    type: string
+                    description: Confirmation result
+                    enum:
+                    - verified
+                    - invalid_code
+                    - expired
+                    - max_attempts_exceeded
+                  phone_verified:
+                    type: boolean
+                    description: Whether phone is now verified on profile
+                  verified_at:
+                    type: string
+                    description: Verification timestamp
+                    format: date-time
+                    nullable: true
+                required:
+                - verification_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/email:
+    post:
+      operationId: verifyEmail
+      summary: Initiate email verification
+      description: Sends a verification link to the customer's email address. The link must be confirmed within 24 hours.
+      tags:
+      - Contact Verification
+      requestBody:
+        required: true
+        description: Initiate email verification request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                email_address:
+                  type: string
+                  description: Email address to verify
+                  format: email
+                  example: margaret.chen@email.com
+              required:
+              - customer_id
+              - email_address
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification session ID
+                  status:
+                    type: string
+                    description: Email delivery status
+                    example: sent
+                  expires_at:
+                    type: string
+                    description: Link expiration (24 hours)
+                    format: date-time
+                required:
+                - verification_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/email/{verification_id}/confirm:
+    post:
+      operationId: confirmEmailVerification
+      summary: Confirm email verification
+      description: Confirms email verification using the token from the verification link. Marks the email address as verified
+        on the customer profile.
+      tags:
+      - Contact Verification
+      parameters:
+      - name: verification_id
+        in: path
+        required: true
+        description: Unique verification id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Confirm email verification request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Verification token from the email link
+              required:
+              - token
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification ID
+                  status:
+                    type: string
+                    description: Confirmation result
+                    enum:
+                    - verified
+                    - invalid_token
+                    - expired
+                  email_verified:
+                    type: boolean
+                    description: Whether email is now verified
+                  verified_at:
+                    type: string
+                    description: Verification timestamp
+                    format: date-time
+                    nullable: true
+                required:
+                - verification_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/document:
+    post:
+      operationId: verifyDocument
+      summary: Verify identity document
+      description: Verifies the authenticity of an identity document through automated checks including MRZ/barcode validation,
+        tamper detection, and issuing authority verification. Does not perform facial comparison (use /verification/identity
+        for that).
+      tags:
+      - Identity Verification
+      requestBody:
+        required: true
+        description: Verify identity document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF
+                document_type:
+                  type: string
+                  description: Document type
+                  enum:
+                  - passport
+                  - drivers_license
+                  - national_id
+                  - residence_permit
+                  - visa
+                document_image_base64:
+                  type: string
+                  description: Base64-encoded document image
+                country_of_issue:
+                  type: string
+                  description: Issuing country (ISO 3166-1)
+                  minLength: 2
+                  maxLength: 2
+              required:
+              - customer_id
+              - document_type
+              - document_image_base64
+              - country_of_issue
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification record ID
+                  authenticity:
+                    type: string
+                    description: Document authenticity result
+                    enum:
+                    - authentic
+                    - suspicious
+                    - forged
+                    - unreadable
+                  mrz_valid:
+                    type: boolean
+                    description: MRZ/barcode data is valid
+                    example: true
+                  expiration_status:
+                    type: string
+                    description: Document expiration check
+                    enum:
+                    - valid
+                    - expired
+                    - expiring_soon
+                  extracted_fields:
+                    type: object
+                    description: Extracted document data
+                    properties:
+                      full_name:
+                        type: string
+                      document_number:
+                        type: string
+                      date_of_birth:
+                        type: string
+                      expiration_date:
+                        type: string
+                required:
+                - verification_id
+                - authenticity
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/biometric:
+    post:
+      operationId: verifyBiometric
+      summary: Verify biometric data
+      description: Performs biometric verification using facial recognition, fingerprint, or voice print matching against
+        enrolled biometric templates. Used for step-up authentication and high-value transaction authorization.
+      tags:
+      - Identity Verification
+      requestBody:
+        required: true
+        description: Verify biometric data request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                biometric_type:
+                  type: string
+                  description: Biometric modality
+                  enum:
+                  - facial
+                  - fingerprint
+                  - voice_print
+                biometric_data_base64:
+                  type: string
+                  description: Base64-encoded biometric sample
+                liveness_check:
+                  type: boolean
+                  description: Require liveness detection to prevent spoofing
+                  default: true
+              required:
+              - customer_id
+              - biometric_type
+              - biometric_data_base64
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification record ID
+                  match_result:
+                    type: string
+                    description: Biometric match result
+                    enum:
+                    - match
+                    - no_match
+                    - no_template
+                    - poor_quality
+                  match_score:
+                    type: number
+                    description: Match confidence 0.0-1.0
+                    format: double
+                    example: 0.98
+                  liveness_passed:
+                    type: boolean
+                    description: Liveness check result
+                    example: true
+                  spoofing_detected:
+                    type: boolean
+                    description: Whether spoofing attempt was detected
+                    example: false
+                required:
+                - verification_id
+                - match_result
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /customers/{customer_id}/verifications:
+    get:
+      operationId: listCustomerVerifications
+      summary: List customer verifications
+      description: Returns all verification records for a customer across all verification types. Used for compliance dashboards
+        and periodic re-verification monitoring.
+      tags:
+      - Management
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: type
+        in: query
+        required: false
+        description: Filter by verification type
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        description: Filter by status
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        verification_id:
+                          type: string
+                          description: Verification ID
+                        type:
+                          type: string
+                          description: Verification type
+                          enum:
+                          - identity
+                          - address
+                          - phone
+                          - email
+                          - document
+                          - biometric
+                          - sanctions
+                          - pep
+                        status:
+                          type: string
+                          description: Verification status
+                          enum:
+                          - passed
+                          - failed
+                          - pending
+                          - expired
+                        completed_at:
+                          type: string
+                          description: Completion timestamp
+                          format: date-time
+                          nullable: true
+                        expires_at:
+                          type: string
+                          description: Expiration timestamp
+                          format: date-time
+                        needs_renewal:
+                          type: boolean
+                          description: Whether re-verification is due
+                      required:
+                      - verification_id
+                      - type
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /verification/batch:
+    post:
+      operationId: batchVerification
+      summary: Run batch verification
+      description: Submits a batch of customers for a specific verification type. Used for periodic re-verification campaigns
+        and compliance sweeps. Returns a batch tracking ID.
+      tags:
+      - Management
+      requestBody:
+        required: true
+        description: Run batch verification request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_ids:
+                  type: array
+                  description: List of customer CIF numbers
+                  items:
+                    type: string
+                verification_type:
+                  type: string
+                  description: Type of verification to run
+                  enum:
+                  - sanctions
+                  - pep
+                  - address
+                  - identity
+                priority:
+                  type: string
+                  description: Batch priority
+                  enum:
+                  - low
+                  - normal
+                  - high
+                  default: normal
+              required:
+              - customer_ids
+              - verification_type
+      responses:
+        '202':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: Batch tracking ID
+                    example: BATCH-VRF-20250610-001
+                  total_submitted:
+                    type: integer
+                    description: Total customers submitted
+                    example: 2500
+                  status:
+                    type: string
+                    description: Batch status
+                    example: processing
+                  estimated_completion:
+                    type: string
+                    description: Estimated completion time
+                    format: date-time
+                required:
+                - batch_id
+                - total_submitted
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/methods:
+    get:
+      operationId: listVerificationMethods
+      summary: List available verification methods
+      description: Returns all supported verification methods with their availability status, supported countries, and confidence
+        levels.
+      tags:
+      - Management
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  methods:
+                    type: array
+                    description: Available verification methods
+                    items:
+                      type: object
+                  supported_countries:
+                    type: array
+                    description: Countries with full verification support
+                    items:
+                      type: string
+                  last_updated:
+                    type: string
+                    description: Configuration last updated
+                    format: date-time
+                required:
+                - methods
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /verification/{verification_id}/retry:
+    post:
+      operationId: retryVerification
+      summary: Retry failed verification
+      description: Retries a previously failed verification. Allows customers to resubmit improved images or corrected information.
+        Maximum 3 retry attempts per verification type within 24 hours.
+      tags:
+      - Management
+      parameters:
+      - name: verification_id
+        in: path
+        required: true
+        description: Unique verification id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Retry failed verification request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                updated_data:
+                  type: object
+                  description: Updated verification data (type-specific)
+                  properties:
+                    document_front_base64:
+                      type: string
+                      description: Updated document image
+                      nullable: true
+                    selfie_base64:
+                      type: string
+                      description: Updated selfie image
+                      nullable: true
+                reason:
+                  type: string
+                  description: Reason for retry
+                  example: Better quality document image
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                    description: Verification ID
+                  retry_count:
+                    type: integer
+                    description: Current retry attempt number
+                    example: 2
+                  max_retries:
+                    type: integer
+                    description: Maximum retries allowed
+                    example: 3
+                  status:
+                    type: string
+                    description: New verification status
+                required:
+                - verification_id
+                - retry_count
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/statistics:
+    get:
+      operationId: getVerificationStatistics
+      summary: Get verification statistics
+      description: Returns aggregate verification statistics including pass rates, failure reasons, average processing times,
+        and manual review queue depth.
+      tags:
+      - Management
+      parameters:
+      - name: period
+        in: query
+        required: false
+        description: Reporting period
+        schema:
+          type: string
+          enum:
+          - 24h
+          - 7d
+          - 30d
+          - 90d
+          default: 30d
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_verifications:
+                    type: integer
+                    description: Total verifications in period
+                    example: 14520
+                  pass_rate:
+                    type: number
+                    description: Overall pass rate percentage
+                    format: double
+                    example: 92.3
+                  avg_processing_seconds:
+                    type: number
+                    description: Average processing time
+                    format: double
+                    example: 28.5
+                  manual_review_queue:
+                    type: integer
+                    description: Items in manual review queue
+                    example: 42
+                  failure_reasons:
+                    type: object
+                    description: Failure breakdown
+                    properties:
+                      poor_image_quality:
+                        type: integer
+                        example: 380
+                      document_expired:
+                        type: integer
+                        example: 215
+                      facial_mismatch:
+                        type: integer
+                        example: 142
+                      suspicious_document:
+                        type: integer
+                        example: 89
+                  by_type:
+                    type: object
+                    description: Stats by verification type
+                    properties:
+                      identity:
+                        type: integer
+                        example: 5200
+                      address:
+                        type: integer
+                        example: 3100
+                      phone:
+                        type: integer
+                        example: 2800
+                      email:
+                        type: integer
+                        example: 2600
+                      sanctions:
+                        type: integer
+                        example: 820
+                required:
+                - total_verifications
+                - pass_rate
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /verification/sanctions-screening:
+    post:
+      operationId: screenSanctions
+      summary: Run sanctions screening
+      description: Screens a customer against global sanctions lists including OFAC SDN, EU Consolidated, UN Security Council,
+        and HM Treasury. Required for BSA/AML Customer Identification Program (CIP) compliance. Results are cached for 24
+        hours.
+      tags:
+      - Compliance Screening
+      requestBody:
+        required: true
+        description: Run sanctions screening request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                full_name:
+                  type: string
+                  description: Full legal name to screen
+                  example: Margaret Chen
+                date_of_birth:
+                  type: string
+                  description: Date of birth
+                  format: date
+                country:
+                  type: string
+                  description: Country of residence
+                  example: US
+                additional_names:
+                  type: array
+                  description: Aliases or alternate names
+                  items:
+                    type: string
+              required:
+              - customer_id
+              - full_name
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  screening_id:
+                    type: string
+                    description: Screening record ID
+                  result:
+                    type: string
+                    description: Screening result
+                    enum:
+                    - clear
+                    - potential_match
+                    - confirmed_match
+                  matches:
+                    type: array
+                    description: Potential matches found
+                    items:
+                      type: object
+                  lists_checked:
+                    type: array
+                    description: Sanctions lists checked
+                    items:
+                      type: string
+                  screened_at:
+                    type: string
+                    description: Screening timestamp
+                    format: date-time
+                  valid_until:
+                    type: string
+                    description: Result validity period (24 hours)
+                    format: date-time
+                required:
+                - screening_id
+                - result
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /verification/pep-check:
+    post:
+      operationId: checkPep
+      summary: Run PEP check
+      description: Screens a customer against Politically Exposed Person (PEP) databases including current and former government
+        officials, their family members, and close associates. PEP status triggers Enhanced Due Diligence (EDD) requirements
+        per FATF Recommendation 12.
+      tags:
+      - Compliance Screening
+      requestBody:
+        required: true
+        description: Run PEP check request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                  description: Customer CIF number
+                full_name:
+                  type: string
+                  description: Full legal name
+                  example: Margaret Chen
+                country:
+                  type: string
+                  description: Country of nationality or residence
+                date_of_birth:
+                  type: string
+                  description: Date of birth
+                  format: date
+                include_family:
+                  type: boolean
+                  description: Check family members and close associates
+                  default: true
+              required:
+              - customer_id
+              - full_name
+              - country
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  screening_id:
+                    type: string
+                    description: PEP screening record ID
+                  pep_status:
+                    type: string
+                    description: PEP determination
+                    enum:
+                    - not_pep
+                    - pep
+                    - pep_family
+                    - pep_associate
+                    - former_pep
+                  risk_level:
+                    type: string
+                    description: Associated risk level
+                    enum:
+                    - standard
+                    - elevated
+                    - high
+                  matches:
+                    type: array
+                    description: PEP database matches
+                    items:
+                      type: object
+                  edd_required:
+                    type: boolean
+                    description: Whether Enhanced Due Diligence is required
+                    example: false
+                  screened_at:
+                    type: string
+                    description: Screening timestamp
+                    format: date-time
+                required:
+                - screening_id
+                - pep_status
+                - risk_level
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

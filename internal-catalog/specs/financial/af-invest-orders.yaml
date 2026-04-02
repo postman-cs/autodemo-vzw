@@ -1,0 +1,2283 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Orders API
+  description: Full lifecycle order management for equity and ETF trading. Supports market, limit, stop, stop-limit, trailing
+    stop, and trailing stop-limit order types with day, GTC, IOC, and FOK time-in-force options. Provides bracket orders (OCO),
+    conditional/contingent orders, order modification, cancellation, and detailed execution/fill reporting with venue and
+    liquidity analytics.
+  version: 5.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-invest-orders
+  x-acme-domain: invest
+servers:
+- url: https://af-invest-orders.api.acmefin.com/v1
+  description: Production
+- url: https://af-invest-orders.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Orders
+  description: Place, modify, cancel, and query orders across all supported order types
+- name: Fills
+  description: Execution reports with fill prices, venues, and liquidity indicators
+- name: Bracket Orders
+  description: One-cancels-other (OCO) bracket order groups with take-profit and stop-loss legs
+- name: Conditional Orders
+  description: Contingent orders triggered by price, volume, or index-level conditions
+- name: Order Book
+  description: Aggregated order book depth and time-and-sales data
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List orders
+      description: Retrieve orders for the authenticated account with full status lifecycle tracking. Filterable by status,
+        side, ticker, order type, and date range. Returns most recent orders first.
+      tags:
+      - Orders
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by order status
+        schema:
+          type: string
+          enum:
+          - new
+          - partially_filled
+          - filled
+          - canceled
+          - rejected
+      - name: side
+        in: query
+        required: false
+        description: Filter by order side
+        schema:
+          type: string
+          enum:
+          - buy
+          - sell
+      - name: ticker
+        in: query
+        required: false
+        description: Filter by ticker symbol
+        schema:
+          type: string
+      - name: from_date
+        in: query
+        required: false
+        description: Start date for order history
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        order_id:
+                          type: string
+                          description: Order identifier
+                          format: uuid
+                          example: ord-a1b2c3d4
+                        account_id:
+                          type: string
+                          description: Brokerage account identifier
+                          format: uuid
+                          example: acct-a1b2c3d4
+                        ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        side:
+                          type: string
+                          description: Order side
+                          enum:
+                          - buy
+                          - sell
+                          - sell_short
+                          - buy_to_cover
+                        order_type:
+                          type: string
+                          description: Order type
+                          enum:
+                          - market
+                          - limit
+                          - stop
+                          - stop_limit
+                          - trailing_stop
+                          - trailing_stop_limit
+                        quantity:
+                          type: number
+                          description: Order quantity in shares
+                          format: double
+                          example: 100
+                        limit_price:
+                          type: number
+                          description: Limit price (for limit/stop-limit orders)
+                          format: double
+                          example: 175.0
+                        stop_price:
+                          type: number
+                          description: Stop/trigger price
+                          format: double
+                          example: 170.0
+                        time_in_force:
+                          type: string
+                          description: Time in force
+                          enum:
+                          - day
+                          - gtc
+                          - ioc
+                          - fok
+                          - opg
+                          - cls
+                          - gtd
+                        status:
+                          type: string
+                          description: Order status
+                          enum:
+                          - pending_new
+                          - new
+                          - partially_filled
+                          - filled
+                          - canceled
+                          - rejected
+                          - expired
+                          - pending_cancel
+                          - pending_replace
+                        filled_qty:
+                          type: number
+                          description: Shares filled so far
+                          format: double
+                          example: 50
+                        avg_fill_price:
+                          type: number
+                          description: Average fill price
+                          format: double
+                          example: 175.12
+                        extended_hours:
+                          type: boolean
+                          description: Extended hours trading enabled
+                          example: false
+                        submitted_at:
+                          type: string
+                          description: Order submission timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                        filled_at:
+                          type: string
+                          description: Order fill completion timestamp
+                          format: date-time
+                          example: ''
+                      required:
+                      - order_id
+                      - account_id
+                      - ticker
+                      - side
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: placeOrder
+      summary: Place an order
+      description: Submit a new order for execution. Supports market, limit, stop, stop-limit, trailing stop, and trailing
+        stop-limit order types. Validates buying power, margin requirements, and pattern day trader restrictions before acceptance.
+      tags:
+      - Orders
+      requestBody:
+        required: true
+        description: Place an order request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                side:
+                  type: string
+                  description: Order side
+                  enum:
+                  - buy
+                  - sell
+                  - sell_short
+                  - buy_to_cover
+                order_type:
+                  type: string
+                  description: Order type
+                  enum:
+                  - market
+                  - limit
+                  - stop
+                  - stop_limit
+                  - trailing_stop
+                quantity:
+                  type: number
+                  description: Shares to trade
+                  format: double
+                  example: 100
+                limit_price:
+                  type: number
+                  description: Limit price
+                  format: double
+                  example: 175.0
+                stop_price:
+                  type: number
+                  description: Stop trigger price
+                  format: double
+                  example: 170.0
+                time_in_force:
+                  type: string
+                  description: Time in force
+                  enum:
+                  - day
+                  - gtc
+                  - ioc
+                  - fok
+                extended_hours:
+                  type: boolean
+                  description: Enable extended hours
+                  example: false
+              required:
+              - account_id
+              - ticker
+              - side
+              - order_type
+              - quantity
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    description: Order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  side:
+                    type: string
+                    description: Order side
+                    enum:
+                    - buy
+                    - sell
+                    - sell_short
+                    - buy_to_cover
+                  order_type:
+                    type: string
+                    description: Order type
+                    enum:
+                    - market
+                    - limit
+                    - stop
+                    - stop_limit
+                    - trailing_stop
+                    - trailing_stop_limit
+                  quantity:
+                    type: number
+                    description: Order quantity in shares
+                    format: double
+                    example: 100
+                  limit_price:
+                    type: number
+                    description: Limit price (for limit/stop-limit orders)
+                    format: double
+                    example: 175.0
+                  stop_price:
+                    type: number
+                    description: Stop/trigger price
+                    format: double
+                    example: 170.0
+                  time_in_force:
+                    type: string
+                    description: Time in force
+                    enum:
+                    - day
+                    - gtc
+                    - ioc
+                    - fok
+                    - opg
+                    - cls
+                    - gtd
+                  status:
+                    type: string
+                    description: Order status
+                    enum:
+                    - pending_new
+                    - new
+                    - partially_filled
+                    - filled
+                    - canceled
+                    - rejected
+                    - expired
+                    - pending_cancel
+                    - pending_replace
+                  filled_qty:
+                    type: number
+                    description: Shares filled so far
+                    format: double
+                    example: 50
+                  avg_fill_price:
+                    type: number
+                    description: Average fill price
+                    format: double
+                    example: 175.12
+                  extended_hours:
+                    type: boolean
+                    description: Extended hours trading enabled
+                    example: false
+                  submitted_at:
+                    type: string
+                    description: Order submission timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  filled_at:
+                    type: string
+                    description: Order fill completion timestamp
+                    format: date-time
+                    example: ''
+                required:
+                - order_id
+                - status
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /orders/{order_id}:
+    get:
+      operationId: getOrder
+      summary: Get order details
+      description: Retrieve complete order details including current status, fill information, and execution history.
+      tags:
+      - Orders
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        description: Unique order id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    description: Order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  side:
+                    type: string
+                    description: Order side
+                    enum:
+                    - buy
+                    - sell
+                    - sell_short
+                    - buy_to_cover
+                  order_type:
+                    type: string
+                    description: Order type
+                    enum:
+                    - market
+                    - limit
+                    - stop
+                    - stop_limit
+                    - trailing_stop
+                    - trailing_stop_limit
+                  quantity:
+                    type: number
+                    description: Order quantity in shares
+                    format: double
+                    example: 100
+                  limit_price:
+                    type: number
+                    description: Limit price (for limit/stop-limit orders)
+                    format: double
+                    example: 175.0
+                  stop_price:
+                    type: number
+                    description: Stop/trigger price
+                    format: double
+                    example: 170.0
+                  time_in_force:
+                    type: string
+                    description: Time in force
+                    enum:
+                    - day
+                    - gtc
+                    - ioc
+                    - fok
+                    - opg
+                    - cls
+                    - gtd
+                  status:
+                    type: string
+                    description: Order status
+                    enum:
+                    - pending_new
+                    - new
+                    - partially_filled
+                    - filled
+                    - canceled
+                    - rejected
+                    - expired
+                    - pending_cancel
+                    - pending_replace
+                  filled_qty:
+                    type: number
+                    description: Shares filled so far
+                    format: double
+                    example: 50
+                  avg_fill_price:
+                    type: number
+                    description: Average fill price
+                    format: double
+                    example: 175.12
+                  extended_hours:
+                    type: boolean
+                    description: Extended hours trading enabled
+                    example: false
+                  submitted_at:
+                    type: string
+                    description: Order submission timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  filled_at:
+                    type: string
+                    description: Order fill completion timestamp
+                    format: date-time
+                    example: ''
+                required:
+                - order_id
+                - status
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    patch:
+      operationId: modifyOrder
+      summary: Modify an order
+      description: Modify a pending or partially-filled order. Supports changing quantity, limit price, stop price, and time-in-force.
+        The order retains its queue priority only if the modification reduces quantity.
+      tags:
+      - Orders
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        description: Unique order id
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: Modify an order request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quantity:
+                  type: number
+                  description: Updated quantity
+                  format: double
+                  example: 150
+                limit_price:
+                  type: number
+                  description: Updated limit price
+                  format: double
+                  example: 176.0
+                stop_price:
+                  type: number
+                  description: Updated stop price
+                  format: double
+                  example: 171.0
+                time_in_force:
+                  type: string
+                  description: Updated TIF
+                  enum:
+                  - day
+                  - gtc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    description: Order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  side:
+                    type: string
+                    description: Order side
+                    enum:
+                    - buy
+                    - sell
+                    - sell_short
+                    - buy_to_cover
+                  order_type:
+                    type: string
+                    description: Order type
+                    enum:
+                    - market
+                    - limit
+                    - stop
+                    - stop_limit
+                    - trailing_stop
+                    - trailing_stop_limit
+                  quantity:
+                    type: number
+                    description: Order quantity in shares
+                    format: double
+                    example: 100
+                  limit_price:
+                    type: number
+                    description: Limit price (for limit/stop-limit orders)
+                    format: double
+                    example: 175.0
+                  stop_price:
+                    type: number
+                    description: Stop/trigger price
+                    format: double
+                    example: 170.0
+                  time_in_force:
+                    type: string
+                    description: Time in force
+                    enum:
+                    - day
+                    - gtc
+                    - ioc
+                    - fok
+                    - opg
+                    - cls
+                    - gtd
+                  status:
+                    type: string
+                    description: Order status
+                    enum:
+                    - pending_new
+                    - new
+                    - partially_filled
+                    - filled
+                    - canceled
+                    - rejected
+                    - expired
+                    - pending_cancel
+                    - pending_replace
+                  filled_qty:
+                    type: number
+                    description: Shares filled so far
+                    format: double
+                    example: 50
+                  avg_fill_price:
+                    type: number
+                    description: Average fill price
+                    format: double
+                    example: 175.12
+                  extended_hours:
+                    type: boolean
+                    description: Extended hours trading enabled
+                    example: false
+                  submitted_at:
+                    type: string
+                    description: Order submission timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                  filled_at:
+                    type: string
+                    description: Order fill completion timestamp
+                    format: date-time
+                    example: ''
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+    delete:
+      operationId: cancelOrder
+      summary: Cancel an order
+      description: Request cancellation of a pending or partially-filled order. Returns 204 on accepted cancel request; final
+        cancellation is confirmed asynchronously.
+      tags:
+      - Orders
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        description: Unique order id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /orders/cancel-all:
+    post:
+      operationId: cancelAllOrders
+      summary: Cancel all open orders
+      description: Request cancellation of all open orders for the authenticated account. Optionally filter by ticker or side.
+        Returns count of orders submitted for cancellation.
+      tags:
+      - Orders
+      requestBody:
+        required: true
+        description: Cancel all open orders request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                side:
+                  type: string
+                  description: Cancel only buy or sell side
+                  enum:
+                  - buy
+                  - sell
+              required:
+              - account_id
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders_canceled:
+                    type: integer
+                    description: Number of orders submitted for cancellation
+                    example: 5
+                  order_ids:
+                    type: array
+                    description: Order IDs submitted for cancellation
+                    items:
+                      type: string
+                required:
+                - orders_canceled
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /orders/preview:
+    post:
+      operationId: previewOrder
+      summary: Preview order
+      description: Preview an order before submission to see estimated cost, commission, fees, margin impact, and buying power
+        effect without actually placing the order.
+      tags:
+      - Orders
+      requestBody:
+        required: true
+        description: Preview order request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                side:
+                  type: string
+                  description: Order side
+                  enum:
+                  - buy
+                  - sell
+                order_type:
+                  type: string
+                  description: Order type
+                  enum:
+                  - market
+                  - limit
+                quantity:
+                  type: number
+                  description: Shares
+                  format: double
+                  example: 100
+                limit_price:
+                  type: number
+                  description: Limit price
+                  format: double
+                  example: 175.0
+              required:
+              - account_id
+              - ticker
+              - side
+              - order_type
+              - quantity
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estimated_total:
+                    type: object
+                    description: Estimated total cost/proceeds
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 17512.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  estimated_commission:
+                    type: object
+                    description: Estimated commission
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 0.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  estimated_fees:
+                    type: object
+                    description: Estimated regulatory fees
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 0.04
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  buying_power_effect:
+                    type: object
+                    description: Impact on buying power
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: -17512.04
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  margin_requirement:
+                    type: object
+                    description: Initial margin requirement
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 8756.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                required:
+                - estimated_total
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /fills:
+    get:
+      operationId: listFills
+      summary: List fills
+      description: Retrieve execution/fill reports across all orders. Each fill includes execution price, venue, liquidity
+        indicator, commission, and regulatory fees. Multiple fills may exist for a single order.
+      tags:
+      - Fills
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: order_id
+        in: query
+        required: false
+        description: Filter fills for a specific order
+        schema:
+          type: string
+      - name: ticker
+        in: query
+        required: false
+        description: Filter by ticker symbol
+        schema:
+          type: string
+      - name: from_date
+        in: query
+        required: false
+        description: Start date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        fill_id:
+                          type: string
+                          description: Fill/execution identifier
+                          format: uuid
+                          example: fill-a1b2c3d4
+                        order_id:
+                          type: string
+                          description: Parent order identifier
+                          format: uuid
+                          example: ord-a1b2c3d4
+                        ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        side:
+                          type: string
+                          description: Fill side
+                          enum:
+                          - buy
+                          - sell
+                        quantity:
+                          type: number
+                          description: Fill quantity
+                          format: double
+                          example: 50
+                        price:
+                          type: number
+                          description: Execution price
+                          format: double
+                          example: 175.12
+                        venue:
+                          type: string
+                          description: Execution venue
+                          example: NYSE
+                        liquidity:
+                          type: string
+                          description: Liquidity indicator
+                          enum:
+                          - added
+                          - removed
+                          - routed
+                        commission:
+                          type: object
+                          description: Commission charged
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 0.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        fees:
+                          type: object
+                          description: Regulatory fees (SEC, TAF, FINRA)
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 0.02
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        executed_at:
+                          type: string
+                          description: Execution timestamp
+                          format: date-time
+                          example: '2025-06-15T14:30:00Z'
+                      required:
+                      - fill_id
+                      - order_id
+                      - price
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /fills/{fill_id}:
+    get:
+      operationId: getFill
+      summary: Get fill details
+      description: Retrieve a single execution/fill report with full details including price, venue (exchange), liquidity
+        indicator, commission, and regulatory fees.
+      tags:
+      - Fills
+      parameters:
+      - name: fill_id
+        in: path
+        required: true
+        description: Unique fill id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fill_id:
+                    type: string
+                    description: Fill/execution identifier
+                    format: uuid
+                    example: fill-a1b2c3d4
+                  order_id:
+                    type: string
+                    description: Parent order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  side:
+                    type: string
+                    description: Fill side
+                    enum:
+                    - buy
+                    - sell
+                  quantity:
+                    type: number
+                    description: Fill quantity
+                    format: double
+                    example: 50
+                  price:
+                    type: number
+                    description: Execution price
+                    format: double
+                    example: 175.12
+                  venue:
+                    type: string
+                    description: Execution venue
+                    example: NYSE
+                  liquidity:
+                    type: string
+                    description: Liquidity indicator
+                    enum:
+                    - added
+                    - removed
+                    - routed
+                  commission:
+                    type: object
+                    description: Commission charged
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 0.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  fees:
+                    type: object
+                    description: Regulatory fees (SEC, TAF, FINRA)
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 0.02
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  executed_at:
+                    type: string
+                    description: Execution timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - fill_id
+                - order_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /bracket-orders:
+    get:
+      operationId: listBracketOrders
+      summary: List bracket orders
+      description: Retrieve bracket (OCO) order groups with entry, take-profit, and stop-loss legs. A bracket order automatically
+        cancels the remaining leg when either the take-profit or stop-loss is triggered.
+      tags:
+      - Bracket Orders
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by bracket status
+        schema:
+          type: string
+      - name: ticker
+        in: query
+        required: false
+        description: Filter by ticker
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        bracket_id:
+                          type: string
+                          description: Bracket order group identifier
+                          format: uuid
+                          example: brkt-a1b2c3d4
+                        account_id:
+                          type: string
+                          description: Brokerage account identifier
+                          format: uuid
+                          example: acct-a1b2c3d4
+                        entry_order_id:
+                          type: string
+                          description: Entry/primary order identifier
+                          format: uuid
+                          example: ord-a1b2c3d4
+                        take_profit_order_id:
+                          type: string
+                          description: Take-profit limit order identifier
+                          format: uuid
+                          example: ord-a1b2c3d4
+                        stop_loss_order_id:
+                          type: string
+                          description: Stop-loss order identifier
+                          format: uuid
+                          example: ord-a1b2c3d4
+                        ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        entry_side:
+                          type: string
+                          description: Entry side
+                          enum:
+                          - buy
+                          - sell_short
+                        entry_price:
+                          type: number
+                          description: Entry limit price
+                          format: double
+                          example: 175.0
+                        take_profit_price:
+                          type: number
+                          description: Take-profit target price
+                          format: double
+                          example: 185.0
+                        stop_loss_price:
+                          type: number
+                          description: Stop-loss trigger price
+                          format: double
+                          example: 168.0
+                        status:
+                          type: string
+                          description: Bracket status
+                          enum:
+                          - pending
+                          - entry_filled
+                          - take_profit_triggered
+                          - stop_loss_triggered
+                          - canceled
+                      required:
+                      - bracket_id
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createBracketOrder
+      summary: Create a bracket order
+      description: Submit a bracket order group consisting of an entry order, a take-profit limit order, and a stop- loss
+        order. When the entry fills, both exit legs become active. When either exit leg triggers, the other is automatically
+        canceled (OCO).
+      tags:
+      - Bracket Orders
+      requestBody:
+        required: true
+        description: Create a bracket order request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                entry_side:
+                  type: string
+                  description: Entry side
+                  enum:
+                  - buy
+                  - sell_short
+                quantity:
+                  type: number
+                  description: Shares
+                  format: double
+                  example: 100
+                entry_price:
+                  type: number
+                  description: Entry limit price
+                  format: double
+                  example: 175.0
+                take_profit_price:
+                  type: number
+                  description: Take-profit target
+                  format: double
+                  example: 185.0
+                stop_loss_price:
+                  type: number
+                  description: Stop-loss trigger
+                  format: double
+                  example: 168.0
+                time_in_force:
+                  type: string
+                  description: TIF for all legs
+                  enum:
+                  - day
+                  - gtc
+              required:
+              - account_id
+              - ticker
+              - entry_side
+              - quantity
+              - take_profit_price
+              - stop_loss_price
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bracket_id:
+                    type: string
+                    description: Bracket order group identifier
+                    format: uuid
+                    example: brkt-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  entry_order_id:
+                    type: string
+                    description: Entry/primary order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  take_profit_order_id:
+                    type: string
+                    description: Take-profit limit order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  stop_loss_order_id:
+                    type: string
+                    description: Stop-loss order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  entry_side:
+                    type: string
+                    description: Entry side
+                    enum:
+                    - buy
+                    - sell_short
+                  entry_price:
+                    type: number
+                    description: Entry limit price
+                    format: double
+                    example: 175.0
+                  take_profit_price:
+                    type: number
+                    description: Take-profit target price
+                    format: double
+                    example: 185.0
+                  stop_loss_price:
+                    type: number
+                    description: Stop-loss trigger price
+                    format: double
+                    example: 168.0
+                  status:
+                    type: string
+                    description: Bracket status
+                    enum:
+                    - pending
+                    - entry_filled
+                    - take_profit_triggered
+                    - stop_loss_triggered
+                    - canceled
+                required:
+                - bracket_id
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /bracket-orders/{bracket_id}:
+    get:
+      operationId: getBracketOrder
+      summary: Get bracket order details
+      description: Retrieve a bracket order group with the status of all three legs (entry, take-profit, stop-loss) and fill
+        information for completed legs.
+      tags:
+      - Bracket Orders
+      parameters:
+      - name: bracket_id
+        in: path
+        required: true
+        description: Unique bracket id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bracket_id:
+                    type: string
+                    description: Bracket order group identifier
+                    format: uuid
+                    example: brkt-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  entry_order_id:
+                    type: string
+                    description: Entry/primary order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  take_profit_order_id:
+                    type: string
+                    description: Take-profit limit order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  stop_loss_order_id:
+                    type: string
+                    description: Stop-loss order identifier
+                    format: uuid
+                    example: ord-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  entry_side:
+                    type: string
+                    description: Entry side
+                    enum:
+                    - buy
+                    - sell_short
+                  entry_price:
+                    type: number
+                    description: Entry limit price
+                    format: double
+                    example: 175.0
+                  take_profit_price:
+                    type: number
+                    description: Take-profit target price
+                    format: double
+                    example: 185.0
+                  stop_loss_price:
+                    type: number
+                    description: Stop-loss trigger price
+                    format: double
+                    example: 168.0
+                  status:
+                    type: string
+                    description: Bracket status
+                    enum:
+                    - pending
+                    - entry_filled
+                    - take_profit_triggered
+                    - stop_loss_triggered
+                    - canceled
+                required:
+                - bracket_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    delete:
+      operationId: cancelBracketOrder
+      summary: Cancel bracket order
+      description: Cancel an entire bracket order group. All unfilled legs are canceled. Partially filled entry legs cannot
+        be canceled (cancel individual remaining legs instead).
+      tags:
+      - Bracket Orders
+      parameters:
+      - name: bracket_id
+        in: path
+        required: true
+        description: Unique bracket id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /conditional-orders:
+    get:
+      operationId: listConditionalOrders
+      summary: List conditional orders
+      description: Retrieve conditional/contingent orders that are watching for trigger conditions (price levels, volume thresholds,
+        index levels) before submitting child orders.
+      tags:
+      - Conditional Orders
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: status
+        in: query
+        required: false
+        description: Filter by condition status
+        schema:
+          type: string
+          enum:
+          - watching
+          - triggered
+          - expired
+          - canceled
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        condition_id:
+                          type: string
+                          description: Conditional order identifier
+                          format: uuid
+                          example: cond-a1b2c3d4
+                        account_id:
+                          type: string
+                          description: Brokerage account identifier
+                          format: uuid
+                          example: acct-a1b2c3d4
+                        trigger_type:
+                          type: string
+                          description: Trigger condition type
+                          enum:
+                          - price_above
+                          - price_below
+                          - volume_above
+                          - pct_change
+                          - index_level
+                        trigger_ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        trigger_value:
+                          type: number
+                          description: Trigger threshold value
+                          format: double
+                          example: 180.0
+                        child_order:
+                          type: object
+                          description: Order to submit when trigger condition is met
+                          properties:
+                            ticker:
+                              type: string
+                              description: Ticker symbol
+                              example: AAPL
+                            side:
+                              type: string
+                              description: Order side
+                              enum:
+                              - buy
+                              - sell
+                            quantity:
+                              type: number
+                              description: Quantity
+                              format: double
+                              example: 100
+                        status:
+                          type: string
+                          description: Condition status
+                          enum:
+                          - watching
+                          - triggered
+                          - expired
+                          - canceled
+                      required:
+                      - condition_id
+                      - status
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+    post:
+      operationId: createConditionalOrder
+      summary: Create a conditional order
+      description: Set up a contingent order that monitors a trigger condition and automatically submits a child order when
+        the condition is met. Supports price, volume, and index-level triggers.
+      tags:
+      - Conditional Orders
+      requestBody:
+        required: true
+        description: Create a conditional order request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                trigger_type:
+                  type: string
+                  description: Trigger type
+                  enum:
+                  - price_above
+                  - price_below
+                  - volume_above
+                  - pct_change
+                trigger_ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                trigger_value:
+                  type: number
+                  description: Trigger threshold
+                  format: double
+                  example: 180.0
+                child_ticker:
+                  type: string
+                  description: Ticker symbol
+                  example: AAPL
+                child_side:
+                  type: string
+                  description: Child order side
+                  enum:
+                  - buy
+                  - sell
+                child_quantity:
+                  type: number
+                  description: Child order quantity
+                  format: double
+                  example: 100
+                child_order_type:
+                  type: string
+                  description: Child order type
+                  enum:
+                  - market
+                  - limit
+                expiration:
+                  type: string
+                  description: Trigger expiration date
+                  format: date
+                  example: '2025-12-31'
+              required:
+              - account_id
+              - trigger_type
+              - trigger_ticker
+              - trigger_value
+              - child_ticker
+              - child_side
+              - child_quantity
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  condition_id:
+                    type: string
+                    description: Conditional order identifier
+                    format: uuid
+                    example: cond-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  trigger_type:
+                    type: string
+                    description: Trigger condition type
+                    enum:
+                    - price_above
+                    - price_below
+                    - volume_above
+                    - pct_change
+                    - index_level
+                  trigger_ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  trigger_value:
+                    type: number
+                    description: Trigger threshold value
+                    format: double
+                    example: 180.0
+                  child_order:
+                    type: object
+                    description: Order to submit when trigger condition is met
+                    properties:
+                      ticker:
+                        type: string
+                        description: Ticker symbol
+                        example: AAPL
+                      side:
+                        type: string
+                        description: Order side
+                        enum:
+                        - buy
+                        - sell
+                      quantity:
+                        type: number
+                        description: Quantity
+                        format: double
+                        example: 100
+                  status:
+                    type: string
+                    description: Condition status
+                    enum:
+                    - watching
+                    - triggered
+                    - expired
+                    - canceled
+                required:
+                - condition_id
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /conditional-orders/{condition_id}:
+    delete:
+      operationId: cancelConditionalOrder
+      summary: Cancel conditional order
+      description: Cancel a watching conditional order. Triggered orders cannot be canceled (cancel the resulting child order
+        instead).
+      tags:
+      - Conditional Orders
+      parameters:
+      - name: condition_id
+        in: path
+        required: true
+        description: Unique condition id
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Resource deleted successfully
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /order-book/{ticker}:
+    get:
+      operationId: getOrderBook
+      summary: Get order book depth
+      description: Retrieve aggregated order book depth (Level 2 data) for a security showing bid and ask price levels with
+        cumulative size. Available for NASDAQ-listed securities.
+      tags:
+      - Order Book
+      parameters:
+      - name: ticker
+        in: path
+        required: true
+        description: Ticker symbol
+        schema:
+          type: string
+      - name: depth
+        in: query
+        required: false
+        description: Number of price levels (max 50)
+        schema:
+          type: integer
+          default: 10
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  bids:
+                    type: array
+                    description: Bid side price levels with size
+                    items:
+                      type: object
+                  asks:
+                    type: array
+                    description: Ask side price levels with size
+                    items:
+                      type: object
+                  spread:
+                    type: number
+                    description: Current bid-ask spread
+                    format: double
+                    example: 0.04
+                  midpoint:
+                    type: number
+                    description: Midpoint price
+                    format: double
+                    example: 178.72
+                  timestamp:
+                    type: string
+                    description: Book snapshot timestamp
+                    format: date-time
+                    example: '2025-06-15T14:30:00Z'
+                required:
+                - ticker
+                - bids
+                - asks
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

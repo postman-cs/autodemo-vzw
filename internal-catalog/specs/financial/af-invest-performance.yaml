@@ -1,0 +1,796 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Performance API
+  description: Portfolio performance measurement and attribution analytics. Calculates GIPS-compliant time-weighted returns
+    (TWR) and money-weighted returns (MWR/IRR), Brinson-Fachler attribution analysis, and benchmark comparison with risk-adjusted
+    metrics including Sharpe ratio, information ratio, beta, Jensen's alpha, and maximum drawdown.
+  version: 2.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-invest-performance
+  x-acme-domain: invest
+servers:
+- url: https://af-invest-performance.api.acmefin.com/v1
+  description: Production
+- url: https://af-invest-performance.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Returns
+  description: Time-weighted and money-weighted return calculations with benchmark comparison
+- name: Attribution
+  description: Brinson-Fachler performance attribution analysis by sector and asset class
+- name: Risk Metrics
+  description: Benchmark comparison with Sharpe ratio, beta, alpha, and tracking error
+paths:
+  /performance/twr:
+    get:
+      operationId: getTimeWeightedReturn
+      summary: Get time-weighted return
+      description: Calculate GIPS-compliant time-weighted return (TWR) for an account over a specified period. TWR eliminates
+        the impact of external cash flows, making it suitable for evaluating investment manager performance. Returns are chain-linked
+        across sub-periods.
+      tags:
+      - Returns
+      parameters:
+      - name: account_id
+        in: query
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: from
+        in: query
+        required: true
+        description: Period start date
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: true
+        description: Period end date
+        schema:
+          type: string
+          format: date
+      - name: benchmark
+        in: query
+        required: false
+        description: Benchmark index for comparison
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  period:
+                    type: string
+                    description: Analysis period
+                    example: 2025-01-01/2025-06-15
+                  twr_pct:
+                    type: number
+                    description: Time-weighted return (TWR) percentage
+                    format: double
+                    example: 8.45
+                  annualized_twr_pct:
+                    type: number
+                    description: Annualized TWR
+                    format: double
+                    example: 18.2
+                  benchmark_return_pct:
+                    type: number
+                    description: Benchmark return for same period
+                    format: double
+                    example: 9.12
+                  excess_return_pct:
+                    type: number
+                    description: Excess return vs benchmark (alpha)
+                    format: double
+                    example: -0.67
+                  benchmark_name:
+                    type: string
+                    description: Benchmark index name
+                    example: S&P 500 Total Return
+                  sub_periods:
+                    type: array
+                    description: Sub-period returns used in TWR chain-linking
+                    items:
+                      type: object
+                required:
+                - account_id
+                - twr_pct
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /performance/mwr:
+    get:
+      operationId: getMoneyWeightedReturn
+      summary: Get money-weighted return
+      description: Calculate money-weighted return (MWR), equivalent to internal rate of return (IRR), for an account. MWR
+        reflects the actual investor experience including the timing and size of cash flows (deposits and withdrawals).
+      tags:
+      - Returns
+      parameters:
+      - name: account_id
+        in: query
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: from
+        in: query
+        required: true
+        description: Period start date
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: true
+        description: Period end date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  period:
+                    type: string
+                    description: Analysis period
+                    example: 2025-01-01/2025-06-15
+                  mwr_pct:
+                    type: number
+                    description: Money-weighted return (MWR/IRR) percentage
+                    format: double
+                    example: 7.85
+                  annualized_mwr_pct:
+                    type: number
+                    description: Annualized MWR
+                    format: double
+                    example: 16.9
+                  total_invested:
+                    type: object
+                    description: Total capital invested during period
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 150000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_withdrawn:
+                    type: object
+                    description: Total capital withdrawn during period
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 10000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  ending_value:
+                    type: object
+                    description: Portfolio ending market value
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 168250.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  net_gain:
+                    type: object
+                    description: Net portfolio gain
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 28250.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                required:
+                - account_id
+                - mwr_pct
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /performance/attribution:
+    get:
+      operationId: getPerformanceAttribution
+      summary: Get performance attribution
+      description: Run Brinson-Fachler performance attribution analysis decomposing portfolio return into allocation effect,
+        selection effect, interaction effect, and currency effect at the sector and asset-class level.
+      tags:
+      - Attribution
+      parameters:
+      - name: account_id
+        in: query
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: period
+        in: query
+        required: true
+        description: Attribution period (e.g., 2025-Q1)
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  period:
+                    type: string
+                    description: Attribution period
+                    example: 2025-Q1
+                  total_return_pct:
+                    type: number
+                    description: Total portfolio return
+                    format: double
+                    example: 4.25
+                  allocation_effect_pct:
+                    type: number
+                    description: Return from asset allocation decisions
+                    format: double
+                    example: 0.85
+                  selection_effect_pct:
+                    type: number
+                    description: Return from security selection within sectors
+                    format: double
+                    example: 0.42
+                  interaction_effect_pct:
+                    type: number
+                    description: Interaction effect between allocation and selection
+                    format: double
+                    example: 0.08
+                  currency_effect_pct:
+                    type: number
+                    description: Return from currency movements
+                    format: double
+                    example: -0.15
+                  sector_attribution:
+                    type: array
+                    description: Sector-level attribution breakdown (Brinson-Fachler)
+                    items:
+                      type: object
+                required:
+                - account_id
+                - total_return_pct
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /performance/benchmark-comparison:
+    get:
+      operationId: getBenchmarkComparison
+      summary: Get benchmark comparison
+      description: Compare portfolio performance against a benchmark index across standard periods (1M, 3M, YTD, 1Y, 3Y, 5Y).
+        Returns risk-adjusted metrics including Sharpe ratio, information ratio, beta, Jensen's alpha, R-squared, and maximum
+        drawdown.
+      tags:
+      - Risk Metrics
+      parameters:
+      - name: account_id
+        in: query
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: benchmark
+        in: query
+        required: true
+        description: Benchmark index identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  benchmark_name:
+                    type: string
+                    description: Benchmark index
+                    example: S&P 500 Total Return
+                  periods:
+                    type: array
+                    description: Return comparison across standard periods
+                    items:
+                      type: object
+                  tracking_error_pct:
+                    type: number
+                    description: Annualized tracking error vs benchmark
+                    format: double
+                    example: 3.45
+                  information_ratio:
+                    type: number
+                    description: Information ratio (excess return / tracking error)
+                    format: double
+                    example: 0.28
+                  sharpe_ratio:
+                    type: number
+                    description: Portfolio Sharpe ratio
+                    format: double
+                    example: 1.15
+                  beta:
+                    type: number
+                    description: Portfolio beta to benchmark
+                    format: double
+                    example: 0.95
+                  alpha_pct:
+                    type: number
+                    description: Jensen's alpha (annualized)
+                    format: double
+                    example: 1.2
+                  r_squared:
+                    type: number
+                    description: R-squared (correlation with benchmark)
+                    format: double
+                    example: 0.92
+                  max_drawdown_pct:
+                    type: number
+                    description: Maximum drawdown from peak
+                    format: double
+                    example: -8.5
+                required:
+                - account_id
+                - benchmark_name
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /performance/snapshot:
+    get:
+      operationId: getPerformanceSnapshot
+      summary: Get performance snapshot
+      description: Retrieve a point-in-time performance snapshot with total market value, cost basis, unrealized gain/loss,
+        daily change, and YTD return for quick portfolio overview.
+      tags:
+      - Returns
+      parameters:
+      - name: account_id
+        in: query
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: as_of
+        in: query
+        required: false
+        description: Snapshot date, defaults to today
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  as_of:
+                    type: string
+                    description: Snapshot date
+                    format: date
+                    example: '2025-06-15'
+                  total_market_value:
+                    type: object
+                    description: Total portfolio market value
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 425000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_cost_basis:
+                    type: object
+                    description: Total cost basis
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 380000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_gain_loss:
+                    type: object
+                    description: Total unrealized gain/loss
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 45000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_gain_loss_pct:
+                    type: number
+                    description: Total unrealized gain/loss percentage
+                    format: double
+                    example: 11.84
+                  day_change:
+                    type: object
+                    description: Today's market value change
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 1250.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  day_change_pct:
+                    type: number
+                    description: Today's percentage change
+                    format: double
+                    example: 0.29
+                  ytd_return_pct:
+                    type: number
+                    description: Year-to-date return
+                    format: double
+                    example: 8.45
+                required:
+                - account_id
+                - total_market_value
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

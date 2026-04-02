@@ -1,0 +1,1081 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance API Key Management API
+  description: >-
+    Comprehensive API key lifecycle management for service-to-service authentication. Supports scoped access
+    control, automatic rotation policies, usage analytics, and rate limit configuration per key. All keys use
+    cryptographically secure prefixed tokens with SHA-256 hashed storage.
+  version: 3.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-identity-api-keys
+  x-acme-domain: identity
+servers:
+  - url: https://af-identity-api-keys.api.acmefin.com/v1
+    description: Production
+  - url: https://af-identity-api-keys.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: API Keys
+    description: Key lifecycle operations including creation, rotation, and revocation
+  - name: Key Usage
+    description: Usage statistics, rate limiting, and audit trail for API keys
+paths:
+  /api-keys:
+    get:
+      operationId: listApiKeys
+      summary: List API keys
+      description: >-
+        Retrieve a paginated list of API keys with optional filtering by status, scope, or creation date.
+      tags:
+        - API Keys
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: Filter by key status
+          schema:
+            type: "string"
+            enum:
+              - active
+              - revoked
+              - expired
+        - name: scope
+          in: query
+          required: false
+          description: Filter by granted scope
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key_id:
+                          type: string
+                          description: Unique API key identifier
+                          example: "ak_9f8e7d6c5b4a"
+                          readOnly: true
+                        name:
+                          type: string
+                          description: Human-readable key name
+                          example: "Production Backend Key"
+                        prefix:
+                          type: string
+                          description: Visible key prefix for identification
+                          example: "ak_9f8e"
+                          readOnly: true
+                        scopes:
+                          type: array
+                          description: Granted permission scopes
+                          items:
+                            type: string
+                            example: "accounts:read"
+                        status:
+                          type: string
+                          description: Key lifecycle status
+                          example: "active"
+                          enum:
+                            - active
+                            - revoked
+                            - expired
+                        rate_limit:
+                          type: integer
+                          description: Requests per minute allowed
+                          example: 1000
+                        last_used_at:
+                          type: string
+                          description: Timestamp of last key usage
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        expires_at:
+                          type: string
+                          description: Key expiration timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        created_at:
+                          type: string
+                          description: Key creation timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - key_id
+                        - name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createApiKey
+      summary: Create API key
+      description: >-
+        Generate a new API key with specified scopes and rate limits. The full key value is returned only in
+        this response and cannot be retrieved again.
+      tags:
+        - API Keys
+      requestBody:
+        required: true
+        description: Create API key request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: Human-readable key name
+                      example: "CI/CD Pipeline Key"
+                    scopes:
+                      type: array
+                      description: Permission scopes to grant
+                      items:
+                        type: string
+                    rate_limit:
+                      type: integer
+                      description: Max requests per minute
+                      example: 500
+                    expires_in_days:
+                      type: integer
+                      description: Days until expiration (default 365)
+                      example: 90
+              required:
+                - name
+                - scopes
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                    description: Unique API key identifier
+                    example: "ak_9f8e7d6c5b4a"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Human-readable key name
+                    example: "Production Backend Key"
+                  prefix:
+                    type: string
+                    description: Visible key prefix for identification
+                    example: "ak_9f8e"
+                    readOnly: true
+                  scopes:
+                    type: array
+                    description: Granted permission scopes
+                    items:
+                      type: string
+                      example: "accounts:read"
+                  status:
+                    type: string
+                    description: Key lifecycle status
+                    example: "active"
+                    enum:
+                      - active
+                      - revoked
+                      - expired
+                  rate_limit:
+                    type: integer
+                    description: Requests per minute allowed
+                    example: 1000
+                  last_used_at:
+                    type: string
+                    description: Timestamp of last key usage
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  expires_at:
+                    type: string
+                    description: Key expiration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  created_at:
+                    type: string
+                    description: Key creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  key_value:
+                    type: string
+                    description: Full API key (shown once)
+                    example: "ak_9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c"
+                    readOnly: true
+                required:
+                  - key_id
+                  - key_value
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /api-keys/{key_id}:
+    get:
+      operationId: getApiKey
+      summary: Get API key details
+      description: >-
+        Retrieve metadata and configuration for a specific API key. The key value itself is never returned.
+      tags:
+        - API Keys
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          description: Unique key id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                    description: Unique API key identifier
+                    example: "ak_9f8e7d6c5b4a"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Human-readable key name
+                    example: "Production Backend Key"
+                  prefix:
+                    type: string
+                    description: Visible key prefix for identification
+                    example: "ak_9f8e"
+                    readOnly: true
+                  scopes:
+                    type: array
+                    description: Granted permission scopes
+                    items:
+                      type: string
+                      example: "accounts:read"
+                  status:
+                    type: string
+                    description: Key lifecycle status
+                    example: "active"
+                    enum:
+                      - active
+                      - revoked
+                      - expired
+                  rate_limit:
+                    type: integer
+                    description: Requests per minute allowed
+                    example: 1000
+                  last_used_at:
+                    type: string
+                    description: Timestamp of last key usage
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  expires_at:
+                    type: string
+                    description: Key expiration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  created_at:
+                    type: string
+                    description: Key creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - key_id
+                  - name
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateApiKey
+      summary: Update API key
+      description: >-
+        Modify key name, scopes, or rate limit configuration. Cannot change key status directly—use revoke
+        or rotate endpoints.
+      tags:
+        - API Keys
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          description: Unique key id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update API key request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: Updated key name
+                      example: "Renamed Key"
+                    scopes:
+                      type: array
+                      description: Updated scopes
+                      items:
+                        type: string
+                    rate_limit:
+                      type: integer
+                      description: Updated rate limit
+                      example: 2000
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                    description: Unique API key identifier
+                    example: "ak_9f8e7d6c5b4a"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Human-readable key name
+                    example: "Production Backend Key"
+                  prefix:
+                    type: string
+                    description: Visible key prefix for identification
+                    example: "ak_9f8e"
+                    readOnly: true
+                  scopes:
+                    type: array
+                    description: Granted permission scopes
+                    items:
+                      type: string
+                      example: "accounts:read"
+                  status:
+                    type: string
+                    description: Key lifecycle status
+                    example: "active"
+                    enum:
+                      - active
+                      - revoked
+                      - expired
+                  rate_limit:
+                    type: integer
+                    description: Requests per minute allowed
+                    example: 1000
+                  last_used_at:
+                    type: string
+                    description: Timestamp of last key usage
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  expires_at:
+                    type: string
+                    description: Key expiration timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  created_at:
+                    type: string
+                    description: Key creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteApiKey
+      summary: Delete API key
+      description: >-
+        Permanently delete an API key. This action is irreversible. Consider revoking instead for audit
+        trail retention.
+      tags:
+        - API Keys
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          description: Unique key id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /api-keys/{key_id}/revoke:
+    post:
+      operationId: revokeApiKey
+      summary: Revoke API key
+      description: >-
+        Immediately revoke an API key, preventing further use. Revoked keys are retained for audit purposes
+        but cannot be reactivated.
+      tags:
+        - API Keys
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          description: Unique key id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Revoke API key request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: Reason for revocation
+                      example: "Compromised credential detected"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                    description: Unique API key identifier
+                    example: "ak_9f8e7d6c5b4a"
+                    readOnly: true
+                  status:
+                    type: string
+                    description: Updated status
+                    example: "revoked"
+                  revoked_at:
+                    type: string
+                    description: Revocation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - key_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /api-keys/{key_id}/rotate:
+    post:
+      operationId: rotateApiKey
+      summary: Rotate API key
+      description: >-
+        Generate a new key value while preserving the key's scopes, rate limits, and metadata. The old key
+        remains valid for the specified grace period.
+      tags:
+        - API Keys
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          description: Unique key id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Rotate API key request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    grace_period_hours:
+                      type: integer
+                      description: Hours the old key remains valid during rotation (default 24)
+                      example: 48
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                    description: Unique API key identifier
+                    example: "ak_9f8e7d6c5b4a"
+                    readOnly: true
+                  new_key_value:
+                    type: string
+                    description: New API key value (shown once)
+                    example: "ak_new1a2b3c4d5e6f"
+                  old_key_expires_at:
+                    type: string
+                    description: When the old key stops working
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - key_id
+                  - new_key_value
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /api-keys/{key_id}/usage:
+    get:
+      operationId: getApiKeyUsage
+      summary: Get key usage statistics
+      description: >-
+        Retrieve request count, error rate, and latency percentiles for an API key over a configurable time
+        window.
+      tags:
+        - Key Usage
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          description: Unique key id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                    description: Unique API key identifier
+                    example: "ak_9f8e7d6c5b4a"
+                    readOnly: true
+                  total_requests:
+                    type: integer
+                    description: Total requests in window
+                    example: 145230
+                  error_count:
+                    type: integer
+                    description: Requests returning 4xx/5xx
+                    example: 342
+                  avg_latency_ms:
+                    type: number
+                    description: Average response latency in milliseconds
+                    format: double
+                    example: 45.2
+                  p99_latency_ms:
+                    type: number
+                    description: 99th percentile latency
+                    format: double
+                    example: 210.5
+                  window_start:
+                    type: string
+                    description: Start of measurement window
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  window_end:
+                    type: string
+                    description: End of measurement window
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - key_id
+                  - total_requests
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /api-keys/{key_id}/rate-limit:
+    patch:
+      operationId: updateKeyRateLimit
+      summary: Configure key rate limit
+      description: >-
+        Update rate limiting configuration for a specific API key including burst allowance and throttle
+        behavior.
+      tags:
+        - Key Usage
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          description: Unique key id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Configure key rate limit request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    requests_per_minute:
+                      type: integer
+                      description: Sustained request rate
+                      example: 1000
+                    burst_size:
+                      type: integer
+                      description: Maximum burst above sustained rate
+                      example: 50
+                    throttle_strategy:
+                      type: string
+                      description: Behavior when limit exceeded
+                      example: "reject"
+                      enum:
+                        - reject
+                        - queue
+                        - degrade
+              required:
+                - requests_per_minute
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:
+                    type: string
+                    description: Unique API key identifier
+                    example: "ak_9f8e7d6c5b4a"
+                    readOnly: true
+                  requests_per_minute:
+                    type: integer
+                    description: Configured rate
+                    example: 1000
+                  burst_size:
+                    type: integer
+                    description: Burst allowance
+                    example: 50
+                  throttle_strategy:
+                    type: string
+                    description: Throttle strategy
+                    example: "reject"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /api-keys/scopes:
+    get:
+      operationId: listAvailableScopes
+      summary: List available scopes
+      description: >-
+        Retrieve all permission scopes available for API key assignment, grouped by resource domain.
+      tags:
+        - API Keys
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scopes:
+                    type: array
+                    description: Available permission scopes
+                    items:
+                      type: object
+                  total:
+                    type: integer
+                    description: Total number of scopes
+                    example: 47
+                required:
+                  - scopes
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

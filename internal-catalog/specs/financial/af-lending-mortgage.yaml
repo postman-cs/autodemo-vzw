@@ -1,0 +1,1659 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Mortgage Origination API
+  description: >-
+    Full-lifecycle mortgage origination from application through closing and funding. Supports conventional, FHA,
+    VA, USDA, and jumbo loan programs with automated underwriting (DU/LP), TRID disclosure management, and rate
+    lock functionality. Integrates with appraisal, title, and flood certification services. Compliant with HMDA,
+    ECOA, TILA-RESPA, and ATR/QM requirements.
+  version: 4.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-lending-mortgage
+  x-acme-domain: lending
+servers:
+  - url: https://af-lending-mortgage.api.acmefin.com/v1
+    description: Production
+  - url: https://af-lending-mortgage.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Applications
+    description: Mortgage application processing
+  - name: Underwriting
+    description: Automated and manual underwriting
+  - name: Rate Lock
+    description: Interest rate lock management
+  - name: Closing
+    description: Closing and funding operations
+  - name: Services
+    description: Third-party service ordering
+paths:
+  /applications:
+    get:
+      operationId: listMortgageApplications
+      summary: List mortgage applications
+      description: >-
+        Retrieve mortgage applications with filtering by status, loan officer, loan type, date range, or
+        borrower. Returns application summaries including loan amount, property, and current pipeline stage.
+      tags:
+        - Applications
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: status
+          in: query
+          required: false
+          description: "Filter by pipeline stage"
+          schema:
+            type: "string"
+        - name: loan_type
+          in: query
+          required: false
+          description: "Filter by loan program"
+          schema:
+            type: "string"
+        - name: loan_officer_id
+          in: query
+          required: false
+          description: "Filter by loan officer"
+          schema:
+            type: "string"
+        - name: from_date
+          in: query
+          required: false
+          description: "Application start date"
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        mortgage_id:
+                          type: string
+                          description: "Mortgage application/loan identifier"
+                          example: "mtg-990045"
+                        borrower_id:
+                          type: string
+                          description: "Primary borrower identifier"
+                          example: "cust-220019"
+                        property_address:
+                          type: string
+                          description: "Subject property address"
+                          example: "456 Oak Lane, Austin, TX 78701"
+                        loan_amount:
+                          type: number
+                          description: "Loan amount"
+                          format: double
+                          example: 425000.0
+                        appraised_value:
+                          type: number
+                          description: "Appraised property value"
+                          format: double
+                          example: 500000.0
+                        ltv_ratio:
+                          type: number
+                          description: "Loan-to-value ratio"
+                          format: double
+                          example: 85.0
+                        interest_rate:
+                          type: number
+                          description: "Interest rate (fixed or initial ARM)"
+                          format: double
+                          example: 6.25
+                        loan_type:
+                          type: string
+                          description: "Loan program"
+                          example: "CONVENTIONAL"
+                          enum:
+                            - CONVENTIONAL
+                            - FHA
+                            - VA
+                            - USDA
+                            - JUMBO
+                        term_years:
+                          type: integer
+                          description: "Loan term in years"
+                          example: 30
+                        monthly_payment:
+                          type: number
+                          description: "Monthly P&I payment"
+                          format: double
+                          example: 2617.93
+                        dti_ratio:
+                          type: number
+                          description: "Debt-to-income ratio"
+                          format: double
+                          example: 36.5
+                        status:
+                          type: string
+                          description: "Application/loan status"
+                          example: "UNDERWRITING"
+                          enum:
+                            - APPLICATION
+                            - PROCESSING
+                            - UNDERWRITING
+                            - CONDITIONAL_APPROVAL
+                            - CLEAR_TO_CLOSE
+                            - CLOSING
+                            - FUNDED
+                            - SERVICING
+                            - PAID_OFF
+                        rate_lock_expiry:
+                          type: string
+                          description: "Rate lock expiration date"
+                          format: date
+                          example: "2026-04-15"
+                        closing_date:
+                          type: string
+                          description: "Scheduled closing date"
+                          format: date
+                          example: "2026-04-01"
+                        created_at:
+                          type: string
+                          description: "Application timestamp"
+                          format: date-time
+                          example: "2026-01-10T09:00:00Z"
+                      required:
+                        - mortgage_id
+                        - borrower_id
+                        - loan_amount
+                        - loan_type
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: submitMortgageApplication
+      summary: Submit mortgage application
+      description: >-
+        Submit a new mortgage application (1003/URLA). Captures borrower demographics, income, assets,
+        liabilities, and property information. Triggers automated credit pull and preliminary AUS
+        submission. Generates initial Loan Estimate (LE) within TRID 3-business-day requirement.
+      tags:
+        - Applications
+      requestBody:
+        required: true
+        description: Submit mortgage application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                borrower_id:
+                  type: string
+                  description: "Primary borrower CIF"
+                  example: "cust-220019"
+                co_borrower_id:
+                  type: string
+                  description: "Co-borrower CIF (optional)"
+                  example: "cust-220020"
+                property_address:
+                  type: string
+                  description: "Subject property address"
+                  example: "456 Oak Lane, Austin, TX 78701"
+                purchase_price:
+                  type: number
+                  description: "Purchase price"
+                  format: double
+                  example: 500000.0
+                down_payment:
+                  type: number
+                  description: "Down payment amount"
+                  format: double
+                  example: 75000.0
+                loan_type:
+                  type: string
+                  description: "Loan program"
+                  example: "CONVENTIONAL"
+                term_years:
+                  type: integer
+                  description: "Requested term"
+                  example: 30
+                purpose:
+                  type: string
+                  description: "Loan purpose"
+                  example: "PURCHASE"
+                  enum:
+                    - PURCHASE
+                    - RATE_TERM_REFINANCE
+                    - CASH_OUT_REFINANCE
+                    - CONSTRUCTION
+              required:
+                - borrower_id
+                - property_address
+                - loan_type
+                - purpose
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mortgage_id:
+                    type: string
+                    description: "Mortgage application/loan identifier"
+                    example: "mtg-990045"
+                  borrower_id:
+                    type: string
+                    description: "Primary borrower identifier"
+                    example: "cust-220019"
+                  property_address:
+                    type: string
+                    description: "Subject property address"
+                    example: "456 Oak Lane, Austin, TX 78701"
+                  loan_amount:
+                    type: number
+                    description: "Loan amount"
+                    format: double
+                    example: 425000.0
+                  appraised_value:
+                    type: number
+                    description: "Appraised property value"
+                    format: double
+                    example: 500000.0
+                  ltv_ratio:
+                    type: number
+                    description: "Loan-to-value ratio"
+                    format: double
+                    example: 85.0
+                  interest_rate:
+                    type: number
+                    description: "Interest rate (fixed or initial ARM)"
+                    format: double
+                    example: 6.25
+                  loan_type:
+                    type: string
+                    description: "Loan program"
+                    example: "CONVENTIONAL"
+                    enum:
+                      - CONVENTIONAL
+                      - FHA
+                      - VA
+                      - USDA
+                      - JUMBO
+                  term_years:
+                    type: integer
+                    description: "Loan term in years"
+                    example: 30
+                  monthly_payment:
+                    type: number
+                    description: "Monthly P&I payment"
+                    format: double
+                    example: 2617.93
+                  dti_ratio:
+                    type: number
+                    description: "Debt-to-income ratio"
+                    format: double
+                    example: 36.5
+                  status:
+                    type: string
+                    description: "Application/loan status"
+                    example: "UNDERWRITING"
+                    enum:
+                      - APPLICATION
+                      - PROCESSING
+                      - UNDERWRITING
+                      - CONDITIONAL_APPROVAL
+                      - CLEAR_TO_CLOSE
+                      - CLOSING
+                      - FUNDED
+                      - SERVICING
+                      - PAID_OFF
+                  rate_lock_expiry:
+                    type: string
+                    description: "Rate lock expiration date"
+                    format: date
+                    example: "2026-04-15"
+                  closing_date:
+                    type: string
+                    description: "Scheduled closing date"
+                    format: date
+                    example: "2026-04-01"
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-01-10T09:00:00Z"
+                required:
+                  - mortgage_id
+                  - borrower_id
+                  - loan_amount
+                  - loan_type
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{mortgage_id}:
+    get:
+      operationId: getMortgageApplication
+      summary: Get mortgage application
+      description: >-
+        Retrieve the complete mortgage application including borrower information, property details, loan
+        terms, underwriting findings, conditions, rate lock status, and document checklist.
+      tags:
+        - Applications
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mortgage_id:
+                    type: string
+                    description: "Mortgage application/loan identifier"
+                    example: "mtg-990045"
+                  borrower_id:
+                    type: string
+                    description: "Primary borrower identifier"
+                    example: "cust-220019"
+                  property_address:
+                    type: string
+                    description: "Subject property address"
+                    example: "456 Oak Lane, Austin, TX 78701"
+                  loan_amount:
+                    type: number
+                    description: "Loan amount"
+                    format: double
+                    example: 425000.0
+                  appraised_value:
+                    type: number
+                    description: "Appraised property value"
+                    format: double
+                    example: 500000.0
+                  ltv_ratio:
+                    type: number
+                    description: "Loan-to-value ratio"
+                    format: double
+                    example: 85.0
+                  interest_rate:
+                    type: number
+                    description: "Interest rate (fixed or initial ARM)"
+                    format: double
+                    example: 6.25
+                  loan_type:
+                    type: string
+                    description: "Loan program"
+                    example: "CONVENTIONAL"
+                    enum:
+                      - CONVENTIONAL
+                      - FHA
+                      - VA
+                      - USDA
+                      - JUMBO
+                  term_years:
+                    type: integer
+                    description: "Loan term in years"
+                    example: 30
+                  monthly_payment:
+                    type: number
+                    description: "Monthly P&I payment"
+                    format: double
+                    example: 2617.93
+                  dti_ratio:
+                    type: number
+                    description: "Debt-to-income ratio"
+                    format: double
+                    example: 36.5
+                  status:
+                    type: string
+                    description: "Application/loan status"
+                    example: "UNDERWRITING"
+                    enum:
+                      - APPLICATION
+                      - PROCESSING
+                      - UNDERWRITING
+                      - CONDITIONAL_APPROVAL
+                      - CLEAR_TO_CLOSE
+                      - CLOSING
+                      - FUNDED
+                      - SERVICING
+                      - PAID_OFF
+                  rate_lock_expiry:
+                    type: string
+                    description: "Rate lock expiration date"
+                    format: date
+                    example: "2026-04-15"
+                  closing_date:
+                    type: string
+                    description: "Scheduled closing date"
+                    format: date
+                    example: "2026-04-01"
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-01-10T09:00:00Z"
+                required:
+                  - mortgage_id
+                  - borrower_id
+                  - loan_amount
+                  - loan_type
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateMortgageApplication
+      summary: Update mortgage application
+      description: >-
+        Update application details such as loan amount, property information, or borrower income. Changes to
+        material terms may trigger a revised Loan Estimate per TRID changed circumstances rules.
+      tags:
+        - Applications
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update mortgage application request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                loan_amount:
+                  type: number
+                  description: "Updated loan amount"
+                  format: double
+                  example: 400000.0
+                term_years:
+                  type: integer
+                  description: "Updated term"
+                  example: 15
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mortgage_id:
+                    type: string
+                    description: "Mortgage application/loan identifier"
+                    example: "mtg-990045"
+                  borrower_id:
+                    type: string
+                    description: "Primary borrower identifier"
+                    example: "cust-220019"
+                  property_address:
+                    type: string
+                    description: "Subject property address"
+                    example: "456 Oak Lane, Austin, TX 78701"
+                  loan_amount:
+                    type: number
+                    description: "Loan amount"
+                    format: double
+                    example: 425000.0
+                  appraised_value:
+                    type: number
+                    description: "Appraised property value"
+                    format: double
+                    example: 500000.0
+                  ltv_ratio:
+                    type: number
+                    description: "Loan-to-value ratio"
+                    format: double
+                    example: 85.0
+                  interest_rate:
+                    type: number
+                    description: "Interest rate (fixed or initial ARM)"
+                    format: double
+                    example: 6.25
+                  loan_type:
+                    type: string
+                    description: "Loan program"
+                    example: "CONVENTIONAL"
+                    enum:
+                      - CONVENTIONAL
+                      - FHA
+                      - VA
+                      - USDA
+                      - JUMBO
+                  term_years:
+                    type: integer
+                    description: "Loan term in years"
+                    example: 30
+                  monthly_payment:
+                    type: number
+                    description: "Monthly P&I payment"
+                    format: double
+                    example: 2617.93
+                  dti_ratio:
+                    type: number
+                    description: "Debt-to-income ratio"
+                    format: double
+                    example: 36.5
+                  status:
+                    type: string
+                    description: "Application/loan status"
+                    example: "UNDERWRITING"
+                    enum:
+                      - APPLICATION
+                      - PROCESSING
+                      - UNDERWRITING
+                      - CONDITIONAL_APPROVAL
+                      - CLEAR_TO_CLOSE
+                      - CLOSING
+                      - FUNDED
+                      - SERVICING
+                      - PAID_OFF
+                  rate_lock_expiry:
+                    type: string
+                    description: "Rate lock expiration date"
+                    format: date
+                    example: "2026-04-15"
+                  closing_date:
+                    type: string
+                    description: "Scheduled closing date"
+                    format: date
+                    example: "2026-04-01"
+                  created_at:
+                    type: string
+                    description: "Application timestamp"
+                    format: date-time
+                    example: "2026-01-10T09:00:00Z"
+                required:
+                  - mortgage_id
+                  - borrower_id
+                  - loan_amount
+                  - loan_type
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{mortgage_id}/submit-to-aus:
+    post:
+      operationId: submitToAUS
+      summary: Submit to automated underwriting
+      description: >-
+        Submit the application to Desktop Underwriter (DU) or Loan Prospector (LP) for automated
+        underwriting. Returns the AUS recommendation (Approve/Eligible, Refer, Caution) along with required
+        conditions and documentation.
+      tags:
+        - Underwriting
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Submit to automated underwriting request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                aus_system:
+                  type: string
+                  description: "AUS system"
+                  example: "DU"
+                  enum:
+                    - DU
+                    - LP
+                include_credit_refresh:
+                  type: boolean
+                  description: "Pull fresh credit for submission"
+                  example: false
+              required:
+                - aus_system
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aus_recommendation:
+                    type: string
+                    description: "AUS finding"
+                    example: "APPROVE_ELIGIBLE"
+                    enum:
+                      - APPROVE_ELIGIBLE
+                      - APPROVE_INELIGIBLE
+                      - REFER
+                      - REFER_WITH_CAUTION
+                      - OUT_OF_SCOPE
+                  case_file_id:
+                    type: string
+                    description: "AUS case file number"
+                    example: "DU-8834567"
+                  conditions:
+                    type: array
+                    description: "Underwriting conditions"
+                    items:
+                      type: string
+                      example: "Verify 2 years employment history"
+                required:
+                  - aus_recommendation
+                  - case_file_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{mortgage_id}/rate-lock:
+    post:
+      operationId: lockRate
+      summary: Lock interest rate
+      description: >-
+        Lock the interest rate for a specified period (typically 30, 45, or 60 days). Rate locks are non-
+        transferable and expire at 5:00 PM ET on the expiration date. Extensions are available at 0.125% per
+        7-day extension period.
+      tags:
+        - Rate Lock
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Lock interest rate request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rate:
+                  type: number
+                  description: "Rate to lock"
+                  format: double
+                  example: 6.25
+                lock_period_days:
+                  type: integer
+                  description: "Lock period in days"
+                  example: 45
+                points:
+                  type: number
+                  description: "Discount points"
+                  format: double
+                  example: 0.5
+              required:
+                - rate
+                - lock_period_days
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lock_confirmation:
+                    type: string
+                    description: "Lock confirmation number"
+                    example: "LCK-2026030112345"
+                  locked_rate:
+                    type: number
+                    description: "Confirmed locked rate"
+                    format: double
+                    example: 6.25
+                  lock_expiry:
+                    type: string
+                    description: "Lock expiration date"
+                    format: date
+                    example: "2026-04-15"
+                  monthly_payment:
+                    type: number
+                    description: "Estimated monthly P&I at locked rate"
+                    format: double
+                    example: 2617.93
+                required:
+                  - lock_confirmation
+                  - locked_rate
+                  - lock_expiry
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{mortgage_id}/rate-lock/extend:
+    post:
+      operationId: extendRateLock
+      summary: Extend rate lock
+      description: >-
+        Extend an existing rate lock for an additional period. Each 7-day extension costs 0.125% of the loan
+        amount, added to closing costs. Maximum of two extensions allowed per lock.
+      tags:
+        - Rate Lock
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Extend rate lock request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                extension_days:
+                  type: integer
+                  description: "Extension period in days"
+                  example: 7
+              required:
+                - extension_days
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  new_expiry:
+                    type: string
+                    description: "New lock expiration"
+                    format: date
+                    example: "2026-04-22"
+                  extension_cost:
+                    type: number
+                    description: "Cost of extension"
+                    format: double
+                    example: 531.25
+                required:
+                  - new_expiry
+                  - extension_cost
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{mortgage_id}/conditions:
+    get:
+      operationId: listConditions
+      summary: List underwriting conditions
+      description: >-
+        Retrieve all underwriting conditions (prior-to-approval, prior-to-docs, prior-to-funding, and prior-
+        to-closing) with their satisfaction status. Conditions are generated by AUS submission and manual
+        underwriter review.
+      tags:
+        - Underwriting
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: category
+          in: query
+          required: false
+          description: "Filter by condition category"
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: "Filter by satisfaction status"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        condition_id:
+                          type: string
+                          description: "Condition identifier"
+                          example: "cond-7701"
+                        description:
+                          type: string
+                          description: "Condition description"
+                          example: "Provide 2 most recent bank statements"
+                        category:
+                          type: string
+                          description: "Condition timing"
+                          example: "PRIOR_TO_APPROVAL"
+                          enum:
+                            - PRIOR_TO_APPROVAL
+                            - PRIOR_TO_DOCS
+                            - PRIOR_TO_CLOSING
+                            - PRIOR_TO_FUNDING
+                        status:
+                          type: string
+                          description: "Satisfaction status"
+                          example: "PENDING"
+                          enum:
+                            - PENDING
+                            - RECEIVED
+                            - REVIEWED
+                            - SATISFIED
+                            - WAIVED
+                        due_date:
+                          type: string
+                          description: "Condition due date"
+                          format: date
+                          example: "2026-03-15"
+                      required:
+                        - condition_id
+                        - description
+                        - category
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /applications/{mortgage_id}/conditions/{condition_id}/satisfy:
+    post:
+      operationId: satisfyCondition
+      summary: Satisfy underwriting condition
+      description: >-
+        Mark an underwriting condition as satisfied after reviewing the submitted documentation. Only
+        authorized underwriters can satisfy conditions. Automatically evaluates if all prior-to-approval
+        conditions are met to issue conditional approval.
+      tags:
+        - Underwriting
+      parameters:
+        - name: condition_id
+          in: path
+          required: true
+          description: "Unique condition id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Satisfy underwriting condition request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                document_id:
+                  type: string
+                  description: "Document satisfying the condition"
+                  example: "ldoc-220089"
+                reviewer_notes:
+                  type: string
+                  description: "Reviewer notes"
+                  example: "Bank statements verified, sufficient reserves confirmed"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  condition_id:
+                    type: string
+                    description: "Condition ID"
+                    example: "cond-7701"
+                  status:
+                    type: string
+                    description: "Updated status"
+                    example: "SATISFIED"
+                  remaining_conditions:
+                    type: integer
+                    description: "Remaining unsatisfied conditions in category"
+                    example: 2
+                required:
+                  - condition_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{mortgage_id}/clear-to-close:
+    post:
+      operationId: clearToClose
+      summary: Issue clear to close
+      description: >-
+        Issue clear-to-close (CTC) status after all prior-to-closing conditions are satisfied. Triggers
+        generation of the Closing Disclosure (CD) and initiates the TRID 3-business-day waiting period
+        before closing can occur.
+      tags:
+        - Closing
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Issue clear to close request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                closing_date:
+                  type: string
+                  description: "Scheduled closing date"
+                  format: date
+                  example: "2026-04-01"
+                closing_agent:
+                  type: string
+                  description: "Title/closing agent"
+                  example: "First American Title"
+              required:
+                - closing_date
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ctc_date:
+                    type: string
+                    description: "CTC issued date"
+                    format: date
+                    example: "2026-03-25"
+                  earliest_closing:
+                    type: string
+                    description: "Earliest possible closing per TRID"
+                    format: date
+                    example: "2026-03-28"
+                  cd_issued:
+                    type: boolean
+                    description: "Closing Disclosure generated"
+                    example: true
+                required:
+                  - ctc_date
+                  - earliest_closing
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /applications/{mortgage_id}/fund:
+    post:
+      operationId: fundLoan
+      summary: Fund mortgage loan
+      description: >-
+        Fund the mortgage loan by initiating wire transfer to the closing agent. Validates all prior-to-
+        funding conditions are satisfied and the closing package is complete. Transitions the loan to
+        servicing status.
+      tags:
+        - Closing
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Fund mortgage loan request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                funding_amount:
+                  type: number
+                  description: "Net funding amount"
+                  format: double
+                  example: 423850.0
+                wire_instructions:
+                  type: string
+                  description: "Wire routing reference"
+                  example: "First American Title - ABA 021000021"
+              required:
+                - funding_amount
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  funding_confirmation:
+                    type: string
+                    description: "Wire confirmation number"
+                    example: "FW-2026040112345"
+                  funded_date:
+                    type: string
+                    description: "Funding timestamp"
+                    format: date-time
+                    example: "2026-04-01T14:30:00Z"
+                  first_payment_date:
+                    type: string
+                    description: "First payment due date"
+                    format: date
+                    example: "2026-06-01"
+                required:
+                  - funding_confirmation
+                  - funded_date
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /services/appraisal/{mortgage_id}:
+    post:
+      operationId: orderAppraisal
+      summary: Order appraisal
+      description: >-
+        Order a property appraisal through the approved AMC (Appraisal Management Company) panel. Compliant
+        with Dodd-Frank appraiser independence requirements. Automatically assigns based on property type,
+        location, and appraiser availability.
+      tags:
+        - Services
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Order appraisal request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                property_type:
+                  type: string
+                  description: "Property type"
+                  example: "SINGLE_FAMILY"
+                  enum:
+                    - SINGLE_FAMILY
+                    - CONDO
+                    - MULTI_FAMILY
+                    - MANUFACTURED
+                    - TOWNHOUSE
+                rush:
+                  type: boolean
+                  description: "Request rush delivery"
+                  example: false
+              required:
+                - property_type
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    description: "Appraisal order ID"
+                    example: "apr-6601"
+                  assigned_amc:
+                    type: string
+                    description: "Assigned AMC"
+                    example: "CoreLogic Valuation Services"
+                  estimated_completion:
+                    type: string
+                    description: "Estimated completion date"
+                    format: date
+                    example: "2026-03-15"
+                  fee:
+                    type: number
+                    description: "Appraisal fee"
+                    format: double
+                    example: 550.0
+                required:
+                  - order_id
+                  - estimated_completion
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /services/title/{mortgage_id}:
+    post:
+      operationId: orderTitleSearch
+      summary: Order title search
+      description: >-
+        Order a title search and commitment from the selected title company. Searches public records for
+        liens, encumbrances, easements, and ownership chain. Returns a title commitment with any exceptions
+        that must be cleared before closing.
+      tags:
+        - Services
+      parameters:
+        - name: mortgage_id
+          in: path
+          required: true
+          description: "Unique mortgage id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Order title search request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title_company:
+                  type: string
+                  description: "Selected title company"
+                  example: "First American Title"
+                include_survey:
+                  type: boolean
+                  description: "Include property survey"
+                  example: true
+              required:
+                - title_company
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    description: "Title order ID"
+                    example: "ttl-4401"
+                  estimated_completion:
+                    type: string
+                    description: "Estimated completion"
+                    format: date
+                    example: "2026-03-10"
+                required:
+                  - order_id
+                  - estimated_completion
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

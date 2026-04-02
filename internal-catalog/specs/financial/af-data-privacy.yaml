@@ -1,0 +1,2205 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Data Privacy API
+  description: >-
+    Comprehensive privacy operations platform for managing data subject requests (GDPR, CCPA, LGPD, PIPEDA),
+    consent lifecycle, PII detection and scanning, data anonymization with multiple techniques (k-anonymity,
+    differential privacy, tokenization), and retention policy enforcement. Ensures regulatory compliance with
+    audit trails, deadline tracking, and automated cross-system data discovery for subject access and deletion
+    workflows.
+  version: 2.5.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-data-privacy
+  x-acme-domain: data
+servers:
+  - url: https://af-data-privacy.api.acmefin.com/v1
+    description: Production
+  - url: https://af-data-privacy.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Data Subject Requests
+    description: Process data subject access, deletion, rectification, and portability requests
+  - name: Consent Management
+    description: Manage consent records with lawful basis tracking and expiration
+  - name: Anonymization
+    description: Run anonymization jobs using privacy-preserving techniques
+  - name: PII Detection
+    description: Scan datasets for personally identifiable information
+  - name: Retention Policies
+    description: Define and enforce data retention policies with regulatory alignment
+paths:
+  /dsr:
+    get:
+      operationId: listDSRs
+      summary: List data subject requests
+      description: Retrieve DSRs with filters for request type, status, regulation, and deadline.
+      tags:
+        - Data Subject Requests
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: type
+          in: query
+          required: false
+          description: Filter by request type
+          schema:
+            type: "string"
+            enum:
+              - access
+              - deletion
+              - rectification
+              - portability
+              - restriction
+        - name: status
+          in: query
+          required: false
+          description: Filter by processing status
+          schema:
+            type: "string"
+        - name: regulation
+          in: query
+          required: false
+          description: Filter by regulation
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        request_id:
+                          type: string
+                          description: "DSR identifier"
+                          format: uuid
+                          readOnly: true
+                        type:
+                          type: string
+                          description: "GDPR/CCPA request type"
+                          enum:
+                            - access
+                            - deletion
+                            - rectification
+                            - portability
+                            - restriction
+                        subject_id:
+                          type: string
+                          description: "Data subject identifier (customer ID or email)"
+                        status:
+                          type: string
+                          description: "Processing status"
+                          enum:
+                            - received
+                            - verified
+                            - in_progress
+                            - completed
+                            - rejected
+                        regulation:
+                          type: string
+                          description: "Applicable privacy regulation"
+                          enum:
+                            - gdpr
+                            - ccpa
+                            - lgpd
+                            - pipeda
+                        deadline:
+                          type: string
+                          description: "Regulatory response deadline"
+                          format: date
+                        systems_affected:
+                          type: array
+                          description: "Systems containing subject data"
+                          items:
+                            type: string
+                        submitted_at:
+                          type: string
+                          format: date-time
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - request_id
+                        - type
+                        - subject_id
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createDSR
+      summary: Create data subject request
+      description: >-
+        Submit a new data subject request. Automatically identifies affected systems and calculates the
+        regulatory deadline.
+      tags:
+        - Data Subject Requests
+      requestBody:
+        required: true
+        description: Create data subject request request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    type:
+                      type: string
+                      enum:
+                        - access
+                        - deletion
+                        - rectification
+                        - portability
+                        - restriction
+                    subject_id:
+                      type: string
+                    regulation:
+                      type: string
+                      enum:
+                        - gdpr
+                        - ccpa
+                        - lgpd
+                        - pipeda
+                    details:
+                      type: string
+                      description: "Additional request details"
+              required:
+                - type
+                - subject_id
+                - regulation
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "DSR identifier"
+                    format: uuid
+                    readOnly: true
+                  type:
+                    type: string
+                    description: "GDPR/CCPA request type"
+                    enum:
+                      - access
+                      - deletion
+                      - rectification
+                      - portability
+                      - restriction
+                  subject_id:
+                    type: string
+                    description: "Data subject identifier (customer ID or email)"
+                  status:
+                    type: string
+                    description: "Processing status"
+                    enum:
+                      - received
+                      - verified
+                      - in_progress
+                      - completed
+                      - rejected
+                  regulation:
+                    type: string
+                    description: "Applicable privacy regulation"
+                    enum:
+                      - gdpr
+                      - ccpa
+                      - lgpd
+                      - pipeda
+                  deadline:
+                    type: string
+                    description: "Regulatory response deadline"
+                    format: date
+                  systems_affected:
+                    type: array
+                    description: "Systems containing subject data"
+                    items:
+                      type: string
+                  submitted_at:
+                    type: string
+                    format: date-time
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                required:
+                  - request_id
+                  - type
+                  - status
+                  - deadline
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /dsr/{request_id}:
+    get:
+      operationId: getDSR
+      summary: Get DSR details
+      description: >-
+        Retrieve complete DSR details including affected systems, processing timeline, and audit trail.
+      tags:
+        - Data Subject Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: Unique request id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "DSR identifier"
+                    format: uuid
+                    readOnly: true
+                  type:
+                    type: string
+                    description: "GDPR/CCPA request type"
+                    enum:
+                      - access
+                      - deletion
+                      - rectification
+                      - portability
+                      - restriction
+                  subject_id:
+                    type: string
+                    description: "Data subject identifier (customer ID or email)"
+                  status:
+                    type: string
+                    description: "Processing status"
+                    enum:
+                      - received
+                      - verified
+                      - in_progress
+                      - completed
+                      - rejected
+                  regulation:
+                    type: string
+                    description: "Applicable privacy regulation"
+                    enum:
+                      - gdpr
+                      - ccpa
+                      - lgpd
+                      - pipeda
+                  deadline:
+                    type: string
+                    description: "Regulatory response deadline"
+                    format: date
+                  systems_affected:
+                    type: array
+                    description: "Systems containing subject data"
+                    items:
+                      type: string
+                  submitted_at:
+                    type: string
+                    format: date-time
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                required:
+                  - request_id
+                  - type
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateDSR
+      summary: Update DSR status
+      description: Update the processing status of a data subject request.
+      tags:
+        - Data Subject Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: Unique request id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update DSR status request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    status:
+                      type: string
+                      enum:
+                        - verified
+                        - in_progress
+                        - completed
+                        - rejected
+                    notes:
+                      type: string
+                      description: "Processing notes"
+              required:
+                - status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                    description: "DSR identifier"
+                    format: uuid
+                    readOnly: true
+                  type:
+                    type: string
+                    description: "GDPR/CCPA request type"
+                    enum:
+                      - access
+                      - deletion
+                      - rectification
+                      - portability
+                      - restriction
+                  subject_id:
+                    type: string
+                    description: "Data subject identifier (customer ID or email)"
+                  status:
+                    type: string
+                    description: "Processing status"
+                    enum:
+                      - received
+                      - verified
+                      - in_progress
+                      - completed
+                      - rejected
+                  regulation:
+                    type: string
+                    description: "Applicable privacy regulation"
+                    enum:
+                      - gdpr
+                      - ccpa
+                      - lgpd
+                      - pipeda
+                  deadline:
+                    type: string
+                    description: "Regulatory response deadline"
+                    format: date
+                  systems_affected:
+                    type: array
+                    description: "Systems containing subject data"
+                    items:
+                      type: string
+                  submitted_at:
+                    type: string
+                    format: date-time
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /dsr/{request_id}/execute:
+    post:
+      operationId: executeDSR
+      summary: Execute DSR
+      description: >-
+        Trigger automated execution of a verified DSR across all affected systems. Access requests generate
+        a data export; deletion requests purge data from all systems.
+      tags:
+        - Data Subject Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: Unique request id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  execution_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum:
+                      - executing
+                      - completed
+                  systems_processed:
+                    type: integer
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                required:
+                  - execution_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /consent:
+    get:
+      operationId: listConsentRecords
+      summary: List consent records
+      description: >-
+        Retrieve consent records with filters for subject, purpose, legal basis, and status.
+      tags:
+        - Consent Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: subject_id
+          in: query
+          required: false
+          description: Filter by data subject
+          schema:
+            type: "string"
+        - name: purpose
+          in: query
+          required: false
+          description: Filter by processing purpose
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by consent status
+          schema:
+            type: "string"
+            enum:
+              - granted
+              - withdrawn
+              - expired
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        consent_id:
+                          type: string
+                          description: "Consent record identifier"
+                          format: uuid
+                          readOnly: true
+                        subject_id:
+                          type: string
+                          description: "Data subject identifier"
+                        purpose:
+                          type: string
+                          description: "Processing purpose"
+                          example: "marketing_communications"
+                        legal_basis:
+                          type: string
+                          description: "GDPR lawful basis"
+                          enum:
+                            - consent
+                            - contract
+                            - legal_obligation
+                            - vital_interest
+                            - public_interest
+                            - legitimate_interest
+                        status:
+                          type: string
+                          description: "Current consent status"
+                          enum:
+                            - granted
+                            - withdrawn
+                            - expired
+                        granted_at:
+                          type: string
+                          format: date-time
+                        expires_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        channel:
+                          type: string
+                          description: "Channel where consent was collected"
+                          enum:
+                            - web
+                            - mobile
+                            - branch
+                            - phone
+                            - api
+                      required:
+                        - consent_id
+                        - subject_id
+                        - purpose
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /consent/{consent_id}:
+    get:
+      operationId: getConsentRecord
+      summary: Get consent record
+      description: >-
+        Retrieve a consent record with full audit history and linked processing activities.
+      tags:
+        - Consent Management
+      parameters:
+        - name: consent_id
+          in: path
+          required: true
+          description: Unique consent id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  consent_id:
+                    type: string
+                    description: "Consent record identifier"
+                    format: uuid
+                    readOnly: true
+                  subject_id:
+                    type: string
+                    description: "Data subject identifier"
+                  purpose:
+                    type: string
+                    description: "Processing purpose"
+                    example: "marketing_communications"
+                  legal_basis:
+                    type: string
+                    description: "GDPR lawful basis"
+                    enum:
+                      - consent
+                      - contract
+                      - legal_obligation
+                      - vital_interest
+                      - public_interest
+                      - legitimate_interest
+                  status:
+                    type: string
+                    description: "Current consent status"
+                    enum:
+                      - granted
+                      - withdrawn
+                      - expired
+                  granted_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  channel:
+                    type: string
+                    description: "Channel where consent was collected"
+                    enum:
+                      - web
+                      - mobile
+                      - branch
+                      - phone
+                      - api
+                required:
+                  - consent_id
+                  - subject_id
+                  - purpose
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateConsentRecord
+      summary: Update consent record
+      description: Withdraw or extend a consent grant.
+      tags:
+        - Consent Management
+      parameters:
+        - name: consent_id
+          in: path
+          required: true
+          description: Unique consent id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update consent record request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    status:
+                      type: string
+                      enum:
+                        - withdrawn
+                    withdrawal_reason:
+                      type: string
+              required:
+                - status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  consent_id:
+                    type: string
+                    description: "Consent record identifier"
+                    format: uuid
+                    readOnly: true
+                  subject_id:
+                    type: string
+                    description: "Data subject identifier"
+                  purpose:
+                    type: string
+                    description: "Processing purpose"
+                    example: "marketing_communications"
+                  legal_basis:
+                    type: string
+                    description: "GDPR lawful basis"
+                    enum:
+                      - consent
+                      - contract
+                      - legal_obligation
+                      - vital_interest
+                      - public_interest
+                      - legitimate_interest
+                  status:
+                    type: string
+                    description: "Current consent status"
+                    enum:
+                      - granted
+                      - withdrawn
+                      - expired
+                  granted_at:
+                    type: string
+                    format: date-time
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  channel:
+                    type: string
+                    description: "Channel where consent was collected"
+                    enum:
+                      - web
+                      - mobile
+                      - branch
+                      - phone
+                      - api
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /consent/validate:
+    post:
+      operationId: validateConsent
+      summary: Validate consent
+      description: >-
+        Check whether valid consent exists for a specific subject and processing purpose. Returns the
+        applicable consent record or indicates no valid consent.
+      tags:
+        - Consent Management
+      requestBody:
+        required: true
+        description: Validate consent request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    subject_id:
+                      type: string
+                    purpose:
+                      type: string
+                    processing_context:
+                      type: string
+                      description: "Additional context for validation"
+              required:
+                - subject_id
+                - purpose
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_valid:
+                    type: boolean
+                    description: "Whether valid consent exists"
+                  consent_id:
+                    type: string
+                    format: uuid
+                    nullable: true
+                  legal_basis:
+                    type: string
+                    nullable: true
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                required:
+                  - is_valid
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /anonymization/jobs:
+    get:
+      operationId: listAnonymizationJobs
+      summary: List anonymization jobs
+      description: >-
+        Retrieve anonymization jobs with status, technique, and privacy budget consumption.
+      tags:
+        - Anonymization
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        job_id:
+                          type: string
+                          description: "Anonymization job identifier"
+                          format: uuid
+                          readOnly: true
+                        dataset_id:
+                          type: string
+                          description: "Target dataset"
+                          format: uuid
+                        technique:
+                          type: string
+                          description: "Anonymization technique applied"
+                          enum:
+                            - k_anonymity
+                            - l_diversity
+                            - t_closeness
+                            - differential_privacy
+                            - pseudonymization
+                            - tokenization
+                        status:
+                          type: string
+                          description: "Job execution status"
+                          enum:
+                            - queued
+                            - running
+                            - completed
+                            - failed
+                        records_processed:
+                          type: integer
+                        privacy_budget_consumed:
+                          type: number
+                          description: "Epsilon consumed (differential privacy)"
+                          format: double
+                        started_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - job_id
+                        - dataset_id
+                        - technique
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createAnonymizationJob
+      summary: Create anonymization job
+      description: >-
+        Submit a new data anonymization job targeting a specific dataset with the selected privacy-
+        preserving technique.
+      tags:
+        - Anonymization
+      requestBody:
+        required: true
+        description: Create anonymization job request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    dataset_id:
+                      type: string
+                      format: uuid
+                    technique:
+                      type: string
+                      enum:
+                        - k_anonymity
+                        - l_diversity
+                        - t_closeness
+                        - differential_privacy
+                        - pseudonymization
+                        - tokenization
+                    parameters:
+                      type: object
+                      description: "Technique-specific parameters (k value, epsilon, etc.)"
+                    columns:
+                      type: array
+                      description: "Columns to anonymize"
+                      items:
+                        type: string
+              required:
+                - dataset_id
+                - technique
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    description: "Anonymization job identifier"
+                    format: uuid
+                    readOnly: true
+                  dataset_id:
+                    type: string
+                    description: "Target dataset"
+                    format: uuid
+                  technique:
+                    type: string
+                    description: "Anonymization technique applied"
+                    enum:
+                      - k_anonymity
+                      - l_diversity
+                      - t_closeness
+                      - differential_privacy
+                      - pseudonymization
+                      - tokenization
+                  status:
+                    type: string
+                    description: "Job execution status"
+                    enum:
+                      - queued
+                      - running
+                      - completed
+                      - failed
+                  records_processed:
+                    type: integer
+                  privacy_budget_consumed:
+                    type: number
+                    description: "Epsilon consumed (differential privacy)"
+                    format: double
+                  started_at:
+                    type: string
+                    format: date-time
+                required:
+                  - job_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /anonymization/jobs/{job_id}:
+    get:
+      operationId: getAnonymizationJob
+      summary: Get anonymization job
+      description: Retrieve anonymization job details with processing progress and quality metrics.
+      tags:
+        - Anonymization
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Unique job id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    description: "Anonymization job identifier"
+                    format: uuid
+                    readOnly: true
+                  dataset_id:
+                    type: string
+                    description: "Target dataset"
+                    format: uuid
+                  technique:
+                    type: string
+                    description: "Anonymization technique applied"
+                    enum:
+                      - k_anonymity
+                      - l_diversity
+                      - t_closeness
+                      - differential_privacy
+                      - pseudonymization
+                      - tokenization
+                  status:
+                    type: string
+                    description: "Job execution status"
+                    enum:
+                      - queued
+                      - running
+                      - completed
+                      - failed
+                  records_processed:
+                    type: integer
+                  privacy_budget_consumed:
+                    type: number
+                    description: "Epsilon consumed (differential privacy)"
+                    format: double
+                  started_at:
+                    type: string
+                    format: date-time
+                required:
+                  - job_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /anonymization/jobs/{job_id}/status:
+    get:
+      operationId: getAnonymizationJobStatus
+      summary: Get anonymization job status
+      description: Poll the execution status and progress of an anonymization job.
+      tags:
+        - Anonymization
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Unique job id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - queued
+                      - running
+                      - completed
+                      - failed
+                  progress_percent:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                  records_processed:
+                    type: integer
+                  estimated_completion:
+                    type: string
+                    format: date-time
+                    nullable: true
+                required:
+                  - job_id
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /pii/scan:
+    post:
+      operationId: scanForPII
+      summary: Scan dataset for PII
+      description: >-
+        Initiate a PII detection scan against a dataset. Uses pattern matching, NER, and statistical
+        analysis to identify sensitive columns.
+      tags:
+        - PII Detection
+      requestBody:
+        required: true
+        description: Scan dataset for PII request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    dataset_id:
+                      type: string
+                      format: uuid
+                    scan_depth:
+                      type: string
+                      description: "Scan depth — sample analyzes 10k rows, full scans everything"
+                      enum:
+                        - sample
+                        - full
+                    pii_categories:
+                      type: array
+                      description: "PII categories to detect (omit for all)"
+                      items:
+                        type: string
+              required:
+                - dataset_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    format: uuid
+                  scan_status:
+                    type: string
+                  estimated_duration_minutes:
+                    type: integer
+                required:
+                  - report_id
+                  - scan_status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /pii/reports:
+    get:
+      operationId: listPIIReports
+      summary: List PII scan reports
+      description: >-
+        Retrieve PII scan reports with risk scores, detected PII types, and affected column counts.
+      tags:
+        - PII Detection
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        report_id:
+                          type: string
+                          description: "PII scan report identifier"
+                          format: uuid
+                          readOnly: true
+                        dataset_id:
+                          type: string
+                          format: uuid
+                        scan_status:
+                          type: string
+                          enum:
+                            - running
+                            - completed
+                            - failed
+                        pii_types_found:
+                          type: array
+                          description: "PII categories detected (SSN, email, phone, etc.)"
+                          items:
+                            type: string
+                        total_pii_columns:
+                          type: integer
+                          description: "Number of columns containing PII"
+                        total_pii_records:
+                          type: integer
+                          description: "Approximate record count with PII"
+                        risk_score:
+                          type: number
+                          description: "Composite PII risk score (0-100)"
+                          format: double
+                        scanned_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - report_id
+                        - dataset_id
+                        - scan_status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /pii/reports/{report_id}:
+    get:
+      operationId: getPIIReport
+      summary: Get PII scan report
+      description: >-
+        Retrieve detailed PII scan results including column-level findings, sample matches, and remediation
+        recommendations.
+      tags:
+        - PII Detection
+      parameters:
+        - name: report_id
+          in: path
+          required: true
+          description: Unique report id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    description: "PII scan report identifier"
+                    format: uuid
+                    readOnly: true
+                  dataset_id:
+                    type: string
+                    format: uuid
+                  scan_status:
+                    type: string
+                    enum:
+                      - running
+                      - completed
+                      - failed
+                  pii_types_found:
+                    type: array
+                    description: "PII categories detected (SSN, email, phone, etc.)"
+                    items:
+                      type: string
+                  total_pii_columns:
+                    type: integer
+                    description: "Number of columns containing PII"
+                  total_pii_records:
+                    type: integer
+                    description: "Approximate record count with PII"
+                  risk_score:
+                    type: number
+                    description: "Composite PII risk score (0-100)"
+                    format: double
+                  scanned_at:
+                    type: string
+                    format: date-time
+                required:
+                  - report_id
+                  - dataset_id
+                  - scan_status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /retention/policies:
+    get:
+      operationId: listRetentionPolicies
+      summary: List retention policies
+      description: Retrieve data retention policies with regulatory basis and expiry actions.
+      tags:
+        - Retention Policies
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        policy_id:
+                          type: string
+                          description: "Retention policy identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Policy name"
+                          example: "Transaction Records 7yr"
+                        data_category:
+                          type: string
+                          description: "Data category covered"
+                          example: "financial_transactions"
+                        retention_period_days:
+                          type: integer
+                          description: "Retention period in days"
+                          example: 2555
+                        action_on_expiry:
+                          type: string
+                          description: "Action when retention expires"
+                          enum:
+                            - delete
+                            - archive
+                            - anonymize
+                        regulation:
+                          type: string
+                          description: "Regulatory basis"
+                          example: "SOX"
+                        is_active:
+                          type: boolean
+                      required:
+                        - policy_id
+                        - name
+                        - data_category
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createRetentionPolicy
+      summary: Create retention policy
+      description: >-
+        Define a new data retention policy specifying the data category, retention period, regulatory basis,
+        and action on expiry.
+      tags:
+        - Retention Policies
+      requestBody:
+        required: true
+        description: Create retention policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                    data_category:
+                      type: string
+                    retention_period_days:
+                      type: integer
+                    action_on_expiry:
+                      type: string
+                      enum:
+                        - delete
+                        - archive
+                        - anonymize
+                    regulation:
+                      type: string
+                      description: "Regulatory basis (SOX, GDPR, CCPA, etc.)"
+              required:
+                - name
+                - data_category
+                - retention_period_days
+                - action_on_expiry
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "Retention policy identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Policy name"
+                    example: "Transaction Records 7yr"
+                  data_category:
+                    type: string
+                    description: "Data category covered"
+                    example: "financial_transactions"
+                  retention_period_days:
+                    type: integer
+                    description: "Retention period in days"
+                    example: 2555
+                  action_on_expiry:
+                    type: string
+                    description: "Action when retention expires"
+                    enum:
+                      - delete
+                      - archive
+                      - anonymize
+                  regulation:
+                    type: string
+                    description: "Regulatory basis"
+                    example: "SOX"
+                  is_active:
+                    type: boolean
+                required:
+                  - policy_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /retention/policies/{policy_id}:
+    get:
+      operationId: getRetentionPolicy
+      summary: Get retention policy
+      description: >-
+        Retrieve retention policy details with enforcement statistics and next scheduled evaluation.
+      tags:
+        - Retention Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "Retention policy identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Policy name"
+                    example: "Transaction Records 7yr"
+                  data_category:
+                    type: string
+                    description: "Data category covered"
+                    example: "financial_transactions"
+                  retention_period_days:
+                    type: integer
+                    description: "Retention period in days"
+                    example: 2555
+                  action_on_expiry:
+                    type: string
+                    description: "Action when retention expires"
+                    enum:
+                      - delete
+                      - archive
+                      - anonymize
+                  regulation:
+                    type: string
+                    description: "Regulatory basis"
+                    example: "SOX"
+                  is_active:
+                    type: boolean
+                required:
+                  - policy_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateRetentionPolicy
+      summary: Update retention policy
+      description: Modify retention period, expiry action, or activate/deactivate the policy.
+      tags:
+        - Retention Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update retention policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    retention_period_days:
+                      type: integer
+                    action_on_expiry:
+                      type: string
+                      enum:
+                        - delete
+                        - archive
+                        - anonymize
+                    is_active:
+                      type: boolean
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    description: "Retention policy identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Policy name"
+                    example: "Transaction Records 7yr"
+                  data_category:
+                    type: string
+                    description: "Data category covered"
+                    example: "financial_transactions"
+                  retention_period_days:
+                    type: integer
+                    description: "Retention period in days"
+                    example: 2555
+                  action_on_expiry:
+                    type: string
+                    description: "Action when retention expires"
+                    enum:
+                      - delete
+                      - archive
+                      - anonymize
+                  regulation:
+                    type: string
+                    description: "Regulatory basis"
+                    example: "SOX"
+                  is_active:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /retention/policies/{policy_id}/apply:
+    post:
+      operationId: applyRetentionPolicy
+      summary: Apply retention policy
+      description: >-
+        Manually trigger retention policy evaluation and enforcement against all datasets matching the
+        policy scope.
+      tags:
+        - Retention Policies
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          description: Unique policy id
+          schema:
+            type: "string"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  execution_id:
+                    type: string
+                    format: uuid
+                  datasets_evaluated:
+                    type: integer
+                  records_affected:
+                    type: integer
+                  status:
+                    type: string
+                    enum:
+                      - running
+                      - completed
+                required:
+                  - execution_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /dsr/{request_id}/audit-trail:
+    get:
+      operationId: getDSRAuditTrail
+      summary: Get DSR audit trail
+      description: >-
+        Retrieve the complete audit trail for a data subject request including all status transitions,
+        system interactions, and compliance evidence.
+      tags:
+        - Data Subject Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: Unique request id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                  events:
+                    type: array
+                    description: "Audit events with timestamp, actor, action, and system"
+                    items:
+                      type: object
+                  total_events:
+                    type: integer
+                  compliance_evidence_url:
+                    type: string
+                    description: "Link to downloadable compliance evidence package"
+                    nullable: true
+                required:
+                  - request_id
+                  - events
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

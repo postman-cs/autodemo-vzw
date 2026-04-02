@@ -1,0 +1,1646 @@
+openapi: 3.0.3
+info:
+  title: VZW Location Routing API
+  description: >-
+    Provides dispatch-grade geospatial capabilities for Verizon field operations, including address
+    normalization, forward and reverse geocoding, traffic-aware route computation, rerouting around
+    live hazards, corridor closure visibility, and cellular dead-zone overlays. Responses include
+    operational confidence metadata to support automated routing decisions in urban and suburban
+    service areas.
+  version: 1.0.0
+  contact:
+    name: Verizon Network Platform API Support
+    email: location-routing-api@verizon.com
+    url: https://developer.verizon.com/support
+  license:
+    name: Proprietary
+    url: https://www.verizon.com/business/terms/api-services
+  x-verizon-catalog-id: vzw-location-routing-api
+  x-verizon-domain: location
+servers:
+  - url: https://vzw-location-routing-api.api.verizon.com/v1
+    description: Production
+  - url: https://vzw-location-routing-api.staging.verizon.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+    VerizonApiKey: []
+tags:
+  - name: Geocoding
+    description: Address and coordinate normalization endpoints for dispatch intake
+  - name: Routing
+    description: Route planning and rerouting endpoints for field units
+  - name: Traffic
+    description: Incident and closure feeds affecting travel corridors
+  - name: Coverage
+    description: Cellular dead-zone overlays for dispatch planning
+paths:
+  /geocode:forward:
+    post:
+      operationId: geocodeForward
+      summary: Convert civic address to coordinates
+      description: >-
+        Normalizes a submitted civic address and resolves it to latitude/longitude with rooftop,
+        parcel, or interpolated confidence. Includes canonical street components, geospatial
+        precision metadata, and confidence factors for use in downstream dispatch routing.
+      tags:
+        - Geocoding
+      requestBody:
+        required: true
+        description: Forward geocode request payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForwardGeocodeRequest'
+            examples:
+              sfMission:
+                summary: Mission District service address
+                value:
+                  query:
+                    address_line1: 1001 Potrero Ave
+                    city: San Francisco
+                    state: CA
+                    postal_code: '94110'
+                    country_code: US
+                  options:
+                    include_entrances: true
+                    max_candidates: 3
+                    language: en-US
+      responses:
+        '200':
+          description: Address geocoded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForwardGeocodeResponse'
+              examples:
+                rooftopMatch:
+                  summary: Rooftop confidence match
+                  value:
+                    request_id: 9bd22cc0-b31e-441b-b4bc-e2f1ce5049c6
+                    normalized_query:
+                      address_line1: 1001 Potrero Ave
+                      city: San Francisco
+                      state: CA
+                      postal_code: '94110'
+                      country_code: US
+                    candidates:
+                      - location:
+                          latitude: 37.756321
+                          longitude: -122.406912
+                        match_type: ROOFTOP
+                        confidence_score: 0.98
+                        geohash: 9q8yyk8x3
+                        normalized_address:
+                          address_line1: 1001 Potrero Avenue
+                          city: San Francisco
+                          state: CA
+                          postal_code: '94110'
+                          country_code: US
+                        entrance_points:
+                          - label: Front Entrance
+                            latitude: 37.756337
+                            longitude: -122.406854
+                            access_type: PEDESTRIAN
+                    trace_id: 8aa94fe5-7be2-4c7c-b1eb-109f4f9a9968
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /geocode:reverse:
+    post:
+      operationId: geocodeReverse
+      summary: Convert coordinates to civic address
+      description: >-
+        Resolves latitude/longitude coordinates to the most likely civic address and dispatch
+        jurisdiction details, including PSAP district, locality, and nearest street segment.
+        Intended for device-originated coordinates from field telemetry and emergency workflows.
+      tags:
+        - Geocoding
+      requestBody:
+        required: true
+        description: Reverse geocode request payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReverseGeocodeRequest'
+            examples:
+              somaCoordinate:
+                summary: South of Market coordinate
+                value:
+                  coordinate:
+                    latitude: 37.7809
+                    longitude: -122.3997
+                  options:
+                    include_psap: true
+                    search_radius_meters: 50
+                    language: en-US
+      responses:
+        '200':
+          description: Coordinate reverse geocoded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReverseGeocodeResponse'
+              examples:
+                civicResult:
+                  summary: Civic and PSAP mapping result
+                  value:
+                    request_id: a4cc8f0b-12de-4c71-94d7-2a47fb2baec0
+                    coordinate:
+                      latitude: 37.7809
+                      longitude: -122.3997
+                    result:
+                      normalized_address:
+                        address_line1: 425 Mission Street
+                        city: San Francisco
+                        state: CA
+                        postal_code: '94105'
+                        country_code: US
+                      locality:
+                        county: San Francisco
+                        neighborhood: Yerba Buena
+                        census_tract: '06075061500'
+                      psap:
+                        district_id: SF-PSAP-02
+                        district_name: San Francisco Central Dispatch
+                        emergency_service_zone: ESZ-14
+                      road_context:
+                        nearest_road_name: Mission Street
+                        road_class: ARTERIAL
+                        offset_meters: 8.4
+                      confidence_score: 0.95
+                    trace_id: 1e6535e9-a5f4-4df6-b44e-c17e5cd750f0
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /routes:compute:
+    post:
+      operationId: computeRoute
+      summary: Compute traffic-aware multi-stop route
+      description: >-
+        Computes an optimized route across one or more stops for a field unit, incorporating
+        real-time traffic conditions, departure windows, optional waypoint constraints, and road
+        restrictions such as hazmat, bridge clearance, and toll avoidance policies.
+      tags:
+        - Routing
+      requestBody:
+        required: true
+        description: Route computation request payload
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteComputeRequest'
+            examples:
+              serviceCircuit:
+                summary: Three-stop service route across San Francisco
+                value:
+                  vehicle:
+                    profile: VAN
+                    height_meters: 2.6
+                    weight_kg: 3400
+                    hazardous_material_code: NONE
+                  traffic_model: BEST_GUESS
+                  departure_time: '2026-03-27T15:30:00Z'
+                  road_restrictions:
+                    avoid_tolls: false
+                    avoid_ferries: true
+                    avoid_tunnels: false
+                  stops:
+                    - stop_id: origin
+                      kind: ORIGIN
+                      coordinate:
+                        latitude: 37.7749
+                        longitude: -122.4194
+                    - stop_id: site-a
+                      kind: WAYPOINT
+                      coordinate:
+                        latitude: 37.7563
+                        longitude: -122.4069
+                      service_window:
+                        start_time: '2026-03-27T16:00:00Z'
+                        end_time: '2026-03-27T16:30:00Z'
+                    - stop_id: destination
+                      kind: DESTINATION
+                      coordinate:
+                        latitude: 37.7925
+                        longitude: -122.3936
+      responses:
+        '200':
+          description: Route computed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteComputeResponse'
+              examples:
+                routePlan:
+                  summary: Computed route with ETAs and geometry
+                  value:
+                    route_id: rte_01HTYQM1M19S2M7P5Y6NHJ9K3B
+                    request_id: f954f6ca-d7f8-4fc8-a57a-c1f45cecf77a
+                    status: READY
+                    summary:
+                      total_distance_meters: 11543
+                      total_duration_seconds: 1642
+                      total_delay_seconds: 218
+                      traffic_model_applied: BEST_GUESS
+                    legs:
+                      - leg_id: leg-1
+                        from_stop_id: origin
+                        to_stop_id: site-a
+                        distance_meters: 3210
+                        duration_seconds: 602
+                        eta: '2026-03-27T15:40:02Z'
+                      - leg_id: leg-2
+                        from_stop_id: site-a
+                        to_stop_id: destination
+                        distance_meters: 8333
+                        duration_seconds: 1040
+                        eta: '2026-03-27T16:17:22Z'
+                    geometry:
+                      encoding: polyline6
+                      polyline: y`qeF~cejVvAaEdAkCb@wA?Wm@qAGMQ?s@hAeE
+                    advisories:
+                      - type: TRAFFIC_CONGESTION
+                        severity: MEDIUM
+                        message: Heavy slowdown near US-101 northbound on-ramp
+                        affected_leg_ids:
+                          - leg-2
+                    trace_id: b1a62789-f77d-4137-a4e1-f056a41b0670
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /routes/{routeId}:reroute:
+    post:
+      operationId: rerouteRoute
+      summary: Recompute route around hazards and closures
+      description: >-
+        Recomputes an existing route to avoid newly detected closures, hazard polygons, or tactical
+        avoidance areas. Supports selective lock of previously visited stops and preserves service
+        windows where feasible.
+      tags:
+        - Routing
+      parameters:
+        - $ref: '#/components/parameters/RouteId'
+      requestBody:
+        required: true
+        description: Reroute request payload with avoidance constraints
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerouteRequest'
+            examples:
+              closureAvoidance:
+                summary: Reroute around downtown closure polygon
+                value:
+                  reason: ROAD_CLOSURE
+                  preserve_completed_legs: true
+                  traffic_model: PESSIMISTIC
+                  avoid_polygons:
+                    - polygon_id: hz_94c2
+                      source: CITY_FEED
+                      vertices:
+                        - latitude: 37.7901
+                          longitude: -122.4016
+                        - latitude: 37.7891
+                          longitude: -122.3969
+                        - latitude: 37.7862
+                          longitude: -122.3984
+                        - latitude: 37.7870
+                          longitude: -122.4028
+                  additional_restrictions:
+                    avoid_tunnels: true
+                    avoid_tolls: false
+      responses:
+        '200':
+          description: Reroute computed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RerouteResponse'
+              examples:
+                reroutedPlan:
+                  summary: Updated route with delta metrics
+                  value:
+                    route_id: rte_01HTYQM1M19S2M7P5Y6NHJ9K3B
+                    reroute_id: rr_01HTYQNBXSN0K7XYN2NNH9A0Y9
+                    status: READY
+                    delta:
+                      added_distance_meters: 1208
+                      added_duration_seconds: 274
+                      dropped_legs:
+                        - leg-2
+                      new_legs:
+                        - leg-2b
+                    route:
+                      summary:
+                        total_distance_meters: 12751
+                        total_duration_seconds: 1916
+                        total_delay_seconds: 332
+                        traffic_model_applied: PESSIMISTIC
+                      legs:
+                        - leg_id: leg-2b
+                          from_stop_id: site-a
+                          to_stop_id: destination
+                          distance_meters: 9541
+                          duration_seconds: 1314
+                          eta: '2026-03-27T16:21:56Z'
+                      geometry:
+                        encoding: polyline6
+                        polyline: i|reFj}ejVk@vAoDlGiFzHeBxBq@`Ai@v@a@f@kB~B
+                    trace_id: d4bc7e91-8c45-4959-b420-0462df465d95
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /traffic/incidents:
+    get:
+      operationId: listTrafficIncidents
+      summary: List active traffic incidents and closures
+      description: >-
+        Returns active and recently cleared incidents that may impact dispatch corridors, including
+        closures, severe congestion, construction zones, and hazard advisories. Consumers may filter
+        by bounding box, corridor identifier, severity, and event type.
+      tags:
+        - Traffic
+      parameters:
+        - $ref: '#/components/parameters/Bbox'
+        - $ref: '#/components/parameters/CorridorId'
+        - $ref: '#/components/parameters/IncidentSeverity'
+        - $ref: '#/components/parameters/IncidentType'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Active incidents returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficIncidentsResponse'
+              examples:
+                downtownIncidents:
+                  summary: Incidents near downtown dispatch corridor
+                  value:
+                    request_id: 2a8d87e2-3d9b-4d8f-8c5d-6155b7f8f2a2
+                    incidents:
+                      - incident_id: inc_84792
+                        type: ROAD_CLOSURE
+                        severity: HIGH
+                        status: ACTIVE
+                        description: Market Street closed between 5th St and 7th St
+                        start_time: '2026-03-27T14:05:00Z'
+                        expected_end_time: '2026-03-27T21:00:00Z'
+                        geometry:
+                          geometry_type: LINESTRING
+                          coordinates:
+                            - latitude: 37.7839
+                              longitude: -122.4089
+                            - latitude: 37.7822
+                              longitude: -122.4108
+                        affected_corridors:
+                          - corridor-sf-central-01
+                      - incident_id: inc_84795
+                        type: CONGESTION
+                        severity: MEDIUM
+                        status: ACTIVE
+                        description: Slow traffic approaching Bay Bridge on-ramp
+                        start_time: '2026-03-27T14:15:00Z'
+                        geometry:
+                          geometry_type: POINT
+                          coordinates:
+                            - latitude: 37.7899
+                              longitude: -122.3912
+                    next_page_token: eyJvZmZzZXQiOjJ9
+                    trace_id: 4e22f82c-4e0f-4e8b-8397-34971039036c
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /coverage/deadzones:
+    get:
+      operationId: listCoverageDeadzones
+      summary: List cellular dead-zone polygons
+      description: >-
+        Returns dead-zone polygons for specified carrier and radio access technology (RAT), with
+        confidence and last-observed telemetry windows. Intended for pre-dispatch checks where
+        communication resilience is required.
+      tags:
+        - Coverage
+      parameters:
+        - $ref: '#/components/parameters/Bbox'
+        - $ref: '#/components/parameters/Carrier'
+        - $ref: '#/components/parameters/Rat'
+        - $ref: '#/components/parameters/MinimumConfidence'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+      responses:
+        '200':
+          description: Dead-zone polygons returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeadzoneCoverageResponse'
+              examples:
+                downtown5gDeadzones:
+                  summary: 5G dead-zones in San Francisco downtown area
+                  value:
+                    request_id: 5f3ba0e8-fdb5-48cc-a6f8-dfb1c30f4f3d
+                    deadzones:
+                      - deadzone_id: dz_100221
+                        carrier: VERIZON
+                        rat: NR_5G
+                        confidence_score: 0.89
+                        observed_window:
+                          start_time: '2026-03-20T00:00:00Z'
+                          end_time: '2026-03-27T00:00:00Z'
+                        polygon:
+                          vertices:
+                            - latitude: 37.7914
+                              longitude: -122.3975
+                            - latitude: 37.7908
+                              longitude: -122.3946
+                            - latitude: 37.7889
+                              longitude: -122.3953
+                            - latitude: 37.7895
+                              longitude: -122.3982
+                        notes:
+                          - Significant packet loss observed during peak hours
+                    next_page_token: eyJvZmZzZXQiOjF9
+                    trace_id: 8adf5cdc-03c8-40e2-94ab-1f8c7ddc355e
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          $ref: '#/components/responses/409'
+        '422':
+          $ref: '#/components/responses/422'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: OAuth2 access token for Verizon partner APIs
+    VerizonApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API key issued per partner workspace
+  parameters:
+    RouteId:
+      name: routeId
+      in: path
+      required: true
+      description: Unique route identifier returned by routes:compute
+      schema:
+        type: string
+        pattern: '^rte_[A-Za-z0-9]{26}$'
+      example: rte_01HTYQM1M19S2M7P5Y6NHJ9K3B
+    Bbox:
+      name: bbox
+      in: query
+      required: false
+      description: >-
+        Geographic bounding box in minLon,minLat,maxLon,maxLat format. Example encloses central
+        San Francisco.
+      schema:
+        type: string
+        pattern: '^-?\d{1,3}\.\d+,-?\d{1,2}\.\d+,-?\d{1,3}\.\d+,-?\d{1,2}\.\d+$'
+      example: -122.5233,37.6975,-122.3551,37.8324
+    CorridorId:
+      name: corridor_id
+      in: query
+      required: false
+      description: Optional dispatch corridor identifier for scoped incident lookup
+      schema:
+        type: string
+        maxLength: 64
+      example: corridor-sf-central-01
+    IncidentSeverity:
+      name: severity
+      in: query
+      required: false
+      description: Minimum incident severity to include
+      schema:
+        $ref: '#/components/schemas/IncidentSeverity'
+    IncidentType:
+      name: incident_type
+      in: query
+      required: false
+      description: Incident type filter
+      schema:
+        $ref: '#/components/schemas/IncidentType'
+    Carrier:
+      name: carrier
+      in: query
+      required: false
+      description: Carrier filter for dead-zone retrieval
+      schema:
+        $ref: '#/components/schemas/Carrier'
+    Rat:
+      name: rat
+      in: query
+      required: false
+      description: Radio access technology filter
+      schema:
+        $ref: '#/components/schemas/Rat'
+    MinimumConfidence:
+      name: min_confidence
+      in: query
+      required: false
+      description: Minimum confidence score for returned dead-zones
+      schema:
+        type: number
+        format: float
+        minimum: 0
+        maximum: 1
+      example: 0.75
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Number of records returned per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+      example: 50
+    PageToken:
+      name: page_token
+      in: query
+      required: false
+      description: Continuation token from a previous paginated response
+      schema:
+        type: string
+      example: eyJvZmZzZXQiOjUwfQ==
+  responses:
+    '400':
+      description: Bad request due to malformed syntax or invalid parameter combinations
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            malformedRequest:
+              value:
+                error:
+                  code: BAD_REQUEST
+                  message: Invalid bbox format. Expected minLon,minLat,maxLon,maxLat
+                  details:
+                    - field: bbox
+                      issue: invalid_format
+                trace_id: c5dbf66d-b6f2-47e6-8f17-ec36f5b0da2e
+    '401':
+      description: Authentication failed or bearer token is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidToken:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Access token is missing, expired, or invalid
+                trace_id: 362ec73d-02cf-4fd5-b8b0-c1f88d7ec560
+    '403':
+      description: Authenticated caller lacks required permissions for requested operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            accessDenied:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: Caller is not authorized to access this partner catalog capability
+                trace_id: a8504d7a-595e-4b72-b313-047e4f3f7964
+    '404':
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            routeMissing:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Route with id rte_01HTYQM1M19S2M7P5Y6NHJ9K3B was not found
+                trace_id: d0fef2ec-90ab-42c4-8f47-19f78a695fa8
+    '409':
+      description: Conflict with current route or geocode processing state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            staleRouteVersion:
+              value:
+                error:
+                  code: CONFLICT
+                  message: Route cannot be rerouted because it has already been superseded
+                  details:
+                    - field: route_id
+                      issue: stale_version
+                trace_id: 5846d2d4-bf52-4392-a85f-954293ceab62
+    '422':
+      description: Semantically invalid request payload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidCoordinate:
+              value:
+                error:
+                  code: UNPROCESSABLE_ENTITY
+                  message: Latitude must be between -90 and 90
+                  details:
+                    - field: coordinate.latitude
+                      issue: out_of_range
+                trace_id: 64dd7398-c034-4897-8de7-76884a9afbc2
+    '429':
+      description: Too many requests, caller has exceeded configured rate limit
+      headers:
+        Retry-After:
+          description: Seconds until the client may retry
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            rateLimited:
+              value:
+                error:
+                  code: RATE_LIMIT_EXCEEDED
+                  message: Request quota exceeded for this tenant
+                trace_id: 55ea2933-76c2-4cc8-8435-1190238e8c9f
+    '500':
+      description: Internal server error while processing request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unexpected:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: Unexpected error occurred while processing routing request
+                trace_id: d4d459d7-55af-4c1f-8cd5-0fca5ca8af2f
+  schemas:
+    ForwardGeocodeRequest:
+      type: object
+      description: Request payload for forward geocoding
+      properties:
+        query:
+          $ref: '#/components/schemas/PostalAddress'
+        options:
+          $ref: '#/components/schemas/ForwardGeocodeOptions'
+      required:
+        - query
+    ReverseGeocodeRequest:
+      type: object
+      description: Request payload for reverse geocoding
+      properties:
+        coordinate:
+          $ref: '#/components/schemas/Coordinate'
+        options:
+          $ref: '#/components/schemas/ReverseGeocodeOptions'
+      required:
+        - coordinate
+    RouteComputeRequest:
+      type: object
+      description: Payload for multi-stop route planning
+      properties:
+        vehicle:
+          $ref: '#/components/schemas/VehicleProfile'
+        traffic_model:
+          $ref: '#/components/schemas/TrafficModel'
+        departure_time:
+          type: string
+          format: date-time
+          description: Desired departure time for ETA modeling
+          example: '2026-03-27T15:30:00Z'
+        road_restrictions:
+          $ref: '#/components/schemas/RoadRestrictions'
+        stops:
+          type: array
+          minItems: 2
+          description: Ordered list of origin, waypoint, and destination stops
+          items:
+            $ref: '#/components/schemas/RouteStop'
+      required:
+        - traffic_model
+        - stops
+    RerouteRequest:
+      type: object
+      description: Payload for recomputing an existing route with constraints
+      properties:
+        reason:
+          type: string
+          enum:
+            - ROAD_CLOSURE
+            - HAZARD_POLYGON
+            - WEATHER_IMPACT
+            - OPERATOR_OVERRIDE
+          description: Reason for reroute operation
+          example: ROAD_CLOSURE
+        preserve_completed_legs:
+          type: boolean
+          default: true
+          description: Preserve completed route segments and recalculate remaining legs only
+        traffic_model:
+          $ref: '#/components/schemas/TrafficModel'
+        avoid_polygons:
+          type: array
+          description: Hazard or closure polygons to avoid
+          items:
+            $ref: '#/components/schemas/AvoidPolygon'
+        additional_restrictions:
+          $ref: '#/components/schemas/RoadRestrictions'
+      required:
+        - reason
+    ForwardGeocodeResponse:
+      type: object
+      description: Forward geocode response with candidate matches
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Request correlation identifier
+        normalized_query:
+          $ref: '#/components/schemas/PostalAddress'
+        candidates:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/GeocodeCandidate'
+        trace_id:
+          type: string
+          format: uuid
+          description: Distributed trace identifier
+      required:
+        - request_id
+        - candidates
+        - trace_id
+    ReverseGeocodeResponse:
+      type: object
+      description: Reverse geocode response with civic and dispatch context
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        coordinate:
+          $ref: '#/components/schemas/Coordinate'
+        result:
+          $ref: '#/components/schemas/ReverseGeocodeResult'
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - request_id
+        - result
+        - trace_id
+    RouteComputeResponse:
+      type: object
+      description: Computed route with ETA and geometry information
+      properties:
+        route_id:
+          type: string
+          pattern: '^rte_[A-Za-z0-9]{26}$'
+        request_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/RouteStatus'
+        summary:
+          $ref: '#/components/schemas/RouteSummary'
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteLeg'
+        geometry:
+          $ref: '#/components/schemas/RouteGeometry'
+        advisories:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteAdvisory'
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - route_id
+        - request_id
+        - status
+        - summary
+        - legs
+        - geometry
+        - trace_id
+    RerouteResponse:
+      type: object
+      description: Result of reroute operation
+      properties:
+        route_id:
+          type: string
+          pattern: '^rte_[A-Za-z0-9]{26}$'
+        reroute_id:
+          type: string
+          pattern: '^rr_[A-Za-z0-9]{26}$'
+        status:
+          $ref: '#/components/schemas/RouteStatus'
+        delta:
+          $ref: '#/components/schemas/RerouteDelta'
+        route:
+          type: object
+          properties:
+            summary:
+              $ref: '#/components/schemas/RouteSummary'
+            legs:
+              type: array
+              items:
+                $ref: '#/components/schemas/RouteLeg'
+            geometry:
+              $ref: '#/components/schemas/RouteGeometry'
+          required:
+            - summary
+            - legs
+            - geometry
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - route_id
+        - reroute_id
+        - status
+        - route
+        - trace_id
+    TrafficIncidentsResponse:
+      type: object
+      description: Paginated list of traffic incidents
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        incidents:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrafficIncident'
+        next_page_token:
+          type: string
+          description: Opaque token for retrieving next page
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - request_id
+        - incidents
+        - trace_id
+    DeadzoneCoverageResponse:
+      type: object
+      description: Paginated list of cellular dead-zone polygons
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        deadzones:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeadzonePolygon'
+        next_page_token:
+          type: string
+        trace_id:
+          type: string
+          format: uuid
+      required:
+        - request_id
+        - deadzones
+        - trace_id
+    PostalAddress:
+      type: object
+      description: Structured civic postal address
+      properties:
+        address_line1:
+          type: string
+          maxLength: 120
+          example: 1001 Potrero Ave
+        address_line2:
+          type: string
+          maxLength: 120
+          example: Suite 210
+        city:
+          type: string
+          maxLength: 80
+          example: San Francisco
+        state:
+          type: string
+          minLength: 2
+          maxLength: 3
+          example: CA
+        postal_code:
+          type: string
+          maxLength: 12
+          example: '94110'
+        country_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+          example: US
+      required:
+        - address_line1
+        - city
+        - state
+        - postal_code
+        - country_code
+    Coordinate:
+      type: object
+      description: Geographic coordinate in WGS84 decimal degrees
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 37.7749
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: -122.4194
+      required:
+        - latitude
+        - longitude
+    ForwardGeocodeOptions:
+      type: object
+      description: Optional controls for forward geocode behavior
+      properties:
+        include_entrances:
+          type: boolean
+          default: false
+          description: Include known building entrance points
+        max_candidates:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+          description: Maximum number of address candidates to return
+        language:
+          type: string
+          description: BCP-47 locale code for localized labels
+          example: en-US
+    ReverseGeocodeOptions:
+      type: object
+      description: Optional controls for reverse geocode behavior
+      properties:
+        include_psap:
+          type: boolean
+          default: true
+          description: Include PSAP and emergency service zone metadata
+        search_radius_meters:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 50
+          description: Maximum radius used to snap coordinates to known address points
+        language:
+          type: string
+          example: en-US
+    GeocodeCandidate:
+      type: object
+      description: Candidate result from a forward geocode query
+      properties:
+        location:
+          $ref: '#/components/schemas/Coordinate'
+        match_type:
+          type: string
+          enum:
+            - ROOFTOP
+            - PARCEL
+            - STREET_INTERPOLATED
+            - LOCALITY_CENTROID
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.98
+        geohash:
+          type: string
+          description: Geospatial hash for indexed lookup and proximity joins
+          example: 9q8yyk8x3
+        normalized_address:
+          $ref: '#/components/schemas/PostalAddress'
+        entrance_points:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntrancePoint'
+      required:
+        - location
+        - match_type
+        - confidence_score
+        - normalized_address
+    EntrancePoint:
+      type: object
+      description: Building or facility ingress point
+      properties:
+        label:
+          type: string
+          example: Front Entrance
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 37.756337
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: -122.406854
+        access_type:
+          type: string
+          enum:
+            - PEDESTRIAN
+            - VEHICLE
+            - SERVICE_BAY
+      required:
+        - latitude
+        - longitude
+        - access_type
+    ReverseGeocodeResult:
+      type: object
+      description: Reverse geocode result enriched with dispatch context
+      properties:
+        normalized_address:
+          $ref: '#/components/schemas/PostalAddress'
+        locality:
+          $ref: '#/components/schemas/LocalityContext'
+        psap:
+          $ref: '#/components/schemas/PsapContext'
+        road_context:
+          $ref: '#/components/schemas/RoadContext'
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+      required:
+        - normalized_address
+        - confidence_score
+    LocalityContext:
+      type: object
+      description: Local administrative metadata for coordinate
+      properties:
+        county:
+          type: string
+          example: San Francisco
+        neighborhood:
+          type: string
+          example: Yerba Buena
+        census_tract:
+          type: string
+          example: '06075061500'
+    PsapContext:
+      type: object
+      description: Public safety answering point metadata
+      properties:
+        district_id:
+          type: string
+          example: SF-PSAP-02
+        district_name:
+          type: string
+          example: San Francisco Central Dispatch
+        emergency_service_zone:
+          type: string
+          example: ESZ-14
+      required:
+        - district_id
+        - district_name
+    RoadContext:
+      type: object
+      description: Nearest road segment context to input coordinate
+      properties:
+        nearest_road_name:
+          type: string
+          example: Mission Street
+        road_class:
+          type: string
+          enum:
+            - LOCAL
+            - COLLECTOR
+            - ARTERIAL
+            - HIGHWAY
+        offset_meters:
+          type: number
+          format: float
+          minimum: 0
+          example: 8.4
+    VehicleProfile:
+      type: object
+      description: Vehicle properties and compliance dimensions
+      properties:
+        profile:
+          type: string
+          enum:
+            - CAR
+            - SUV
+            - VAN
+            - LIGHT_TRUCK
+            - HEAVY_TRUCK
+          example: VAN
+        height_meters:
+          type: number
+          format: float
+          minimum: 1
+          maximum: 6
+          example: 2.6
+        weight_kg:
+          type: number
+          format: float
+          minimum: 500
+          maximum: 60000
+          example: 3400
+        hazardous_material_code:
+          type: string
+          enum:
+            - NONE
+            - CLASS_2_GAS
+            - CLASS_3_FLAMMABLE
+            - CLASS_8_CORROSIVE
+          default: NONE
+    RoadRestrictions:
+      type: object
+      description: Routing restrictions and avoidance preferences
+      properties:
+        avoid_tolls:
+          type: boolean
+          default: false
+        avoid_ferries:
+          type: boolean
+          default: false
+        avoid_tunnels:
+          type: boolean
+          default: false
+        avoid_unpaved_roads:
+          type: boolean
+          default: false
+        max_bridge_height_meters:
+          type: number
+          format: float
+          minimum: 1
+          maximum: 10
+          description: Maximum bridge clearance accepted along route
+          example: 2.8
+    RouteStop:
+      type: object
+      description: A single stop in the route sequence
+      properties:
+        stop_id:
+          type: string
+          maxLength: 64
+          example: site-a
+        kind:
+          type: string
+          enum:
+            - ORIGIN
+            - WAYPOINT
+            - DESTINATION
+        coordinate:
+          $ref: '#/components/schemas/Coordinate'
+        service_window:
+          $ref: '#/components/schemas/ServiceWindow'
+      required:
+        - stop_id
+        - kind
+        - coordinate
+    ServiceWindow:
+      type: object
+      description: Permitted arrival window for service stop
+      properties:
+        start_time:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:00:00Z'
+        end_time:
+          type: string
+          format: date-time
+          example: '2026-03-27T16:30:00Z'
+      required:
+        - start_time
+        - end_time
+    RouteSummary:
+      type: object
+      description: Aggregate metrics for computed route
+      properties:
+        total_distance_meters:
+          type: integer
+          minimum: 0
+          example: 11543
+        total_duration_seconds:
+          type: integer
+          minimum: 0
+          example: 1642
+        total_delay_seconds:
+          type: integer
+          minimum: 0
+          example: 218
+        traffic_model_applied:
+          $ref: '#/components/schemas/TrafficModel'
+      required:
+        - total_distance_meters
+        - total_duration_seconds
+        - total_delay_seconds
+        - traffic_model_applied
+    RouteLeg:
+      type: object
+      description: Segment of route between two stops
+      properties:
+        leg_id:
+          type: string
+          example: leg-1
+        from_stop_id:
+          type: string
+          example: origin
+        to_stop_id:
+          type: string
+          example: site-a
+        distance_meters:
+          type: integer
+          minimum: 0
+          example: 3210
+        duration_seconds:
+          type: integer
+          minimum: 0
+          example: 602
+        eta:
+          type: string
+          format: date-time
+          example: '2026-03-27T15:40:02Z'
+      required:
+        - leg_id
+        - from_stop_id
+        - to_stop_id
+        - distance_meters
+        - duration_seconds
+        - eta
+    RouteGeometry:
+      type: object
+      description: Encoded route geometry
+      properties:
+        encoding:
+          type: string
+          enum:
+            - polyline5
+            - polyline6
+        polyline:
+          type: string
+          minLength: 8
+      required:
+        - encoding
+        - polyline
+    RouteAdvisory:
+      type: object
+      description: Advisory generated during route calculation
+      properties:
+        type:
+          type: string
+          enum:
+            - TRAFFIC_CONGESTION
+            - ROAD_CLOSURE
+            - WEATHER_WARNING
+            - LOW_COVERAGE
+        severity:
+          $ref: '#/components/schemas/IncidentSeverity'
+        message:
+          type: string
+          maxLength: 200
+        affected_leg_ids:
+          type: array
+          items:
+            type: string
+      required:
+        - type
+        - severity
+        - message
+    RerouteDelta:
+      type: object
+      description: Difference metrics between original and rerouted plans
+      properties:
+        added_distance_meters:
+          type: integer
+          minimum: 0
+          example: 1208
+        added_duration_seconds:
+          type: integer
+          minimum: 0
+          example: 274
+        dropped_legs:
+          type: array
+          items:
+            type: string
+        new_legs:
+          type: array
+          items:
+            type: string
+    AvoidPolygon:
+      type: object
+      description: Polygon region to avoid during reroute
+      properties:
+        polygon_id:
+          type: string
+          maxLength: 64
+          example: hz_94c2
+        source:
+          type: string
+          enum:
+            - CITY_FEED
+            - WEATHER_FEED
+            - OPERATOR_DEFINED
+        vertices:
+          type: array
+          minItems: 3
+          items:
+            $ref: '#/components/schemas/Coordinate'
+      required:
+        - polygon_id
+        - source
+        - vertices
+    TrafficIncident:
+      type: object
+      description: Traffic disruption event affecting route planning
+      properties:
+        incident_id:
+          type: string
+          example: inc_84792
+        type:
+          $ref: '#/components/schemas/IncidentType'
+        severity:
+          $ref: '#/components/schemas/IncidentSeverity'
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - CLEARED
+            - PENDING_VERIFICATION
+        description:
+          type: string
+          maxLength: 240
+        start_time:
+          type: string
+          format: date-time
+        expected_end_time:
+          type: string
+          format: date-time
+        geometry:
+          $ref: '#/components/schemas/IncidentGeometry'
+        affected_corridors:
+          type: array
+          items:
+            type: string
+      required:
+        - incident_id
+        - type
+        - severity
+        - status
+        - description
+        - start_time
+        - geometry
+    IncidentGeometry:
+      type: object
+      description: Geometry payload for incident mapping
+      properties:
+        geometry_type:
+          type: string
+          enum:
+            - POINT
+            - LINESTRING
+            - POLYGON
+        coordinates:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Coordinate'
+      required:
+        - geometry_type
+        - coordinates
+    DeadzonePolygon:
+      type: object
+      description: Inferred low-signal geographic region
+      properties:
+        deadzone_id:
+          type: string
+          example: dz_100221
+        carrier:
+          $ref: '#/components/schemas/Carrier'
+        rat:
+          $ref: '#/components/schemas/Rat'
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.89
+        observed_window:
+          $ref: '#/components/schemas/ObservedWindow'
+        polygon:
+          $ref: '#/components/schemas/CoveragePolygon'
+        notes:
+          type: array
+          items:
+            type: string
+      required:
+        - deadzone_id
+        - carrier
+        - rat
+        - confidence_score
+        - observed_window
+        - polygon
+    ObservedWindow:
+      type: object
+      description: Time window over which coverage observations were aggregated
+      properties:
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+      required:
+        - start_time
+        - end_time
+    CoveragePolygon:
+      type: object
+      description: Polygon geometry for dead-zone region
+      properties:
+        vertices:
+          type: array
+          minItems: 3
+          items:
+            $ref: '#/components/schemas/Coordinate'
+      required:
+        - vertices
+    IncidentType:
+      type: string
+      description: Traffic incident category
+      enum:
+        - ROAD_CLOSURE
+        - CONGESTION
+        - CONSTRUCTION
+        - WEATHER_IMPACT
+        - EVENT_TRAFFIC
+    IncidentSeverity:
+      type: string
+      description: Severity level used across incident and advisory domains
+      enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+        - CRITICAL
+    Carrier:
+      type: string
+      description: Carrier namespace for dead-zone reporting
+      enum:
+        - VERIZON
+        - ATT
+        - TMOBILE
+        - OTHER
+    Rat:
+      type: string
+      description: Radio access technology category
+      enum:
+        - LTE
+        - NR_5G
+        - NR_5G_STANDALONE
+        - UMTS
+    TrafficModel:
+      type: string
+      description: Traffic prediction model selection
+      enum:
+        - BEST_GUESS
+        - OPTIMISTIC
+        - PESSIMISTIC
+    RouteStatus:
+      type: string
+      description: Route processing status
+      enum:
+        - READY
+        - PARTIAL
+        - FAILED
+    ErrorResponse:
+      type: object
+      description: Standardized API error envelope
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: BAD_REQUEST
+            message:
+              type: string
+              example: Invalid request payload
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+          required:
+            - code
+            - message
+        trace_id:
+          type: string
+          format: uuid
+          description: Correlation identifier for support and diagnostics
+      required:
+        - error
+        - trace_id
+    ErrorDetail:
+      type: object
+      description: Field-level validation or conflict issue detail
+      properties:
+        field:
+          type: string
+          example: coordinate.latitude
+        issue:
+          type: string
+          example: out_of_range
+      required:
+        - field
+        - issue

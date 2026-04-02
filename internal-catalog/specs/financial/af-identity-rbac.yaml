@@ -1,0 +1,1520 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Role-Based Access Control API
+  description: >-
+    Enterprise RBAC service implementing hierarchical role inheritance, fine-grained permission URNs, scoped role
+    assignments, and real-time policy evaluation. Supports role composition through inheritance chains, time-bound
+    access grants, and separation-of-duty constraints. Permission model uses URN-based resource addressing
+    (urn:acmefin:{resource}:{action}) for consistent authorization across all Acme Finance services.
+  version: 4.2.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-identity-rbac
+  x-acme-domain: identity
+servers:
+  - url: https://af-identity-rbac.api.acmefin.com/v1
+    description: Production
+  - url: https://af-identity-rbac.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Roles
+    description: Role definition, hierarchy, and lifecycle management
+  - name: Permissions
+    description: Permission URN management and assignment to roles
+  - name: Assignments
+    description: User-role assignments with scoping and expiration
+  - name: Policy Evaluation
+    description: Real-time authorization decision and effective permission queries
+paths:
+  /rbac/roles:
+    get:
+      operationId: listRoles
+      summary: List roles
+      description: >-
+        Retrieve all defined roles with membership counts and permission summaries. Supports filtering by
+        system vs. custom roles.
+      tags:
+        - Roles
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: is_system
+          in: query
+          required: false
+          description: Filter system vs custom roles
+          schema:
+            type: "boolean"
+        - name: parent_role_id
+          in: query
+          required: false
+          description: Filter by parent role
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        role_id:
+                          type: string
+                          description: Unique role identifier
+                          example: "role_a1b2c3d4"
+                          readOnly: true
+                        name:
+                          type: string
+                          description: Unique role name
+                          example: "financial-analyst"
+                        display_name:
+                          type: string
+                          description: Human-readable role name
+                          example: "Financial Analyst"
+                        description:
+                          type: string
+                          description: Role purpose and scope
+                          example: "Read-only access to financial reports and dashboards"
+                        is_system:
+                          type: boolean
+                          description: Whether this is a built-in system role
+                          example: false
+                          readOnly: true
+                        parent_role_id:
+                          type: string
+                          description: Parent role for inheritance (null if root)
+                          example: "role_viewer"
+                        permission_count:
+                          type: integer
+                          description: Number of directly assigned permissions
+                          example: 12
+                          readOnly: true
+                        member_count:
+                          type: integer
+                          description: Number of users assigned this role
+                          example: 47
+                          readOnly: true
+                        created_at:
+                          type: string
+                          description: Role creation timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        updated_at:
+                          type: string
+                          description: Last modification timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - role_id
+                        - name
+                        - display_name
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createRole
+      summary: Create role
+      description: >-
+        Define a new custom role with optional parent for permission inheritance. Child roles inherit all
+        permissions from their parent chain.
+      tags:
+        - Roles
+      requestBody:
+        required: true
+        description: Create role request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: Unique role name (lowercase, hyphens)
+                      example: "senior-analyst"
+                      pattern: '^[a-z0-9-]+$'
+                    display_name:
+                      type: string
+                      description: Display name
+                      example: "Senior Financial Analyst"
+                    description:
+                      type: string
+                      description: Role description
+                      example: "Extended access for senior analysts"
+                    parent_role_id:
+                      type: string
+                      description: Parent role ID for inheritance
+                      example: "role_analyst"
+              required:
+                - name
+                - display_name
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role_id:
+                    type: string
+                    description: Unique role identifier
+                    example: "role_a1b2c3d4"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Unique role name
+                    example: "financial-analyst"
+                  display_name:
+                    type: string
+                    description: Human-readable role name
+                    example: "Financial Analyst"
+                  description:
+                    type: string
+                    description: Role purpose and scope
+                    example: "Read-only access to financial reports and dashboards"
+                  is_system:
+                    type: boolean
+                    description: Whether this is a built-in system role
+                    example: false
+                    readOnly: true
+                  parent_role_id:
+                    type: string
+                    description: Parent role for inheritance (null if root)
+                    example: "role_viewer"
+                  permission_count:
+                    type: integer
+                    description: Number of directly assigned permissions
+                    example: 12
+                    readOnly: true
+                  member_count:
+                    type: integer
+                    description: Number of users assigned this role
+                    example: 47
+                    readOnly: true
+                  created_at:
+                    type: string
+                    description: Role creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last modification timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - role_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /rbac/roles/{role_id}:
+    get:
+      operationId: getRole
+      summary: Get role details
+      description: >-
+        Retrieve role configuration including inherited permissions, direct permissions, and member list.
+      tags:
+        - Roles
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          description: Unique role id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role_id:
+                    type: string
+                    description: Unique role identifier
+                    example: "role_a1b2c3d4"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Unique role name
+                    example: "financial-analyst"
+                  display_name:
+                    type: string
+                    description: Human-readable role name
+                    example: "Financial Analyst"
+                  description:
+                    type: string
+                    description: Role purpose and scope
+                    example: "Read-only access to financial reports and dashboards"
+                  is_system:
+                    type: boolean
+                    description: Whether this is a built-in system role
+                    example: false
+                    readOnly: true
+                  parent_role_id:
+                    type: string
+                    description: Parent role for inheritance (null if root)
+                    example: "role_viewer"
+                  permission_count:
+                    type: integer
+                    description: Number of directly assigned permissions
+                    example: 12
+                    readOnly: true
+                  member_count:
+                    type: integer
+                    description: Number of users assigned this role
+                    example: 47
+                    readOnly: true
+                  created_at:
+                    type: string
+                    description: Role creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last modification timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - role_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateRole
+      summary: Update role
+      description: >-
+        Modify role display name, description, or parent inheritance. System roles cannot be modified.
+      tags:
+        - Roles
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          description: Unique role id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update role request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    display_name:
+                      type: string
+                      description: Updated display name
+                      example: "Updated Analyst Role"
+                    description:
+                      type: string
+                      description: Updated description
+                    parent_role_id:
+                      type: string
+                      description: New parent role (null to make root)
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role_id:
+                    type: string
+                    description: Unique role identifier
+                    example: "role_a1b2c3d4"
+                    readOnly: true
+                  name:
+                    type: string
+                    description: Unique role name
+                    example: "financial-analyst"
+                  display_name:
+                    type: string
+                    description: Human-readable role name
+                    example: "Financial Analyst"
+                  description:
+                    type: string
+                    description: Role purpose and scope
+                    example: "Read-only access to financial reports and dashboards"
+                  is_system:
+                    type: boolean
+                    description: Whether this is a built-in system role
+                    example: false
+                    readOnly: true
+                  parent_role_id:
+                    type: string
+                    description: Parent role for inheritance (null if root)
+                    example: "role_viewer"
+                  permission_count:
+                    type: integer
+                    description: Number of directly assigned permissions
+                    example: 12
+                    readOnly: true
+                  member_count:
+                    type: integer
+                    description: Number of users assigned this role
+                    example: 47
+                    readOnly: true
+                  created_at:
+                    type: string
+                    description: Role creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last modification timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteRole
+      summary: Delete role
+      description: >-
+        Delete a custom role. Users assigned this role lose its permissions. System roles cannot be deleted.
+      tags:
+        - Roles
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          description: Unique role id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /rbac/roles/{role_id}/permissions:
+    get:
+      operationId: listRolePermissions
+      summary: List role permissions
+      description: >-
+        Retrieve all permissions assigned to a role, including those inherited from parent roles in the
+        hierarchy chain.
+      tags:
+        - Permissions
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          description: Role identifier
+          schema:
+            type: "string"
+        - name: include_inherited
+          in: query
+          required: false
+          description: Include permissions inherited from parent roles
+          schema:
+            type: "boolean"
+            default: true
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        permission_id:
+                          type: string
+                          description: Unique permission identifier
+                          example: "perm_a1b2c3d4"
+                          readOnly: true
+                        urn:
+                          type: string
+                          description: Permission URN (resource:action format)
+                          example: "urn:acmefin:accounts:read"
+                        display_name:
+                          type: string
+                          description: Human-readable name
+                          example: "Read Accounts"
+                        description:
+                          type: string
+                          description: Permission description
+                          example: "View account details and balances"
+                        resource:
+                          type: string
+                          description: Resource type
+                          example: "accounts"
+                        action:
+                          type: string
+                          description: Permitted action
+                          example: "read"
+                          enum:
+                            - read
+                            - write
+                            - delete
+                            - admin
+                            - execute
+                        created_at:
+                          type: string
+                          description: Permission creation timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        inherited_from:
+                          type: string
+                          description: Role ID this permission was inherited from (null if direct)
+                          example: "role_viewer"
+                      required:
+                        - permission_id
+                        - urn
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: setRolePermissions
+      summary: Set role permissions
+      description: >-
+        Replace all direct permissions on a role with the provided set. Inherited permissions are not
+        affected. This is an idempotent full replacement.
+      tags:
+        - Permissions
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          description: Role identifier
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Set role permissions request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    permission_ids:
+                      type: array
+                      description: Permission IDs to assign
+                      items:
+                        type: string
+                        example: "perm_a1b2c3d4"
+              required:
+                - permission_ids
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role_id:
+                    type: string
+                    description: Unique role identifier
+                    example: "role_a1b2c3d4"
+                    readOnly: true
+                  permissions_set:
+                    type: integer
+                    description: Total permissions now assigned
+                    example: 8
+                required:
+                  - role_id
+                  - permissions_set
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /rbac/permissions:
+    get:
+      operationId: listPermissions
+      summary: List permissions
+      description: Retrieve all defined permission URNs with their resource and action mappings.
+      tags:
+        - Permissions
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: resource
+          in: query
+          required: false
+          description: Filter by resource type
+          schema:
+            type: "string"
+        - name: action
+          in: query
+          required: false
+          description: Filter by action
+          schema:
+            type: "string"
+            enum:
+              - read
+              - write
+              - delete
+              - admin
+              - execute
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        permission_id:
+                          type: string
+                          description: Unique permission identifier
+                          example: "perm_a1b2c3d4"
+                          readOnly: true
+                        urn:
+                          type: string
+                          description: Permission URN (resource:action format)
+                          example: "urn:acmefin:accounts:read"
+                        display_name:
+                          type: string
+                          description: Human-readable name
+                          example: "Read Accounts"
+                        description:
+                          type: string
+                          description: Permission description
+                          example: "View account details and balances"
+                        resource:
+                          type: string
+                          description: Resource type
+                          example: "accounts"
+                        action:
+                          type: string
+                          description: Permitted action
+                          example: "read"
+                          enum:
+                            - read
+                            - write
+                            - delete
+                            - admin
+                            - execute
+                        created_at:
+                          type: string
+                          description: Permission creation timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - permission_id
+                        - urn
+                        - resource
+                        - action
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createPermission
+      summary: Create permission
+      description: >-
+        Register a new permission URN. Each permission maps to a specific resource and action combination.
+      tags:
+        - Permissions
+      requestBody:
+        required: true
+        description: Create permission request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    urn:
+                      type: string
+                      description: Permission URN
+                      example: "urn:acmefin:reports:export"
+                    display_name:
+                      type: string
+                      description: Display name
+                      example: "Export Reports"
+                    description:
+                      type: string
+                      description: What this permission allows
+                      example: "Export financial reports to CSV/PDF"
+                    resource:
+                      type: string
+                      description: Resource type
+                      example: "reports"
+                    action:
+                      type: string
+                      description: Action
+                      example: "execute"
+                      enum:
+                        - read
+                        - write
+                        - delete
+                        - admin
+                        - execute
+              required:
+                - urn
+                - resource
+                - action
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permission_id:
+                    type: string
+                    description: Unique permission identifier
+                    example: "perm_a1b2c3d4"
+                    readOnly: true
+                  urn:
+                    type: string
+                    description: Permission URN (resource:action format)
+                    example: "urn:acmefin:accounts:read"
+                  display_name:
+                    type: string
+                    description: Human-readable name
+                    example: "Read Accounts"
+                  description:
+                    type: string
+                    description: Permission description
+                    example: "View account details and balances"
+                  resource:
+                    type: string
+                    description: Resource type
+                    example: "accounts"
+                  action:
+                    type: string
+                    description: Permitted action
+                    example: "read"
+                    enum:
+                      - read
+                      - write
+                      - delete
+                      - admin
+                      - execute
+                  created_at:
+                    type: string
+                    description: Permission creation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - permission_id
+                  - urn
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /rbac/assignments:
+    get:
+      operationId: listAssignments
+      summary: List role assignments
+      description: Retrieve user-role assignments with optional filtering by user, role, or scope.
+      tags:
+        - Assignments
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: user_id
+          in: query
+          required: false
+          description: Filter by user
+          schema:
+            type: "string"
+        - name: role_id
+          in: query
+          required: false
+          description: Filter by role
+          schema:
+            type: "string"
+        - name: scope
+          in: query
+          required: false
+          description: Filter by scope
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        assignment_id:
+                          type: string
+                          description: Unique assignment identifier
+                          example: "asgn_a1b2c3d4"
+                          readOnly: true
+                        user_id:
+                          type: string
+                          description: Assigned user
+                          example: "usr_4e5f6a7b"
+                        role_id:
+                          type: string
+                          description: Assigned role
+                          example: "role_a1b2c3d4"
+                        role_name:
+                          type: string
+                          description: Role name
+                          example: "financial-analyst"
+                        scope:
+                          type: string
+                          description: Assignment scope (org, team, or resource)
+                          example: "org:acme-finance"
+                        granted_by:
+                          type: string
+                          description: Who granted the assignment
+                          example: "usr_admin01"
+                        expires_at:
+                          type: string
+                          description: Assignment expiration (null if permanent)
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                        created_at:
+                          type: string
+                          description: Assignment timestamp
+                          format: date-time
+                          example: "2025-06-01T12:00:00Z"
+                      required:
+                        - assignment_id
+                        - user_id
+                        - role_id
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createAssignment
+      summary: Assign role to user
+      description: >-
+        Assign a role to a user within a specific scope. Supports time-bound assignments with automatic
+        expiration.
+      tags:
+        - Assignments
+      requestBody:
+        required: true
+        description: Assign role to user request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: User to assign role to
+                      example: "usr_4e5f6a7b"
+                    role_id:
+                      type: string
+                      description: Role to assign
+                      example: "role_a1b2c3d4"
+                    scope:
+                      type: string
+                      description: Assignment scope
+                      example: "org:acme-finance"
+                    expires_at:
+                      type: string
+                      description: Expiration (ISO 8601, null for permanent)
+                      format: date-time
+              required:
+                - user_id
+                - role_id
+                - scope
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assignment_id:
+                    type: string
+                    description: Unique assignment identifier
+                    example: "asgn_a1b2c3d4"
+                    readOnly: true
+                  user_id:
+                    type: string
+                    description: Assigned user
+                    example: "usr_4e5f6a7b"
+                  role_id:
+                    type: string
+                    description: Assigned role
+                    example: "role_a1b2c3d4"
+                  role_name:
+                    type: string
+                    description: Role name
+                    example: "financial-analyst"
+                  scope:
+                    type: string
+                    description: Assignment scope (org, team, or resource)
+                    example: "org:acme-finance"
+                  granted_by:
+                    type: string
+                    description: Who granted the assignment
+                    example: "usr_admin01"
+                  expires_at:
+                    type: string
+                    description: Assignment expiration (null if permanent)
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                  created_at:
+                    type: string
+                    description: Assignment timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - assignment_id
+                  - user_id
+                  - role_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /rbac/assignments/{assignment_id}:
+    delete:
+      operationId: revokeAssignment
+      summary: Revoke role assignment
+      description: >-
+        Remove a role assignment from a user. The user immediately loses the role's permissions.
+      tags:
+        - Assignments
+      parameters:
+        - name: assignment_id
+          in: path
+          required: true
+          description: Unique assignment id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /rbac/evaluate:
+    post:
+      operationId: evaluatePolicy
+      summary: Evaluate authorization policy
+      description: >-
+        Evaluate whether a user has permission to perform an action on a resource. Returns the authorization
+        decision with the role chain that granted or denied access.
+      tags:
+        - Policy Evaluation
+      requestBody:
+        required: true
+        description: Evaluate authorization policy request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: User to evaluate
+                      example: "usr_4e5f6a7b"
+                    permission_urn:
+                      type: string
+                      description: Permission URN to check
+                      example: "urn:acmefin:accounts:read"
+                    resource_id:
+                      type: string
+                      description: Specific resource instance (optional)
+                      example: "acct_123456"
+                    scope:
+                      type: string
+                      description: Evaluation scope
+                      example: "org:acme-finance"
+              required:
+                - user_id
+                - permission_urn
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed:
+                    type: boolean
+                    description: Authorization decision
+                    example: true
+                  matched_role:
+                    type: string
+                    description: Role that granted permission
+                    example: "financial-analyst"
+                  matched_permission:
+                    type: string
+                    description: Permission URN that matched
+                    example: "urn:acmefin:accounts:read"
+                  evaluation_path:
+                    type: array
+                    description: Role inheritance chain evaluated
+                    items:
+                      type: string
+                      example: "financial-analyst -> viewer"
+                  cached:
+                    type: boolean
+                    description: Whether result was served from policy cache
+                    example: false
+                required:
+                  - allowed
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /rbac/users/{user_id}/effective-permissions:
+    get:
+      operationId: getEffectivePermissions
+      summary: Get effective permissions
+      description: >-
+        Resolve all effective permissions for a user by aggregating all role assignments, inheritance
+        chains, and scope-based grants. Returns the complete set of actions the user can perform.
+      tags:
+        - Policy Evaluation
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: Unique user id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    description: User identifier
+                    example: "usr_4e5f6a7b"
+                  permissions:
+                    type: array
+                    description: All effective permission URNs
+                    items:
+                      type: string
+                      example: "urn:acmefin:accounts:read"
+                  roles:
+                    type: array
+                    description: All effective roles (direct + inherited)
+                    items:
+                      type: string
+                      example: "financial-analyst"
+                  evaluated_at:
+                    type: string
+                    description: Evaluation timestamp
+                    format: date-time
+                    example: "2025-06-01T12:00:00Z"
+                required:
+                  - user_id
+                  - permissions
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

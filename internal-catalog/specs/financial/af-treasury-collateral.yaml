@@ -1,0 +1,1424 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Collateral Management API
+  description: >-
+    Collateral lifecycle management for secured lending, derivatives margining, and central counterparty (CCP)
+    obligations. Supports pledge, release, and substitution workflows with real-time valuation, haircut
+    application, margin call processing, and eligibility rule enforcement per CSA (Credit Support Annex)
+    schedules.
+  version: 2.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-treasury-collateral
+  x-acme-domain: treasury
+servers:
+  - url: https://af-treasury-collateral.api.acmefin.com/v1
+    description: Production
+  - url: https://af-treasury-collateral.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Collateral Management
+    description: Pledge, release, and substitute collateral assets across agreements
+  - name: Valuations & Margin
+    description: Mark-to-market valuations, haircuts, and margin call processing
+paths:
+  /collateral:
+    get:
+      operationId: listCollateral
+      summary: List collateral holdings
+      description: >-
+        List all collateral assets currently pledged or received, with current market values and haircut-
+        adjusted values.
+      tags:
+        - Collateral Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: direction
+          in: query
+          required: false
+          description: "Filter by pledged/received"
+          schema:
+            type: "string"
+            enum:
+              - pledged
+              - received
+        - name: asset_type
+          in: query
+          required: false
+          description: "Filter by asset type"
+          schema:
+            type: "string"
+        - name: counterparty
+          in: query
+          required: false
+          description: "Filter by counterparty"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        collateral_id:
+                          type: string
+                          description: "Collateral ID"
+                          format: uuid
+                          example: "col-3a4b5c6d-7e8f"
+                        asset_type:
+                          type: string
+                          description: "Asset type"
+                          example: "government_bond"
+                          enum:
+                            - government_bond
+                            - corporate_bond
+                            - equity
+                            - cash
+                            - money_market
+                        isin:
+                          type: string
+                          description: "ISIN code"
+                          example: "US9128284Y89"
+                        description:
+                          type: string
+                          description: "Asset description"
+                          example: "US Treasury 2.5% 2030"
+                        nominal_value:
+                          type: number
+                          description: "Face/nominal value"
+                          format: double
+                          example: 5000000.0
+                        market_value:
+                          type: number
+                          description: "Current market value"
+                          format: double
+                          example: 4875000.0
+                        haircut_percent:
+                          type: number
+                          description: "Applied haircut (%)"
+                          format: double
+                          example: 2.0
+                        adjusted_value:
+                          type: number
+                          description: "Haircut-adjusted value"
+                          format: double
+                          example: 4777500.0
+                        direction:
+                          type: string
+                          description: "Collateral direction"
+                          example: "pledged"
+                          enum:
+                            - pledged
+                            - received
+                        counterparty:
+                          type: string
+                          description: "Counterparty name"
+                          example: "Goldman Sachs"
+                        agreement_id:
+                          type: string
+                          description: "CSA/ISDA agreement"
+                          format: uuid
+                          example: "csa-9a0b1c2d"
+                        status:
+                          type: string
+                          description: "Status"
+                          example: "active"
+                          enum:
+                            - active
+                            - pending_release
+                            - released
+                            - substituted
+                      required:
+                        - collateral_id
+                        - asset_type
+                        - market_value
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /collateral/{collateral_id}:
+    get:
+      operationId: getCollateral
+      summary: Get collateral details
+      description: >-
+        Retrieve full collateral asset details including valuation history, haircut schedule, and agreement
+        terms.
+      tags:
+        - Collateral Management
+      parameters:
+        - name: collateral_id
+          in: path
+          required: true
+          description: "Unique collateral id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collateral_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "col-3a4b5c6d"
+                  asset_type:
+                    type: string
+                    description: "Type"
+                    example: "government_bond"
+                  isin:
+                    type: string
+                    description: "ISIN"
+                    example: "US9128284Y89"
+                  market_value:
+                    type: number
+                    description: "Market value"
+                    format: double
+                    example: 4875000.0
+                  haircut_percent:
+                    type: number
+                    description: "Haircut"
+                    format: double
+                    example: 2.0
+                  adjusted_value:
+                    type: number
+                    description: "Adjusted value"
+                    format: double
+                    example: 4777500.0
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                required:
+                  - collateral_id
+                  - asset_type
+                  - market_value
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /collateral/pledge:
+    post:
+      operationId: pledgeCollateral
+      summary: Pledge collateral
+      description: >-
+        Pledge an asset as collateral under a CSA agreement. The asset is valued at current market price
+        with the applicable haircut. Pledge requests require counterparty acknowledgment.
+      tags:
+        - Collateral Management
+      requestBody:
+        required: true
+        description: Pledge collateral request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    asset_type:
+                      type: string
+                      description: "Asset type"
+                      example: "government_bond"
+                      enum:
+                        - government_bond
+                        - corporate_bond
+                        - equity
+                        - cash
+                    isin:
+                      type: string
+                      description: "ISIN (for securities)"
+                      example: "US9128284Y89"
+                    nominal_value:
+                      type: number
+                      description: "Face value"
+                      format: double
+                      example: 5000000.0
+                    currency:
+                      type: string
+                      description: "Currency"
+                      example: "USD"
+                    agreement_id:
+                      type: string
+                      description: "CSA agreement"
+                      format: uuid
+                      example: "csa-9a0b1c2d"
+                    counterparty_id:
+                      type: string
+                      description: "Counterparty"
+                      format: uuid
+                      example: "cpty-4a5b6c7d"
+                    settlement_date:
+                      type: string
+                      description: "Settlement date"
+                      example: "2025-06-17"
+              required:
+                - asset_type
+                - nominal_value
+                - currency
+                - agreement_id
+                - counterparty_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collateral_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "col-3a4b5c6d"
+                  market_value:
+                    type: number
+                    description: "Current market value"
+                    format: double
+                    example: 4875000.0
+                  haircut_percent:
+                    type: number
+                    description: "Haircut"
+                    format: double
+                    example: 2.0
+                  adjusted_value:
+                    type: number
+                    description: "Adjusted value"
+                    format: double
+                    example: 4777500.0
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "pending_acknowledgment"
+                required:
+                  - collateral_id
+                  - market_value
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /collateral/{collateral_id}/release:
+    post:
+      operationId: releaseCollateral
+      summary: Release collateral
+      description: >-
+        Initiate release of a pledged collateral asset. The release is subject to counterparty approval and
+        margin adequacy checks.
+      tags:
+        - Collateral Management
+      parameters:
+        - name: collateral_id
+          in: path
+          required: true
+          description: "Unique collateral id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Release collateral request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: "Release reason"
+                      example: "Margin coverage exceeds 110% — releasing excess collateral"
+                    settlement_date:
+                      type: string
+                      description: "Settlement date"
+                      example: "2025-06-18"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collateral_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "col-3a4b5c6d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "pending_release"
+                  release_value:
+                    type: number
+                    description: "Value being released"
+                    format: double
+                    example: 4875000.0
+                required:
+                  - collateral_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /collateral/{collateral_id}/substitute:
+    post:
+      operationId: substituteCollateral
+      summary: Substitute collateral
+      description: >-
+        Replace one collateral asset with another of equivalent or greater value. Both the release and
+        pledge are processed atomically to maintain margin coverage.
+      tags:
+        - Collateral Management
+      parameters:
+        - name: collateral_id
+          in: path
+          required: true
+          description: "Unique collateral id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Substitute collateral request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    replacement_asset_type:
+                      type: string
+                      description: "Replacement asset type"
+                      example: "government_bond"
+                      enum:
+                        - government_bond
+                        - corporate_bond
+                        - equity
+                        - cash
+                    replacement_isin:
+                      type: string
+                      description: "Replacement ISIN"
+                      example: "US912810SV17"
+                    replacement_nominal:
+                      type: number
+                      description: "Replacement face value"
+                      format: double
+                      example: 5500000.0
+                    reason:
+                      type: string
+                      description: "Substitution reason"
+                      example: "Upgrading to higher-rated government bond"
+              required:
+                - replacement_asset_type
+                - replacement_nominal
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  original_collateral_id:
+                    type: string
+                    description: "Released"
+                    format: uuid
+                    example: "col-3a4b5c6d"
+                  new_collateral_id:
+                    type: string
+                    description: "New pledge"
+                    format: uuid
+                    example: "col-1a2b3c4d"
+                  net_value_change:
+                    type: number
+                    description: "Net value change"
+                    format: double
+                    example: 250000.0
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "substituted"
+                required:
+                  - original_collateral_id
+                  - new_collateral_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /valuations:
+    get:
+      operationId: listValuations
+      summary: List valuations
+      description: >-
+        List collateral valuations with mark-to-market snapshots and haircut adjustments.
+      tags:
+        - Valuations & Margin
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        valuation_id:
+                          type: string
+                          description: "Valuation ID"
+                          format: uuid
+                          example: "val-6a7b8c9d"
+                        collateral_id:
+                          type: string
+                          description: "Collateral asset"
+                          format: uuid
+                          example: "col-3a4b5c6d"
+                        market_value:
+                          type: number
+                          description: "Market value at valuation"
+                          format: double
+                          example: 4875000.0
+                        haircut_adjusted:
+                          type: number
+                          description: "After haircut"
+                          format: double
+                          example: 4777500.0
+                        valuation_date:
+                          type: string
+                          description: "Valuation date"
+                          example: "2025-06-15"
+                        source:
+                          type: string
+                          description: "Pricing source"
+                          example: "bloomberg"
+                          enum:
+                            - bloomberg
+                            - reuters
+                            - internal
+                            - manual
+                      required:
+                        - valuation_id
+                        - collateral_id
+                        - market_value
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createValuation
+      summary: Record valuation
+      description: >-
+        Record a mark-to-market valuation for a collateral asset. Auto-triggers margin call processing if
+        coverage falls below threshold.
+      tags:
+        - Valuations & Margin
+      requestBody:
+        required: true
+        description: Record valuation request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    collateral_id:
+                      type: string
+                      description: "Asset"
+                      format: uuid
+                      example: "col-3a4b5c6d"
+                    market_value:
+                      type: number
+                      description: "Current market price"
+                      format: double
+                      example: 4850000.0
+                    source:
+                      type: string
+                      description: "Source"
+                      example: "bloomberg"
+                      enum:
+                        - bloomberg
+                        - reuters
+                        - internal
+                        - manual
+                    valuation_date:
+                      type: string
+                      description: "Date"
+                      example: "2025-06-15"
+              required:
+                - collateral_id
+                - market_value
+                - source
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valuation_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "val-6a7b8c9d"
+                  haircut_adjusted:
+                    type: number
+                    description: "Adjusted"
+                    format: double
+                    example: 4753000.0
+                  margin_call_triggered:
+                    type: boolean
+                    description: "Whether a margin call was generated"
+                    example: false
+                required:
+                  - valuation_id
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /valuations/{valuation_id}:
+    get:
+      operationId: getValuation
+      summary: Get valuation
+      description: Retrieve valuation details.
+      tags:
+        - Valuations & Margin
+      parameters:
+        - name: valuation_id
+          in: path
+          required: true
+          description: "Unique valuation id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valuation_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "val-6a7b8c9d"
+                  collateral_id:
+                    type: string
+                    description: "Asset"
+                    format: uuid
+                    example: "col-3a4b5c6d"
+                  market_value:
+                    type: number
+                    description: "Value"
+                    format: double
+                    example: 4875000.0
+                  source:
+                    type: string
+                    description: "Source"
+                    example: "bloomberg"
+                required:
+                  - valuation_id
+                  - market_value
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /margin-calls:
+    get:
+      operationId: listMarginCalls
+      summary: List margin calls
+      description: List all margin calls (issued and received) with their resolution status.
+      tags:
+        - Valuations & Margin
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        margin_call_id:
+                          type: string
+                          description: "Margin call ID"
+                          format: uuid
+                          example: "mc-8a9b0c1d"
+                        counterparty:
+                          type: string
+                          description: "Counterparty"
+                          example: "Goldman Sachs"
+                        direction:
+                          type: string
+                          description: "Call direction"
+                          example: "issued"
+                          enum:
+                            - issued
+                            - received
+                        call_amount:
+                          type: number
+                          description: "Margin call amount"
+                          format: double
+                          example: 500000.0
+                        currency:
+                          type: string
+                          description: "Currency"
+                          example: "USD"
+                        status:
+                          type: string
+                          description: "Call status"
+                          example: "open"
+                          enum:
+                            - open
+                            - partially_met
+                            - met
+                            - disputed
+                            - expired
+                        deadline:
+                          type: string
+                          description: "Response deadline"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        issued_at:
+                          type: string
+                          description: "Call issuance time"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - margin_call_id
+                        - counterparty
+                        - call_amount
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: issueMarginCall
+      summary: Issue margin call
+      description: >-
+        Issue a margin call to a counterparty when collateral coverage falls below the minimum threshold
+        defined in the CSA.
+      tags:
+        - Valuations & Margin
+      requestBody:
+        required: true
+        description: Issue margin call request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    counterparty_id:
+                      type: string
+                      description: "Counterparty"
+                      format: uuid
+                      example: "cpty-4a5b6c7d"
+                    agreement_id:
+                      type: string
+                      description: "CSA"
+                      format: uuid
+                      example: "csa-9a0b1c2d"
+                    call_amount:
+                      type: number
+                      description: "Amount"
+                      format: double
+                      example: 500000.0
+                    currency:
+                      type: string
+                      description: "Currency"
+                      example: "USD"
+                    deadline_hours:
+                      type: integer
+                      description: "Response deadline in hours"
+                      example: 24
+                    reason:
+                      type: string
+                      description: "Call reason"
+                      example: "MTM valuation drop below 105% coverage threshold"
+              required:
+                - counterparty_id
+                - agreement_id
+                - call_amount
+                - currency
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  margin_call_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "mc-8a9b0c1d"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "open"
+                  deadline:
+                    type: string
+                    description: "Deadline"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - margin_call_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /eligibility-rules:
+    get:
+      operationId: listEligibilityRules
+      summary: List eligibility rules
+      description: >-
+        List collateral eligibility rules defining which assets are acceptable under each CSA agreement,
+        with concentration limits and rating requirements.
+      tags:
+        - Collateral Management
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rule_id:
+                          type: string
+                          description: "Rule ID"
+                          format: uuid
+                          example: "er-5a6b7c8d"
+                        agreement_id:
+                          type: string
+                          description: "CSA agreement"
+                          format: uuid
+                          example: "csa-9a0b1c2d"
+                        asset_type:
+                          type: string
+                          description: "Eligible asset type"
+                          example: "government_bond"
+                          enum:
+                            - government_bond
+                            - corporate_bond
+                            - equity
+                            - cash
+                        min_rating:
+                          type: string
+                          description: "Minimum credit rating"
+                          example: "A-"
+                        max_concentration_percent:
+                          type: number
+                          description: "Max concentration limit"
+                          format: double
+                          example: 25.0
+                        haircut_schedule:
+                          type: object
+                          description: "Haircut by maturity bucket"
+                      required:
+                        - rule_id
+                        - agreement_id
+                        - asset_type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createEligibilityRule
+      summary: Create eligibility rule
+      description: Define a new collateral eligibility rule for a CSA agreement.
+      tags:
+        - Collateral Management
+      requestBody:
+        required: true
+        description: Create eligibility rule request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    agreement_id:
+                      type: string
+                      description: "CSA"
+                      format: uuid
+                      example: "csa-9a0b1c2d"
+                    asset_type:
+                      type: string
+                      description: "Asset type"
+                      example: "government_bond"
+                      enum:
+                        - government_bond
+                        - corporate_bond
+                        - equity
+                        - cash
+                    min_rating:
+                      type: string
+                      description: "Min rating"
+                      example: "BBB"
+                    max_concentration_percent:
+                      type: number
+                      description: "Concentration limit"
+                      format: double
+                      example: 30.0
+                    haircut_schedule:
+                      type: object
+                      description: "Haircut percentages by maturity"
+              required:
+                - agreement_id
+                - asset_type
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "er-5a6b7c8d"
+                  asset_type:
+                    type: string
+                    description: "Type"
+                    example: "corporate_bond"
+                required:
+                  - rule_id
+                  - asset_type
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

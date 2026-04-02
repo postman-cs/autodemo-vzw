@@ -1,0 +1,730 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Voice Banking API
+  description: >-
+    Voice-first banking interface for IVR and smart speaker integrations. Process natural language voice commands
+    for balance inquiries, transaction history, and fund transfers with voiceprint authentication. Configure IVR
+    call flows with multi-language support and DTMF fallback navigation.
+  version: 1.0.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-digital-voice-banking
+  x-acme-domain: digital
+servers:
+  - url: https://af-digital-voice-banking.api.acmefin.com/v1
+    description: Production
+  - url: https://af-digital-voice-banking.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Voice Commands
+    description: Process and retrieve voice banking commands
+  - name: IVR Flows
+    description: Configure IVR call flow definitions
+paths:
+  /commands:
+    get:
+      operationId: listVoiceCommands
+      summary: List voice commands
+      description: >-
+        Retrieve processed voice commands with recognized utterances, mapped intents, and confidence scores.
+      tags:
+        - Voice Commands
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: intent
+          in: query
+          required: false
+          description: Filter by banking intent
+          schema:
+            type: "string"
+        - name: session_id
+          in: query
+          required: false
+          description: Filter by voice session
+          schema:
+            type: "string"
+        - name: authenticated
+          in: query
+          required: false
+          description: Filter by authentication status
+          schema:
+            type: "boolean"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        command_id:
+                          type: string
+                          description: "Voice command identifier"
+                          format: uuid
+                          readOnly: true
+                        utterance:
+                          type: string
+                          description: "Recognized voice utterance"
+                          example: "Check my savings balance"
+                        intent:
+                          type: string
+                          description: "Mapped banking intent"
+                          example: "check_balance"
+                        confidence:
+                          type: number
+                          description: "Speech recognition confidence score"
+                          format: double
+                        response_text:
+                          type: string
+                          description: "Bot response text (TTS-ready)"
+                        session_id:
+                          type: string
+                          description: "Voice session identifier"
+                          format: uuid
+                        authenticated:
+                          type: boolean
+                          description: "Whether caller was authenticated via voiceprint"
+                        timestamp:
+                          type: string
+                          format: date-time
+                      required:
+                        - command_id
+                        - utterance
+                        - intent
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: processVoiceCommand
+      summary: Process voice command
+      description: >-
+        Submit a voice utterance or transcription for intent recognition and banking action execution.
+        Requires an active voice session with optional voiceprint authentication.
+      tags:
+        - Voice Commands
+      requestBody:
+        required: true
+        description: Process voice command request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    session_id:
+                      type: string
+                      format: uuid
+                    utterance:
+                      type: string
+                      description: "Voice transcription text"
+                    audio_format:
+                      type: string
+                      description: "Audio encoding format (if sending raw audio)"
+                      enum:
+                        - pcm_16k
+                        - opus
+                        - mp3
+                    language:
+                      type: string
+                      default: "en-US"
+              required:
+                - session_id
+                - utterance
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command_id:
+                    type: string
+                    format: uuid
+                  intent:
+                    type: string
+                  confidence:
+                    type: number
+                    format: double
+                  response_text:
+                    type: string
+                    description: "TTS-ready response"
+                  action_result:
+                    type: object
+                    description: "Banking action result (balance, transactions, etc.)"
+                required:
+                  - command_id
+                  - intent
+                  - response_text
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /commands/{command_id}:
+    get:
+      operationId: getVoiceCommand
+      summary: Get voice command details
+      description: >-
+        Retrieve a processed voice command with full NLU analysis, action result, and audio metadata.
+      tags:
+        - Voice Commands
+      parameters:
+        - name: command_id
+          in: path
+          required: true
+          description: Unique command id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command_id:
+                    type: string
+                    description: "Voice command identifier"
+                    format: uuid
+                    readOnly: true
+                  utterance:
+                    type: string
+                    description: "Recognized voice utterance"
+                    example: "Check my savings balance"
+                  intent:
+                    type: string
+                    description: "Mapped banking intent"
+                    example: "check_balance"
+                  confidence:
+                    type: number
+                    description: "Speech recognition confidence score"
+                    format: double
+                  response_text:
+                    type: string
+                    description: "Bot response text (TTS-ready)"
+                  session_id:
+                    type: string
+                    description: "Voice session identifier"
+                    format: uuid
+                  authenticated:
+                    type: boolean
+                    description: "Whether caller was authenticated via voiceprint"
+                  timestamp:
+                    type: string
+                    format: date-time
+                required:
+                  - command_id
+                  - utterance
+                  - intent
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /ivr/flows:
+    get:
+      operationId: listIVRFlows
+      summary: List IVR flows
+      description: >-
+        Retrieve IVR call flow definitions with node counts, language support, and active status.
+      tags:
+        - IVR Flows
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: language
+          in: query
+          required: false
+          description: Filter by supported language
+          schema:
+            type: "string"
+        - name: is_active
+          in: query
+          required: false
+          description: Filter by active status
+          schema:
+            type: "boolean"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        flow_id:
+                          type: string
+                          description: "IVR flow identifier"
+                          format: uuid
+                          readOnly: true
+                        name:
+                          type: string
+                          description: "Flow name"
+                          example: "Main Menu"
+                        description:
+                          type: string
+                          description: "Flow purpose"
+                        entry_point:
+                          type: boolean
+                          description: "Whether this is a root entry flow"
+                        node_count:
+                          type: integer
+                          description: "Number of nodes in the flow graph"
+                        language:
+                          type: string
+                          description: "Supported language"
+                          example: "en-US"
+                        is_active:
+                          type: boolean
+                        updated_at:
+                          type: string
+                          format: date-time
+                      required:
+                        - flow_id
+                        - name
+                        - is_active
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /ivr/flows/{flow_id}:
+    get:
+      operationId: getIVRFlow
+      summary: Get IVR flow details
+      description: >-
+        Retrieve a complete IVR flow graph with nodes, edges, prompt scripts, and DTMF key mappings.
+      tags:
+        - IVR Flows
+      parameters:
+        - name: flow_id
+          in: path
+          required: true
+          description: Unique flow id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flow_id:
+                    type: string
+                    description: "IVR flow identifier"
+                    format: uuid
+                    readOnly: true
+                  name:
+                    type: string
+                    description: "Flow name"
+                    example: "Main Menu"
+                  description:
+                    type: string
+                    description: "Flow purpose"
+                  entry_point:
+                    type: boolean
+                    description: "Whether this is a root entry flow"
+                  node_count:
+                    type: integer
+                    description: "Number of nodes in the flow graph"
+                  language:
+                    type: string
+                    description: "Supported language"
+                    example: "en-US"
+                  is_active:
+                    type: boolean
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - flow_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

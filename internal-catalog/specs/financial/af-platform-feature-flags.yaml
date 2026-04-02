@@ -1,0 +1,2019 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Feature Flags API
+  description: >-
+    Feature flag management with fine-grained targeting rules, percentage-based gradual rollout, A/B test splits
+    with metric tracking, emergency kill switch, and comprehensive audit logging. Supports boolean, string,
+    number, and JSON flag types with user/segment targeting, environment-specific overrides, and real-time flag
+    evaluation via server-side and client-side SDKs.
+  version: 2.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-platform-feature-flags
+  x-acme-domain: platform
+servers:
+  - url: https://af-platform-feature-flags.api.acmefin.com/v1
+    description: Production
+  - url: https://af-platform-feature-flags.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Feature Flags
+    description: Create, configure, and manage feature flags
+  - name: Targeting & Rollout
+    description: Define targeting rules, gradual rollout, and A/B test splits
+  - name: Segments
+    description: User segments for targeting reusable audience definitions
+paths:
+  /flags:
+    get:
+      operationId: listFlags
+      summary: List feature flags
+      description: >-
+        List all feature flags with their current state, targeting rules summary, and rollout percentage.
+      tags:
+        - Feature Flags
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: enabled
+          in: query
+          required: false
+          description: "Filter by enabled state"
+          schema:
+            type: "boolean"
+        - name: environment
+          in: query
+          required: false
+          description: "Filter by environment"
+          schema:
+            type: "string"
+        - name: tag
+          in: query
+          required: false
+          description: "Filter by tag"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        flag_key:
+                          type: string
+                          description: "Flag key (unique identifier)"
+                          example: "enable-instant-transfers"
+                        name:
+                          type: string
+                          description: "Human-readable name"
+                          example: "Instant Transfers"
+                        description:
+                          type: string
+                          description: "Flag description"
+                          example: "Enable instant money transfers for eligible accounts"
+                        type:
+                          type: string
+                          description: "Flag value type"
+                          example: "boolean"
+                          enum:
+                            - boolean
+                            - string
+                            - number
+                            - json
+                        default_value:
+                          type: string
+                          description: "Default value when no rules match"
+                          example: "false"
+                        enabled:
+                          type: boolean
+                          description: "Whether the flag is active"
+                          example: true
+                        environment:
+                          type: string
+                          description: "Target environment"
+                          example: "production"
+                        tags:
+                          type: array
+                          description: "Organizational tags"
+                          items:
+                            type: string
+                        created_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        updated_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - flag_key
+                        - name
+                        - type
+                        - enabled
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createFlag
+      summary: Create feature flag
+      description: >-
+        Create a new feature flag in disabled state. The flag key must be unique and follow kebab-case
+        convention.
+      tags:
+        - Feature Flags
+      requestBody:
+        required: true
+        description: Create feature flag request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    key:
+                      type: string
+                      description: "Flag key"
+                      example: "enable-biometric-login"
+                    name:
+                      type: string
+                      description: "Display name"
+                      example: "Biometric Login"
+                    description:
+                      type: string
+                      description: "Description"
+                      example: "Enable fingerprint and face ID login"
+                    type:
+                      type: string
+                      description: "Value type"
+                      example: "boolean"
+                      enum:
+                        - boolean
+                        - string
+                        - number
+                        - json
+                    default_value:
+                      type: string
+                      description: "Default value"
+                      example: "false"
+                    tags:
+                      type: array
+                      description: "Tags"
+                      items:
+                        type: string
+              required:
+                - key
+                - name
+                - type
+                - default_value
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Flag key (unique identifier)"
+                    example: "enable-instant-transfers"
+                  name:
+                    type: string
+                    description: "Human-readable name"
+                    example: "Instant Transfers"
+                  description:
+                    type: string
+                    description: "Flag description"
+                    example: "Enable instant money transfers for eligible accounts"
+                  type:
+                    type: string
+                    description: "Flag value type"
+                    example: "boolean"
+                    enum:
+                      - boolean
+                      - string
+                      - number
+                      - json
+                  default_value:
+                    type: string
+                    description: "Default value when no rules match"
+                    example: "false"
+                  enabled:
+                    type: boolean
+                    description: "Whether the flag is active"
+                    example: true
+                  environment:
+                    type: string
+                    description: "Target environment"
+                    example: "production"
+                  tags:
+                    type: array
+                    description: "Organizational tags"
+                    items:
+                      type: string
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - flag_key
+                  - name
+                  - type
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /flags/{flag_key}:
+    get:
+      operationId: getFlag
+      summary: Get feature flag
+      description: >-
+        Retrieve flag configuration including targeting rules, rollout state, and evaluation statistics.
+      tags:
+        - Feature Flags
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Flag key (unique identifier)"
+                    example: "enable-instant-transfers"
+                  name:
+                    type: string
+                    description: "Human-readable name"
+                    example: "Instant Transfers"
+                  description:
+                    type: string
+                    description: "Flag description"
+                    example: "Enable instant money transfers for eligible accounts"
+                  type:
+                    type: string
+                    description: "Flag value type"
+                    example: "boolean"
+                    enum:
+                      - boolean
+                      - string
+                      - number
+                      - json
+                  default_value:
+                    type: string
+                    description: "Default value when no rules match"
+                    example: "false"
+                  enabled:
+                    type: boolean
+                    description: "Whether the flag is active"
+                    example: true
+                  environment:
+                    type: string
+                    description: "Target environment"
+                    example: "production"
+                  tags:
+                    type: array
+                    description: "Organizational tags"
+                    items:
+                      type: string
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - flag_key
+                  - name
+                  - type
+                  - enabled
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateFlag
+      summary: Update feature flag
+      description: >-
+        Update flag metadata. To change targeting or rollout, use the dedicated sub-endpoints.
+      tags:
+        - Feature Flags
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update feature flag request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Updated name"
+                      example: "Biometric Auth"
+                    description:
+                      type: string
+                      description: "Updated description"
+                      example: "Biometric authentication for all platforms"
+                    tags:
+                      type: array
+                      description: "Updated tags"
+                      items:
+                        type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Flag key (unique identifier)"
+                    example: "enable-instant-transfers"
+                  name:
+                    type: string
+                    description: "Human-readable name"
+                    example: "Instant Transfers"
+                  description:
+                    type: string
+                    description: "Flag description"
+                    example: "Enable instant money transfers for eligible accounts"
+                  type:
+                    type: string
+                    description: "Flag value type"
+                    example: "boolean"
+                    enum:
+                      - boolean
+                      - string
+                      - number
+                      - json
+                  default_value:
+                    type: string
+                    description: "Default value when no rules match"
+                    example: "false"
+                  enabled:
+                    type: boolean
+                    description: "Whether the flag is active"
+                    example: true
+                  environment:
+                    type: string
+                    description: "Target environment"
+                    example: "production"
+                  tags:
+                    type: array
+                    description: "Organizational tags"
+                    items:
+                      type: string
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - flag_key
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteFlag
+      summary: Delete feature flag
+      description: >-
+        Permanently delete a feature flag. Archived flags can be restored; deleted flags cannot.
+      tags:
+        - Feature Flags
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /flags/{flag_key}/evaluate:
+    post:
+      operationId: evaluateFlag
+      summary: Evaluate flag
+      description: >-
+        Evaluate a feature flag for a specific user context. Returns the resolved value based on targeting
+        rules, rollout percentage, and A/B splits. This is the server-side evaluation endpoint; SDKs use
+        this internally.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Evaluate flag request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: "User identifier"
+                      example: "usr-12345"
+                    attributes:
+                      type: object
+                      description: "User attributes for targeting (plan, region, etc.)"
+              required:
+                - user_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Flag key"
+                    example: "enable-instant-transfers"
+                  value:
+                    type: string
+                    description: "Resolved value"
+                    example: "true"
+                  variation:
+                    type: string
+                    description: "Matched variation name"
+                    example: "treatment"
+                  reason:
+                    type: string
+                    description: "Resolution reason"
+                    example: "default"
+                    enum:
+                      - default
+                      - targeting_rule
+                      - rollout
+                      - split
+                      - kill_switch
+                  segment:
+                    type: string
+                    description: "Matched segment (if any)"
+                    example: "premium-users"
+                required:
+                  - flag_key
+                  - value
+                  - reason
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /flags/{flag_key}/targeting:
+    get:
+      operationId: getTargetingRules
+      summary: Get targeting rules
+      description: >-
+        Retrieve targeting rules for a flag. Rules define which users see which variations based on
+        attribute matching.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Flag key"
+                    example: "enable-instant-transfers"
+                  rules:
+                    type: array
+                    description: "Ordered targeting rules"
+                    items:
+                      type: object
+                  fallthrough:
+                    type: string
+                    description: "Value when no rules match"
+                    example: "false"
+                required:
+                  - flag_key
+                  - rules
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: updateTargetingRules
+      summary: Update targeting rules
+      description: >-
+        Replace all targeting rules for a flag. Rules are evaluated in order; first match wins.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Flag key"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update targeting rules request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    rules:
+                      type: array
+                      description: "Targeting rules"
+                      items:
+                        type: object
+                    fallthrough:
+                      type: string
+                      description: "Default when no rule matches"
+                      example: "false"
+              required:
+                - rules
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Key"
+                    example: "enable-instant-transfers"
+                  rules_count:
+                    type: integer
+                    description: "Number of rules"
+                    example: 3
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - flag_key
+                  - rules_count
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /flags/{flag_key}/rollout:
+    get:
+      operationId: getRollout
+      summary: Get rollout config
+      description: >-
+        Retrieve gradual rollout configuration including current percentage and rollout schedule.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Key"
+                    example: "enable-instant-transfers"
+                  percentage:
+                    type: number
+                    description: "Current rollout percentage"
+                    format: double
+                    example: 25.0
+                  rollout_strategy:
+                    type: string
+                    description: "Rollout strategy"
+                    example: "percentage"
+                    enum:
+                      - percentage
+                      - scheduled
+                      - manual
+                  schedule:
+                    type: array
+                    description: "Scheduled rollout steps"
+                    items:
+                      type: object
+                required:
+                  - flag_key
+                  - percentage
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    put:
+      operationId: updateRollout
+      summary: Update rollout config
+      description: >-
+        Configure gradual rollout for a flag. Set a percentage or define a schedule for automatic percentage
+        increases.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Flag key"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update rollout config request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    percentage:
+                      type: number
+                      description: "Rollout percentage (0-100)"
+                      format: double
+                      example: 50.0
+                    schedule:
+                      type: array
+                      description: "Rollout schedule steps"
+                      items:
+                        type: object
+              required:
+                - percentage
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Key"
+                    example: "enable-instant-transfers"
+                  percentage:
+                    type: number
+                    description: "Updated percentage"
+                    format: double
+                    example: 50.0
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - flag_key
+                  - percentage
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /flags/{flag_key}/splits:
+    get:
+      operationId: listSplits
+      summary: List A/B test splits
+      description: >-
+        List all A/B test split variations for a flag with their traffic allocation and metric tracking
+        configuration.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Flag key"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        split_id:
+                          type: string
+                          description: "Split ID"
+                          format: uuid
+                          example: "spl-1a2b3c4d"
+                        name:
+                          type: string
+                          description: "Variation name"
+                          example: "treatment-A"
+                        value:
+                          type: string
+                          description: "Variation value"
+                          example: "true"
+                        allocation_percent:
+                          type: number
+                          description: "Traffic allocation"
+                          format: double
+                          example: 50.0
+                        impressions:
+                          type: integer
+                          description: "Total evaluations for this variation"
+                          example: 12500
+                      required:
+                        - split_id
+                        - name
+                        - value
+                        - allocation_percent
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSplit
+      summary: Create A/B split
+      description: >-
+        Add a new A/B test variation to a flag. The total allocation across all splits must not exceed 100%.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Create A/B split request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Variation name"
+                      example: "treatment-B"
+                    value:
+                      type: string
+                      description: "Variation value"
+                      example: "alternate"
+                    allocation_percent:
+                      type: number
+                      description: "Traffic percentage"
+                      format: double
+                      example: 25.0
+              required:
+                - name
+                - value
+                - allocation_percent
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  split_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "spl-5a6b7c8d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "treatment-B"
+                  allocation_percent:
+                    type: number
+                    description: "Allocation"
+                    format: double
+                    example: 25.0
+                required:
+                  - split_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /flags/{flag_key}/splits/{split_id}:
+    patch:
+      operationId: updateSplit
+      summary: Update A/B split
+      description: Update a split variation's allocation or value.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Flag key"
+          schema:
+            type: "string"
+        - name: split_id
+          in: path
+          required: true
+          description: "Split ID"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update A/B split request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    allocation_percent:
+                      type: number
+                      description: "Updated allocation"
+                      format: double
+                      example: 30.0
+                    value:
+                      type: string
+                      description: "Updated value"
+                      example: "alternate-v2"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  split_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "spl-5a6b7c8d"
+                  allocation_percent:
+                    type: number
+                    description: "Allocation"
+                    format: double
+                    example: 30.0
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - split_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteSplit
+      summary: Delete A/B split
+      description: Remove a split variation. Traffic is redistributed to remaining variations.
+      tags:
+        - Targeting & Rollout
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Flag key"
+          schema:
+            type: "string"
+        - name: split_id
+          in: path
+          required: true
+          description: "Split ID"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Split deleted
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /flags/{flag_key}/kill:
+    post:
+      operationId: killFlag
+      summary: Kill switch
+      description: >-
+        Emergency kill switch — immediately disable a flag for all users regardless of targeting rules. All
+        evaluations return the default value. This is an instant, audit-logged action for incident response.
+      tags:
+        - Feature Flags
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Kill switch request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: "Kill reason"
+                      example: "Critical bug in instant transfers — disabling immediately"
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Key"
+                    example: "enable-instant-transfers"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "killed"
+                  killed_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - flag_key
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /flags/{flag_key}/restore:
+    post:
+      operationId: restoreFlag
+      summary: Restore killed flag
+      description: >-
+        Restore a killed flag to its previous targeting and rollout state. Reverses the kill switch action.
+      tags:
+        - Feature Flags
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Unique flag key"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Restore killed flag request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: "Restore reason"
+                      example: "Bug fixed, re-enabling instant transfers"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Key"
+                    example: "enable-instant-transfers"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "active"
+                  restored_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - flag_key
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /flags/{flag_key}/audit:
+    get:
+      operationId: getFlagAudit
+      summary: Get flag audit log
+      description: >-
+        Retrieve the audit trail for a feature flag showing all configuration changes, kill/restore events,
+        and who made them.
+      tags:
+        - Feature Flags
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Flag key"
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: "Page"
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Per page"
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event_id:
+                          type: string
+                          description: "Event ID"
+                          format: uuid
+                          example: "fae-2a3b4c5d"
+                        action:
+                          type: string
+                          description: "Action"
+                          example: "created"
+                          enum:
+                            - created
+                            - updated
+                            - deleted
+                            - killed
+                            - restored
+                            - targeting_updated
+                            - rollout_updated
+                        actor:
+                          type: string
+                          description: "Who performed the action"
+                          example: "admin@acmefin.com"
+                        timestamp:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        details:
+                          type: object
+                          description: "Change details"
+                      required:
+                        - event_id
+                        - action
+                        - actor
+                        - timestamp
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /flags/evaluate-all:
+    post:
+      operationId: evaluateAllFlags
+      summary: Evaluate all flags
+      description: >-
+        Bulk-evaluate all active feature flags for a user context. Returns a map of flag keys to resolved
+        values. Used by client-side SDKs for initial flag loading.
+      tags:
+        - Targeting & Rollout
+      requestBody:
+        required: true
+        description: Evaluate all flags request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    user_id:
+                      type: string
+                      description: "User ID"
+                      example: "usr-12345"
+                    attributes:
+                      type: object
+                      description: "User attributes for targeting"
+                    environment:
+                      type: string
+                      description: "Environment"
+                      example: "production"
+              required:
+                - user_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  evaluations:
+                    type: object
+                    description: "Map of flag_key -> {value, variation, reason}"
+                  evaluated_count:
+                    type: integer
+                    description: "Flags evaluated"
+                    example: 42
+                  environment:
+                    type: string
+                    description: "Environment"
+                    example: "production"
+                required:
+                  - evaluations
+                  - evaluated_count
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /segments:
+    get:
+      operationId: listSegments
+      summary: List user segments
+      description: >-
+        List reusable audience segments used for flag targeting. Segments define user cohorts based on
+        attribute rules.
+      tags:
+        - Segments
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        segment_id:
+                          type: string
+                          description: "Segment ID"
+                          format: uuid
+                          example: "seg-3a4b5c6d"
+                        name:
+                          type: string
+                          description: "Segment name"
+                          example: "premium-users"
+                        description:
+                          type: string
+                          description: "Segment description"
+                          example: "Users on Premium or Enterprise plans"
+                        rules:
+                          type: array
+                          description: "Segment matching rules"
+                          items:
+                            type: object
+                        estimated_size:
+                          type: integer
+                          description: "Estimated users in segment"
+                          example: 15400
+                      required:
+                        - segment_id
+                        - name
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createSegment
+      summary: Create segment
+      description: Create a reusable user segment for flag targeting.
+      tags:
+        - Segments
+      requestBody:
+        required: true
+        description: Create segment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Name"
+                      example: "beta-testers"
+                    description:
+                      type: string
+                      description: "Description"
+                      example: "Users opted into beta program"
+                    rules:
+                      type: array
+                      description: "Matching rules"
+                      items:
+                        type: object
+              required:
+                - name
+                - rules
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  segment_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "seg-3a4b5c6d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "beta-testers"
+                required:
+                  - segment_id
+                  - name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /segments/{segment_id}:
+    get:
+      operationId: getSegment
+      summary: Get segment
+      description: Retrieve segment details.
+      tags:
+        - Segments
+      parameters:
+        - name: segment_id
+          in: path
+          required: true
+          description: "Unique segment id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  segment_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "seg-3a4b5c6d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "premium-users"
+                  rules:
+                    type: array
+                    description: "Rules"
+                    items:
+                      type: object
+                  estimated_size:
+                    type: integer
+                    description: "Est. users"
+                    example: 15400
+                required:
+                  - segment_id
+                  - name
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateSegment
+      summary: Update segment
+      description: Update segment rules. Changes affect all flags using this segment.
+      tags:
+        - Segments
+      parameters:
+        - name: segment_id
+          in: path
+          required: true
+          description: "Unique segment id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update segment request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Name"
+                      example: "premium-users-v2"
+                    rules:
+                      type: array
+                      description: "Updated rules"
+                      items:
+                        type: object
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  segment_id:
+                    type: string
+                    description: "ID"
+                    format: uuid
+                    example: "seg-3a4b5c6d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "premium-users-v2"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - segment_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteSegment
+      summary: Delete segment
+      description: Delete a segment. Fails if referenced by active flags.
+      tags:
+        - Segments
+      parameters:
+        - name: segment_id
+          in: path
+          required: true
+          description: "Unique segment id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /flags/{flag_key}/dependencies:
+    get:
+      operationId: getFlagDependencies
+      summary: Get flag dependencies
+      description: >-
+        List flags that depend on this flag (prerequisite flags) and flags this flag depends on.
+      tags:
+        - Feature Flags
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          description: "Flag key"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag_key:
+                    type: string
+                    description: "Flag key"
+                    example: "enable-instant-transfers"
+                  depends_on:
+                    type: array
+                    description: "Flags this flag requires"
+                    items:
+                      type: object
+                  required_by:
+                    type: array
+                    description: "Flags that require this flag"
+                    items:
+                      type: object
+                required:
+                  - flag_key
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

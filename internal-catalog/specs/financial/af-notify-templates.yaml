@@ -1,0 +1,1693 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Notification Templates API
+  description: >-
+    Centralized template management for multi-channel notifications with version control, localization (i18n),
+    variable validation, live preview rendering, and a configurable approval workflow. Templates support
+    Handlebars-style variable substitution with conditional blocks and iteration. Each template maintains a full
+    version history for auditing and rollback.
+  version: 2.6.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-notify-templates
+  x-acme-domain: notify
+servers:
+  - url: https://af-notify-templates.api.acmefin.com/v1
+    description: Production
+  - url: https://af-notify-templates.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Templates
+    description: Create, read, update, and delete notification templates across channels
+  - name: Versioning
+    description: Template version history, diff, and rollback operations
+  - name: Approval Workflow
+    description: Submit templates for review and manage approval state transitions
+paths:
+  /templates:
+    get:
+      operationId: listTemplates
+      summary: List templates
+      description: >-
+        Retrieve all notification templates with filtering by channel, status, category, and locale.
+        Supports full-text search on template names and content.
+      tags:
+        - Templates
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: "Page number for pagination"
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Number of results per page (max 100)"
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: "Field to sort results by"
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: "Sort direction"
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: channel
+          in: query
+          required: false
+          description: "Filter by target channel"
+          schema:
+            type: "string"
+            enum:
+              - email
+              - sms
+              - push
+              - in_app
+        - name: status
+          in: query
+          required: false
+          description: "Filter by lifecycle status"
+          schema:
+            type: "string"
+            enum:
+              - draft
+              - pending_approval
+              - approved
+              - archived
+        - name: category
+          in: query
+          required: false
+          description: "Filter by template category"
+          schema:
+            type: "string"
+        - name: search
+          in: query
+          required: false
+          description: "Full-text search in name and body"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        template_id:
+                          type: string
+                          description: "Template ID"
+                          format: uuid
+                          example: "tpl-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                        name:
+                          type: string
+                          description: "Template name"
+                          example: "welcome-email"
+                        channel:
+                          type: string
+                          description: "Target channel"
+                          example: "email"
+                          enum:
+                            - email
+                            - sms
+                            - push
+                            - in_app
+                        subject:
+                          type: string
+                          description: "Subject line template (email only)"
+                          example: "Welcome to Acme Finance, {{first_name}}!"
+                        body:
+                          type: string
+                          description: "Template body with {{variable}} placeholders"
+                          example: "Hi {{first_name}}, your account {{account_id}} is ready."
+                        content_type:
+                          type: string
+                          description: "Body content type"
+                          example: "text/plain"
+                          enum:
+                            - text/plain
+                            - text/html
+                        status:
+                          type: string
+                          description: "Template lifecycle status"
+                          example: "draft"
+                          enum:
+                            - draft
+                            - pending_approval
+                            - approved
+                            - archived
+                        current_version:
+                          type: integer
+                          description: "Current active version number"
+                          example: 3
+                        locale:
+                          type: string
+                          description: "Default locale"
+                          example: "en-US"
+                        category:
+                          type: string
+                          description: "Template category"
+                          example: "onboarding"
+                        created_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        updated_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - template_id
+                        - name
+                        - channel
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTemplate
+      summary: Create a template
+      description: >-
+        Create a new notification template in draft status. The template body supports Handlebars-style
+        variables ({{var}}), conditionals ({{#if}}), and loops ({{#each}}). Templates must be approved
+        before they can be used in production sends.
+      tags:
+        - Templates
+      requestBody:
+        required: true
+        description: Create a template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Template name (unique, kebab-case)"
+                      example: "payment-confirmation"
+                    channel:
+                      type: string
+                      description: "Channel"
+                      example: "email"
+                      enum:
+                        - email
+                        - sms
+                        - push
+                        - in_app
+                    subject:
+                      type: string
+                      description: "Subject template (email)"
+                      example: "Payment of {{amount}} confirmed"
+                    body:
+                      type: string
+                      description: "Body template"
+                      example: "Your payment of {{amount}} to {{recipient}} was processed."
+                    content_type:
+                      type: string
+                      description: "Content type"
+                      example: "text/plain"
+                      enum:
+                        - text/plain
+                        - text/html
+                    category:
+                      type: string
+                      description: "Category"
+                      example: "transactions"
+                    locale:
+                      type: string
+                      description: "Default locale"
+                      example: "en-US"
+                    variables:
+                      type: array
+                      description: "Declared template variables"
+                      items:
+                        type: object
+              required:
+                - name
+                - channel
+                - body
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: "Template ID"
+                    format: uuid
+                    example: "tpl-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  name:
+                    type: string
+                    description: "Template name"
+                    example: "welcome-email"
+                  channel:
+                    type: string
+                    description: "Target channel"
+                    example: "email"
+                    enum:
+                      - email
+                      - sms
+                      - push
+                      - in_app
+                  subject:
+                    type: string
+                    description: "Subject line template (email only)"
+                    example: "Welcome to Acme Finance, {{first_name}}!"
+                  body:
+                    type: string
+                    description: "Template body with {{variable}} placeholders"
+                    example: "Hi {{first_name}}, your account {{account_id}} is ready."
+                  content_type:
+                    type: string
+                    description: "Body content type"
+                    example: "text/plain"
+                    enum:
+                      - text/plain
+                      - text/html
+                  status:
+                    type: string
+                    description: "Template lifecycle status"
+                    example: "draft"
+                    enum:
+                      - draft
+                      - pending_approval
+                      - approved
+                      - archived
+                  current_version:
+                    type: integer
+                    description: "Current active version number"
+                    example: 3
+                  locale:
+                    type: string
+                    description: "Default locale"
+                    example: "en-US"
+                  category:
+                    type: string
+                    description: "Template category"
+                    example: "onboarding"
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - template_id
+                  - name
+                  - channel
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /templates/{template_id}:
+    get:
+      operationId: getTemplate
+      summary: Get template
+      description: >-
+        Retrieve a template by ID including its current version content, variable declarations, available
+        localizations, and approval history.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Unique template id"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: "Template ID"
+                    format: uuid
+                    example: "tpl-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  name:
+                    type: string
+                    description: "Template name"
+                    example: "welcome-email"
+                  channel:
+                    type: string
+                    description: "Target channel"
+                    example: "email"
+                    enum:
+                      - email
+                      - sms
+                      - push
+                      - in_app
+                  subject:
+                    type: string
+                    description: "Subject line template (email only)"
+                    example: "Welcome to Acme Finance, {{first_name}}!"
+                  body:
+                    type: string
+                    description: "Template body with {{variable}} placeholders"
+                    example: "Hi {{first_name}}, your account {{account_id}} is ready."
+                  content_type:
+                    type: string
+                    description: "Body content type"
+                    example: "text/plain"
+                    enum:
+                      - text/plain
+                      - text/html
+                  status:
+                    type: string
+                    description: "Template lifecycle status"
+                    example: "draft"
+                    enum:
+                      - draft
+                      - pending_approval
+                      - approved
+                      - archived
+                  current_version:
+                    type: integer
+                    description: "Current active version number"
+                    example: 3
+                  locale:
+                    type: string
+                    description: "Default locale"
+                    example: "en-US"
+                  category:
+                    type: string
+                    description: "Template category"
+                    example: "onboarding"
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - template_id
+                  - name
+                  - channel
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateTemplate
+      summary: Update template
+      description: >-
+        Update a template's content or metadata. Updates to approved templates automatically create a new
+        version and reset the status to draft, requiring re-approval.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Unique template id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Updated name"
+                      example: "payment-confirmation-v2"
+                    subject:
+                      type: string
+                      description: "Updated subject"
+                      example: "Payment confirmed: {{amount}}"
+                    body:
+                      type: string
+                      description: "Updated body"
+                      example: "Hi {{name}}, payment of {{amount}} processed."
+                    category:
+                      type: string
+                      description: "Updated category"
+                      example: "transactions"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: "Template ID"
+                    format: uuid
+                    example: "tpl-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  name:
+                    type: string
+                    description: "Template name"
+                    example: "welcome-email"
+                  channel:
+                    type: string
+                    description: "Target channel"
+                    example: "email"
+                    enum:
+                      - email
+                      - sms
+                      - push
+                      - in_app
+                  subject:
+                    type: string
+                    description: "Subject line template (email only)"
+                    example: "Welcome to Acme Finance, {{first_name}}!"
+                  body:
+                    type: string
+                    description: "Template body with {{variable}} placeholders"
+                    example: "Hi {{first_name}}, your account {{account_id}} is ready."
+                  content_type:
+                    type: string
+                    description: "Body content type"
+                    example: "text/plain"
+                    enum:
+                      - text/plain
+                      - text/html
+                  status:
+                    type: string
+                    description: "Template lifecycle status"
+                    example: "draft"
+                    enum:
+                      - draft
+                      - pending_approval
+                      - approved
+                      - archived
+                  current_version:
+                    type: integer
+                    description: "Current active version number"
+                    example: 3
+                  locale:
+                    type: string
+                    description: "Default locale"
+                    example: "en-US"
+                  category:
+                    type: string
+                    description: "Template category"
+                    example: "onboarding"
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  updated_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - template_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteTemplate
+      summary: Delete template
+      description: >-
+        Permanently delete a template and all its versions. Active templates (in use by scheduled sends)
+        cannot be deleted; archive them first.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Unique template id"
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /templates/{template_id}/versions:
+    get:
+      operationId: listTemplateVersions
+      summary: List template versions
+      description: >-
+        Retrieve the version history for a template. Each version includes the full template content at that
+        point in time, who made the change, and the approval status.
+      tags:
+        - Versioning
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Template ID"
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: "Page number"
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: "Items per page"
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version:
+                          type: integer
+                          description: "Version number"
+                          example: 3
+                        body:
+                          type: string
+                          description: "Template body at this version"
+                          example: "Hi {{name}}, payment confirmed."
+                        subject:
+                          type: string
+                          description: "Subject at this version"
+                          example: "Payment confirmed"
+                        status:
+                          type: string
+                          description: "Version status"
+                          example: "draft"
+                          enum:
+                            - draft
+                            - approved
+                            - rejected
+                        created_by:
+                          type: string
+                          description: "Author"
+                          example: "user-admin-001"
+                        created_at:
+                          type: string
+                          description: "Version creation time"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                        change_note:
+                          type: string
+                          description: "Version change description"
+                          example: "Updated greeting format"
+                      required:
+                        - version
+                        - body
+                        - status
+                        - created_at
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createTemplateVersion
+      summary: Create a new version
+      description: >-
+        Create a new version of the template with updated content. The new version starts in draft status
+        and must go through the approval workflow before it becomes the active version.
+      tags:
+        - Versioning
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Unique template id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Create a new version request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    body:
+                      type: string
+                      description: "Updated body content"
+                      example: "Hello {{first_name}}, your {{amount}} payment is confirmed."
+                    subject:
+                      type: string
+                      description: "Updated subject"
+                      example: "Payment confirmed - {{amount}}"
+                    change_note:
+                      type: string
+                      description: "Description of changes"
+                      example: "Personalized greeting with first name"
+              required:
+                - body
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                    description: "New version number"
+                    example: 4
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "draft"
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - version
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /templates/{template_id}/versions/{version_id}:
+    get:
+      operationId: getTemplateVersion
+      summary: Get specific version
+      description: >-
+        Retrieve the full content and metadata for a specific template version. Useful for comparing
+        versions or reverting to a previous version.
+      tags:
+        - Versioning
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Template ID"
+          schema:
+            type: "string"
+        - name: version_id
+          in: path
+          required: true
+          description: "Version number"
+          schema:
+            type: "integer"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                    description: "Version number"
+                    example: 2
+                  body:
+                    type: string
+                    description: "Template body"
+                    example: "Hi {{name}}, payment processed."
+                  subject:
+                    type: string
+                    description: "Subject line"
+                    example: "Payment processed"
+                  status:
+                    type: string
+                    description: "Version status"
+                    example: "approved"
+                  created_by:
+                    type: string
+                    description: "Author"
+                    example: "user-admin-001"
+                  created_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                  approved_by:
+                    type: string
+                    description: "Approver (if approved)"
+                    example: "user-mgr-002"
+                  approved_at:
+                    type: string
+                    description: "Approval timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - version
+                  - body
+                  - status
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /templates/{template_id}/localize:
+    post:
+      operationId: addLocalization
+      summary: Add localization
+      description: >-
+        Add a localized version of the template for a specific locale. The localized body can use the same
+        variables as the base template. Falls back to the default locale if a requested locale is not
+        available.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Unique template id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Add localization request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    locale:
+                      type: string
+                      description: "BCP 47 locale code"
+                      example: "es-MX"
+                    subject:
+                      type: string
+                      description: "Localized subject"
+                      example: "Pago de {{amount}} confirmado"
+                    body:
+                      type: string
+                      description: "Localized body"
+                      example: "Hola {{first_name}}, tu pago de {{amount}} fue procesado."
+              required:
+                - locale
+                - body
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: "Template ID"
+                    format: uuid
+                    example: "tpl-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  locale:
+                    type: string
+                    description: "Added locale"
+                    example: "es-MX"
+                  total_locales:
+                    type: integer
+                    description: "Total available locales"
+                    example: 4
+                required:
+                  - template_id
+                  - locale
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /templates/{template_id}/localizations:
+    get:
+      operationId: listLocalizations
+      summary: List template localizations
+      description: >-
+        List all available localizations for a template including completion status (whether all variables
+        are translated) and last update timestamps.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Template ID"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        locale:
+                          type: string
+                          description: "Locale code"
+                          example: "es-MX"
+                        subject:
+                          type: string
+                          description: "Localized subject"
+                          example: "Pago confirmado"
+                        body:
+                          type: string
+                          description: "Localized body"
+                          example: "Hola {{first_name}}..."
+                        complete:
+                          type: boolean
+                          description: "All variables have translations"
+                          example: true
+                        updated_at:
+                          type: string
+                          description: "ISO 8601 timestamp"
+                          format: date-time
+                          example: "2025-06-15T14:30:00Z"
+                      required:
+                        - locale
+                        - body
+                        - complete
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /templates/{template_id}/preview:
+    post:
+      operationId: previewTemplate
+      summary: Preview template
+      description: >-
+        Render a template with sample variable values to preview the final output. Supports previewing in
+        any available locale. Returns both rendered HTML and plain-text versions for email templates.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Unique template id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Preview template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    variables:
+                      type: object
+                      description: "Sample variable values for rendering"
+                    locale:
+                      type: string
+                      description: "Locale to preview"
+                      example: "en-US"
+              required:
+                - variables
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rendered_subject:
+                    type: string
+                    description: "Rendered subject"
+                    example: "Payment of $1,250 confirmed"
+                  rendered_body:
+                    type: string
+                    description: "Rendered body HTML/text"
+                    example: "<p>Hi John, your payment of $1,250 was processed.</p>"
+                  rendered_text:
+                    type: string
+                    description: "Plain-text version"
+                    example: "Hi John, your payment of $1,250 was processed."
+                  locale:
+                    type: string
+                    description: "Rendered locale"
+                    example: "en-US"
+                required:
+                  - rendered_subject
+                  - rendered_body
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /templates/{template_id}/variables:
+    get:
+      operationId: getTemplateVariables
+      summary: Get template variables
+      description: >-
+        Extract and list all variables declared in the template, including their expected types, default
+        values, and whether they are required. Useful for building dynamic forms and validating send
+        requests.
+      tags:
+        - Templates
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Template ID"
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          description: "Variable name"
+                          example: "first_name"
+                        type:
+                          type: string
+                          description: "Expected value type"
+                          example: "string"
+                          enum:
+                            - string
+                            - number
+                            - boolean
+                            - date
+                            - currency
+                        required:
+                          type: boolean
+                          description: "Whether variable is required"
+                          example: true
+                        default_value:
+                          type: string
+                          description: "Default value if not provided"
+                          example: "Customer"
+                        description:
+                          type: string
+                          description: "Variable purpose"
+                          example: "Recipient's first name for greeting"
+                      required:
+                        - name
+                        - type
+                        - required
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /templates/{template_id}/approve:
+    post:
+      operationId: approveTemplate
+      summary: Approve template
+      description: >-
+        Approve a template that is in pending_approval status. Approved templates become available for
+        production use. Requires the approver role. Records the approver identity and timestamp for audit.
+      tags:
+        - Approval Workflow
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Unique template id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Approve template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    comment:
+                      type: string
+                      description: "Approval comment"
+                      example: "Content reviewed and approved for production use."
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: "Template ID"
+                    format: uuid
+                    example: "tpl-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  status:
+                    type: string
+                    description: "Updated status"
+                    example: "approved"
+                  approved_by:
+                    type: string
+                    description: "Approver ID"
+                    example: "user-mgr-002"
+                  approved_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - template_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /templates/{template_id}/reject:
+    post:
+      operationId: rejectTemplate
+      summary: Reject template
+      description: >-
+        Reject a template in pending_approval status with a required reason. The template returns to draft
+        status and can be edited and resubmitted.
+      tags:
+        - Approval Workflow
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          description: "Unique template id"
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Reject template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    reason:
+                      type: string
+                      description: "Rejection reason (required)"
+                      example: "Subject line is too long for SMS channel. Please shorten to under 160 characters."
+              required:
+                - reason
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: "Template ID"
+                    format: uuid
+                    example: "tpl-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+                  status:
+                    type: string
+                    description: "Updated status"
+                    example: "draft"
+                  rejected_by:
+                    type: string
+                    description: "Reviewer ID"
+                    example: "user-mgr-002"
+                  rejected_at:
+                    type: string
+                    description: "ISO 8601 timestamp"
+                    format: date-time
+                    example: "2025-06-15T14:30:00Z"
+                required:
+                  - template_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /templates/categories:
+    get:
+      operationId: listTemplateCategories
+      summary: List template categories
+      description: >-
+        List all available template categories. Categories organize templates by business function and can
+        be used for filtering and access control.
+      tags:
+        - Templates
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    description: "Available categories"
+                    items:
+                      type: object
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /templates/import:
+    post:
+      operationId: importTemplate
+      summary: Import template
+      description: >-
+        Import a template from an external source (MJML, HTML file, or another environment). The imported
+        template is created in draft status. Supports MJML-to-HTML conversion for email templates.
+      tags:
+        - Templates
+      requestBody:
+        required: true
+        description: Import template request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    name:
+                      type: string
+                      description: "Template name"
+                      example: "imported-welcome"
+                    channel:
+                      type: string
+                      description: "Channel"
+                      example: "email"
+                      enum:
+                        - email
+                        - sms
+                        - push
+                        - in_app
+                    format:
+                      type: string
+                      description: "Import format"
+                      example: "html"
+                      enum:
+                        - html
+                        - mjml
+                        - text
+                    content:
+                      type: string
+                      description: "Raw template content"
+                      example: "<mjml><mj-body>...</mj-body></mjml>"
+                    category:
+                      type: string
+                      description: "Category"
+                      example: "onboarding"
+              required:
+                - name
+                - channel
+                - format
+                - content
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+                    description: "Created template ID"
+                    format: uuid
+                    example: "tpl-9a0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d"
+                  name:
+                    type: string
+                    description: "Name"
+                    example: "imported-welcome"
+                  status:
+                    type: string
+                    description: "Status"
+                    example: "draft"
+                  warnings:
+                    type: array
+                    description: "Import warnings or conversion notes"
+                    items:
+                      type: string
+                required:
+                  - template_id
+                  - name
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

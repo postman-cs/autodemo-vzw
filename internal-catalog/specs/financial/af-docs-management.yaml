@@ -1,0 +1,1877 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Document Management API
+  description: >-
+    Enterprise document management platform for financial documents including loan agreements, disclosures,
+    regulatory filings, statements, and internal policies. Provides upload, versioning, metadata tagging, granular
+    access control, full-text search, folder organization, and bulk operations. Supports compliance retention
+    requirements and audit trail logging for all document access and modifications.
+  version: 2.8.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-docs-management
+  x-acme-domain: docs
+servers:
+  - url: https://af-docs-management.api.acmefin.com/v1
+    description: Production
+  - url: https://af-docs-management.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Documents
+    description: Upload, retrieve, update, and delete financial documents with version tracking
+  - name: Versions
+    description: Manage document version history with change tracking and rollback capability
+  - name: Permissions
+    description: Control document access with role-based permissions and time-limited sharing
+  - name: Organization
+    description: Organize documents with folders, search, and bulk operations
+paths:
+  /documents:
+    get:
+      operationId: listDocuments
+      summary: List documents
+      description: >-
+        Retrieve documents with filtering by type, status, folder, tags, owner, and date range. Supports
+        full-text search via the q parameter which searches document titles, tags, and extracted text
+        content.
+      tags:
+        - Documents
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: document_type
+          in: query
+          required: false
+          description: Filter by document type
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by lifecycle status
+          schema:
+            type: "string"
+            enum:
+              - draft
+              - active
+              - archived
+        - name: folder_id
+          in: query
+          required: false
+          description: Filter by parent folder
+          schema:
+            type: "string"
+        - name: q
+          in: query
+          required: false
+          description: Full-text search query across titles, tags, and content
+          schema:
+            type: "string"
+        - name: owner_id
+          in: query
+          required: false
+          description: Filter by document owner
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                          description: Document identifier
+                          format: uuid
+                          example: "doc-8f9a0b1c-d2e3-4567-fabb-890123456789"
+                        title:
+                          type: string
+                          description: Document title
+                          example: "Q1 2025 Loan Agreement - Johnson"
+                        document_type:
+                          type: string
+                          description: Document classification
+                          example: "loan_agreement"
+                          enum:
+                            - loan_agreement
+                            - disclosure
+                            - statement
+                            - correspondence
+                            - regulatory_filing
+                            - internal_memo
+                            - policy
+                            - contract
+                        mime_type:
+                          type: string
+                          description: File MIME type
+                          example: "application/pdf"
+                        file_size_bytes:
+                          type: integer
+                          description: File size in bytes
+                          example: 245862
+                        folder_id:
+                          type: string
+                          description: Parent folder identifier
+                          format: uuid
+                          example: "fld-1a2b3c4d"
+                        version_number:
+                          type: integer
+                          description: Current version number
+                          example: 3
+                        status:
+                          type: string
+                          description: Document lifecycle status
+                          example: "draft"
+                          enum:
+                            - draft
+                            - active
+                            - archived
+                            - deleted
+                        tags:
+                          type: array
+                          description: Metadata tags for search and classification
+                          items:
+                            type: string
+                            example: "loan"
+                        owner_id:
+                          type: string
+                          description: Document owner user ID
+                          example: "user-analyst-12"
+                        created_at:
+                          type: string
+                          description: Creation timestamp
+                          format: date-time
+                          example: "2025-01-10T08:00:00Z"
+                        updated_at:
+                          type: string
+                          description: Last modification timestamp
+                          format: date-time
+                          example: "2025-03-15T14:30:00Z"
+                      required:
+                        - document_id
+                        - title
+                        - document_type
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: uploadDocument
+      summary: Upload document
+      description: >-
+        Upload a new document to the management system. The document is automatically scanned for malware,
+        text is extracted for search indexing, and an initial version record is created. Maximum file size
+        is 100MB.
+      tags:
+        - Documents
+      requestBody:
+        required: true
+        description: Upload document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    title:
+                      type: string
+                      description: Document title
+                      example: "Q1 2025 Loan Agreement"
+                    document_type:
+                      type: string
+                      description: Document type
+                      example: "loan_agreement"
+                      enum:
+                        - loan_agreement
+                        - disclosure
+                        - statement
+                        - correspondence
+                        - regulatory_filing
+                        - policy
+                    folder_id:
+                      type: string
+                      description: Target folder
+                      format: uuid
+                      example: "fld-1a2b3c4d"
+                    tags:
+                      type: array
+                      description: Metadata tags
+                      items:
+                        type: string
+                        example: "loan"
+                    content_base64:
+                      type: string
+                      description: Base64-encoded file content
+                      example: "JVBERi0xLjQK..."
+                    file_name:
+                      type: string
+                      description: Original file name
+                      example: "loan-agreement-johnson.pdf"
+                    retention_policy:
+                      type: string
+                      description: Retention policy to apply
+                      example: "standard_7yr"
+                      enum:
+                        - standard_7yr
+                        - regulatory_10yr
+                        - permanent
+                        - custom
+              required:
+                - title
+                - document_type
+                - content_base64
+                - file_name
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document identifier
+                    format: uuid
+                    example: "doc-8f9a0b1c-d2e3-4567-fabb-890123456789"
+                  title:
+                    type: string
+                    description: Document title
+                    example: "Q1 2025 Loan Agreement - Johnson"
+                  document_type:
+                    type: string
+                    description: Document classification
+                    example: "loan_agreement"
+                    enum:
+                      - loan_agreement
+                      - disclosure
+                      - statement
+                      - correspondence
+                      - regulatory_filing
+                      - internal_memo
+                      - policy
+                      - contract
+                  mime_type:
+                    type: string
+                    description: File MIME type
+                    example: "application/pdf"
+                  file_size_bytes:
+                    type: integer
+                    description: File size in bytes
+                    example: 245862
+                  folder_id:
+                    type: string
+                    description: Parent folder identifier
+                    format: uuid
+                    example: "fld-1a2b3c4d"
+                  version_number:
+                    type: integer
+                    description: Current version number
+                    example: 3
+                  status:
+                    type: string
+                    description: Document lifecycle status
+                    example: "draft"
+                    enum:
+                      - draft
+                      - active
+                      - archived
+                      - deleted
+                  tags:
+                    type: array
+                    description: Metadata tags for search and classification
+                    items:
+                      type: string
+                      example: "loan"
+                  owner_id:
+                    type: string
+                    description: Document owner user ID
+                    example: "user-analyst-12"
+                  created_at:
+                    type: string
+                    description: Creation timestamp
+                    format: date-time
+                    example: "2025-01-10T08:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last modification timestamp
+                    format: date-time
+                    example: "2025-03-15T14:30:00Z"
+                required:
+                  - document_id
+                  - title
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/search:
+    post:
+      operationId: searchDocuments
+      summary: Search documents
+      description: >-
+        Perform an advanced full-text search across all documents the caller has access to. Supports Boolean
+        operators, phrase matching, field-specific queries, and relevance scoring. Results include matched
+        text snippets with highlighting.
+      tags:
+        - Organization
+      requestBody:
+        required: true
+        description: Search documents request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    query:
+                      type: string
+                      description: Search query with optional Boolean operators
+                      example: "loan agreement AND (Johnson OR Smith) NOT draft"
+                    document_types:
+                      type: array
+                      description: Limit to document types
+                      items:
+                        type: string
+                        example: "loan_agreement"
+                    date_range_start:
+                      type: string
+                      description: Search documents created after this date
+                      format: date-time
+                      example: "2025-01-15T09:30:00Z"
+                    date_range_end:
+                      type: string
+                      description: Search documents created before this date
+                      format: date-time
+                      example: "2025-03-31T23:59:59Z"
+                    folder_ids:
+                      type: array
+                      description: Limit to specific folders
+                      items:
+                        type: string
+                        example: "fld-1a2b3c4d"
+              required:
+                - query
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_results:
+                    type: integer
+                    description: Total matching documents
+                    example: 47
+                  results:
+                    type: array
+                    description: Matching documents with relevance scores
+                    items:
+                      type: object
+                  facets:
+                    type: array
+                    description: Search facets for refinement
+                    items:
+                      type: object
+                required:
+                  - total_results
+                  - results
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/bulk/delete:
+    post:
+      operationId: bulkDeleteDocuments
+      summary: Bulk delete documents
+      description: >-
+        Delete multiple documents in a single operation. Documents under legal hold or referenced by active
+        regulatory submissions cannot be deleted. Returns per-document success/failure results.
+      tags:
+        - Organization
+      requestBody:
+        required: true
+        description: Bulk delete documents request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    document_ids:
+                      type: array
+                      description: Document IDs to delete
+                      items:
+                        type: string
+                        example: "doc-8f9a0b1c"
+                    reason:
+                      type: string
+                      description: Reason for bulk deletion
+                      example: "End of retention period cleanup"
+              required:
+                - document_ids
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_requested:
+                    type: integer
+                    description: Documents requested for deletion
+                    example: 15
+                  successful:
+                    type: integer
+                    description: Successfully deleted
+                    example: 13
+                  failed:
+                    type: integer
+                    description: Failed to delete
+                    example: 2
+                  failures:
+                    type: array
+                    description: Details of failed deletions
+                    items:
+                      type: object
+                required:
+                  - total_requested
+                  - successful
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/bulk/move:
+    post:
+      operationId: bulkMoveDocuments
+      summary: Bulk move documents
+      description: >-
+        Move multiple documents to a different folder in a single operation. Preserves all version history,
+        permissions, and metadata.
+      tags:
+        - Organization
+      requestBody:
+        required: true
+        description: Bulk move documents request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    document_ids:
+                      type: array
+                      description: Document IDs to move
+                      items:
+                        type: string
+                        example: "doc-8f9a0b1c"
+                    target_folder_id:
+                      type: string
+                      description: Destination folder
+                      format: uuid
+                      example: "fld-target-5e6f"
+              required:
+                - document_ids
+                - target_folder_id
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_requested:
+                    type: integer
+                    description: Documents requested to move
+                    example: 10
+                  successful:
+                    type: integer
+                    description: Successfully moved
+                    example: 10
+                  failed:
+                    type: integer
+                    description: Failed to move
+                    example: 0
+                required:
+                  - total_requested
+                  - successful
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/{document_id}:
+    get:
+      operationId: getDocument
+      summary: Get document metadata
+      description: >-
+        Retrieve complete document metadata including version info, permissions summary, tags, folder
+        location, and audit timestamps. Does not return file content; use the download endpoint for that.
+      tags:
+        - Documents
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document identifier
+                    format: uuid
+                    example: "doc-8f9a0b1c-d2e3-4567-fabb-890123456789"
+                  title:
+                    type: string
+                    description: Document title
+                    example: "Q1 2025 Loan Agreement - Johnson"
+                  document_type:
+                    type: string
+                    description: Document classification
+                    example: "loan_agreement"
+                    enum:
+                      - loan_agreement
+                      - disclosure
+                      - statement
+                      - correspondence
+                      - regulatory_filing
+                      - internal_memo
+                      - policy
+                      - contract
+                  mime_type:
+                    type: string
+                    description: File MIME type
+                    example: "application/pdf"
+                  file_size_bytes:
+                    type: integer
+                    description: File size in bytes
+                    example: 245862
+                  folder_id:
+                    type: string
+                    description: Parent folder identifier
+                    format: uuid
+                    example: "fld-1a2b3c4d"
+                  version_number:
+                    type: integer
+                    description: Current version number
+                    example: 3
+                  status:
+                    type: string
+                    description: Document lifecycle status
+                    example: "draft"
+                    enum:
+                      - draft
+                      - active
+                      - archived
+                      - deleted
+                  tags:
+                    type: array
+                    description: Metadata tags for search and classification
+                    items:
+                      type: string
+                      example: "loan"
+                  owner_id:
+                    type: string
+                    description: Document owner user ID
+                    example: "user-analyst-12"
+                  created_at:
+                    type: string
+                    description: Creation timestamp
+                    format: date-time
+                    example: "2025-01-10T08:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last modification timestamp
+                    format: date-time
+                    example: "2025-03-15T14:30:00Z"
+                required:
+                  - document_id
+                  - title
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateDocumentMetadata
+      summary: Update document metadata
+      description: >-
+        Update a document's metadata including title, tags, document type, and folder assignment. Creates a
+        metadata change audit entry but does not create a new version. Use the upload endpoint to update
+        file content.
+      tags:
+        - Documents
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update document metadata request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    title:
+                      type: string
+                      description: Updated title
+                      example: "Q1 2025 Loan Agreement - Johnson (Amended)"
+                    tags:
+                      type: array
+                      description: Updated tags
+                      items:
+                        type: string
+                        example: "amended"
+                    document_type:
+                      type: string
+                      description: Updated type
+                      example: "loan_agreement"
+                      enum:
+                        - loan_agreement
+                        - disclosure
+                        - statement
+                    folder_id:
+                      type: string
+                      description: Move to folder
+                      format: uuid
+                      example: "fld-9a0b1c2d"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document identifier
+                    format: uuid
+                    example: "doc-8f9a0b1c-d2e3-4567-fabb-890123456789"
+                  title:
+                    type: string
+                    description: Document title
+                    example: "Q1 2025 Loan Agreement - Johnson"
+                  document_type:
+                    type: string
+                    description: Document classification
+                    example: "loan_agreement"
+                    enum:
+                      - loan_agreement
+                      - disclosure
+                      - statement
+                      - correspondence
+                      - regulatory_filing
+                      - internal_memo
+                      - policy
+                      - contract
+                  mime_type:
+                    type: string
+                    description: File MIME type
+                    example: "application/pdf"
+                  file_size_bytes:
+                    type: integer
+                    description: File size in bytes
+                    example: 245862
+                  folder_id:
+                    type: string
+                    description: Parent folder identifier
+                    format: uuid
+                    example: "fld-1a2b3c4d"
+                  version_number:
+                    type: integer
+                    description: Current version number
+                    example: 3
+                  status:
+                    type: string
+                    description: Document lifecycle status
+                    example: "draft"
+                    enum:
+                      - draft
+                      - active
+                      - archived
+                      - deleted
+                  tags:
+                    type: array
+                    description: Metadata tags for search and classification
+                    items:
+                      type: string
+                      example: "loan"
+                  owner_id:
+                    type: string
+                    description: Document owner user ID
+                    example: "user-analyst-12"
+                  created_at:
+                    type: string
+                    description: Creation timestamp
+                    format: date-time
+                    example: "2025-01-10T08:00:00Z"
+                  updated_at:
+                    type: string
+                    description: Last modification timestamp
+                    format: date-time
+                    example: "2025-03-15T14:30:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+    delete:
+      operationId: deleteDocument
+      summary: Delete document
+      description: >-
+        Soft-delete a document. The document is marked as deleted and excluded from search results and
+        listings. Documents under legal hold cannot be deleted. Hard deletion occurs after the retention
+        period expires.
+      tags:
+        - Documents
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      responses:
+        "204":
+          description: Resource deleted successfully
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /documents/{document_id}/versions:
+    get:
+      operationId: listDocumentVersions
+      summary: List document versions
+      description: >-
+        Retrieve the version history for a document, ordered by version number descending. Each version
+        includes a change summary, file size, checksum, and the user who created it.
+      tags:
+        - Versions
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Document identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version_id:
+                          type: string
+                          description: Version identifier
+                          format: uuid
+                          example: "ver-2b3c4d5e-f6a7-8901-abbc-234567890123"
+                        version_number:
+                          type: integer
+                          description: Sequential version number
+                          example: 3
+                        change_summary:
+                          type: string
+                          description: Description of changes in this version
+                          example: "Updated interest rate table per Q1 2025 rate adjustment"
+                        file_size_bytes:
+                          type: integer
+                          description: Version file size
+                          example: 248930
+                        checksum_sha256:
+                          type: string
+                          description: SHA-256 checksum of the file content
+                          example: "a3f2b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7"
+                        created_by:
+                          type: string
+                          description: User who created this version
+                          example: "user-analyst-12"
+                        created_at:
+                          type: string
+                          description: Version creation timestamp
+                          format: date-time
+                          example: "2025-03-15T14:30:00Z"
+                      required:
+                        - version_id
+                        - version_number
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /documents/{document_id}/versions/{version_id}:
+    get:
+      operationId: getDocumentVersion
+      summary: Get document version
+      description: >-
+        Retrieve metadata and download URL for a specific version of a document. Useful for auditing changes
+        or rolling back to a previous version.
+      tags:
+        - Versions
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Document identifier
+          schema:
+            type: "string"
+        - name: version_id
+          in: path
+          required: true
+          description: Version identifier
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version_id:
+                    type: string
+                    description: Version identifier
+                    format: uuid
+                    example: "ver-2b3c4d5e-f6a7-8901-abbc-234567890123"
+                  version_number:
+                    type: integer
+                    description: Sequential version number
+                    example: 3
+                  change_summary:
+                    type: string
+                    description: Description of changes in this version
+                    example: "Updated interest rate table per Q1 2025 rate adjustment"
+                  file_size_bytes:
+                    type: integer
+                    description: Version file size
+                    example: 248930
+                  checksum_sha256:
+                    type: string
+                    description: SHA-256 checksum of the file content
+                    example: "a3f2b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7"
+                  created_by:
+                    type: string
+                    description: User who created this version
+                    example: "user-analyst-12"
+                  created_at:
+                    type: string
+                    description: Version creation timestamp
+                    format: date-time
+                    example: "2025-03-15T14:30:00Z"
+                required:
+                  - version_id
+                  - version_number
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /documents/{document_id}/download:
+    get:
+      operationId: downloadDocument
+      summary: Download document
+      description: >-
+        Retrieve a pre-signed download URL for the latest version of the document. The URL is valid for 1
+        hour. Access is logged in the document's audit trail.
+      tags:
+        - Documents
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  download_url:
+                    type: string
+                    description: Pre-signed download URL
+                    example: "https://docs.acmefin.com/dl/doc-8f9a0b1c?token=xyz789"
+                  expires_at:
+                    type: string
+                    description: URL expiration
+                    format: date-time
+                    example: "2025-03-15T16:30:00Z"
+                  mime_type:
+                    type: string
+                    description: File MIME type
+                    example: "application/pdf"
+                  file_size_bytes:
+                    type: integer
+                    description: File size
+                    example: 245862
+                  checksum_sha256:
+                    type: string
+                    description: File checksum
+                    example: "a3f2b8c9..."
+                required:
+                  - download_url
+                  - expires_at
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /documents/{document_id}/share:
+    post:
+      operationId: shareDocument
+      summary: Share document
+      description: >-
+        Generate a shareable link or grant direct access to a document for specified users or groups. Shared
+        links can be time-limited and password-protected. All share actions are logged for compliance.
+      tags:
+        - Permissions
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Share document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    share_type:
+                      type: string
+                      description: Type of share
+                      example: "link"
+                      enum:
+                        - link
+                        - direct_access
+                    recipients:
+                      type: array
+                      description: User or group IDs for direct access
+                      items:
+                        type: string
+                        example: "user-colleague-42"
+                    permission_level:
+                      type: string
+                      description: Access level to grant
+                      example: "viewer"
+                      enum:
+                        - viewer
+                        - commenter
+                        - editor
+                    expires_in_hours:
+                      type: integer
+                      description: Link expiration in hours (0 for permanent)
+                      example: 72
+                    password_protected:
+                      type: boolean
+                      description: Require password to access shared link
+                      example: false
+              required:
+                - share_type
+                - permission_level
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  share_id:
+                    type: string
+                    description: Share record ID
+                    format: uuid
+                    example: "shr-3c4d5e6f"
+                  share_url:
+                    type: string
+                    description: Shareable URL (for link type)
+                    example: "https://docs.acmefin.com/s/abc123xyz"
+                  expires_at:
+                    type: string
+                    description: Expiration timestamp
+                    format: date-time
+                    example: "2025-03-18T14:30:00Z"
+                  recipients_notified:
+                    type: integer
+                    description: Number of recipients notified
+                    example: 3
+                required:
+                  - share_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/{document_id}/permissions:
+    get:
+      operationId: listDocumentPermissions
+      summary: List document permissions
+      description: >-
+        Retrieve all access permissions configured for a document, including direct grants, inherited folder
+        permissions, and share-based access.
+      tags:
+        - Permissions
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Document identifier
+          schema:
+            type: "string"
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: "integer"
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Results per page
+          schema:
+            type: "integer"
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        user_id:
+                          type: string
+                          description: User or group identifier
+                          example: "user-analyst-12"
+                        permission_level:
+                          type: string
+                          description: Access level
+                          example: "viewer"
+                          enum:
+                            - viewer
+                            - commenter
+                            - editor
+                            - admin
+                        granted_by:
+                          type: string
+                          description: User who granted the permission
+                          example: "user-manager-5"
+                        granted_at:
+                          type: string
+                          description: When access was granted
+                          format: date-time
+                          example: "2025-02-01T09:00:00Z"
+                        expires_at:
+                          type: string
+                          description: Permission expiration (null for permanent)
+                          format: date-time
+                          example: "2025-12-31T23:59:59Z"
+                      required:
+                        - user_id
+                        - permission_level
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateDocumentPermissions
+      summary: Update document permissions
+      description: >-
+        Modify access permissions for a document. Can grant, modify, or revoke access for individual users
+        or groups. Changes take effect immediately.
+      tags:
+        - Permissions
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update document permissions request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    grants:
+                      type: array
+                      description: Permissions to grant or update
+                      items:
+                        type: object
+                    revocations:
+                      type: array
+                      description: User IDs to revoke access from
+                      items:
+                        type: string
+                        example: "user-former-employee"
+              required:
+                - grants
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Document
+                    format: uuid
+                    example: "doc-8f9a0b1c"
+                  permissions_updated:
+                    type: integer
+                    description: Number of permissions changed
+                    example: 3
+                  effective_at:
+                    type: string
+                    description: When changes took effect
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /documents/{document_id}/move:
+    post:
+      operationId: moveDocument
+      summary: Move document
+      description: >-
+        Move a document to a different folder. The document retains its version history, permissions, and
+        metadata. If the target folder has different default permissions, they are merged with existing
+        document permissions.
+      tags:
+        - Organization
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          description: Unique document id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Move document request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    target_folder_id:
+                      type: string
+                      description: Destination folder
+                      format: uuid
+                      example: "fld-target-5e6f"
+                    preserve_permissions:
+                      type: boolean
+                      description: Keep existing permissions (default true)
+                      example: true
+              required:
+                - target_folder_id
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                    description: Moved document
+                    format: uuid
+                    example: "doc-8f9a0b1c"
+                  previous_folder_id:
+                    type: string
+                    description: Previous folder
+                    format: uuid
+                    example: "fld-old-1a2b"
+                  new_folder_id:
+                    type: string
+                    description: New folder
+                    format: uuid
+                    example: "fld-target-5e6f"
+                  moved_at:
+                    type: string
+                    description: Move timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                required:
+                  - document_id
+                  - new_folder_id
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /folders:
+    get:
+      operationId: listFolders
+      summary: List folders
+      description: >-
+        Retrieve the folder hierarchy for document organization. Supports filtering by parent folder to
+        navigate the tree structure. Root-level folders have a null parent_folder_id.
+      tags:
+        - Organization
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: parent_folder_id
+          in: query
+          required: false
+          description: Filter by parent folder (null for root)
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        folder_id:
+                          type: string
+                          description: Folder identifier
+                          format: uuid
+                          example: "fld-1a2b3c4d-e5f6-7890-abcd-123456789012"
+                        folder_name:
+                          type: string
+                          description: Folder display name
+                          example: "Q1 2025 Loan Documents"
+                        parent_folder_id:
+                          type: string
+                          description: Parent folder (null for root)
+                          format: uuid
+                          example: "fld-root-0000"
+                        document_count:
+                          type: integer
+                          description: Number of documents in this folder
+                          example: 24
+                        created_by:
+                          type: string
+                          description: Folder creator
+                          example: "user-manager-5"
+                        created_at:
+                          type: string
+                          description: Creation timestamp
+                          format: date-time
+                          example: "2025-01-15T09:30:00Z"
+                      required:
+                        - folder_id
+                        - folder_name
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    post:
+      operationId: createFolder
+      summary: Create folder
+      description: >-
+        Create a new folder in the document hierarchy. Folders can be nested up to 10 levels deep. Folder
+        names must be unique within their parent folder.
+      tags:
+        - Organization
+      requestBody:
+        required: true
+        description: Create folder request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    folder_name:
+                      type: string
+                      description: Folder name
+                      example: "Q2 2025 Disclosures"
+                    parent_folder_id:
+                      type: string
+                      description: Parent folder (null for root)
+                      format: uuid
+                      example: "fld-1a2b3c4d"
+                    description:
+                      type: string
+                      description: Folder description
+                      example: "Regulatory disclosures for Q2 2025"
+                    default_retention_policy:
+                      type: string
+                      description: Default retention for documents in this folder
+                      example: "standard_7yr"
+                      enum:
+                        - standard_7yr
+                        - regulatory_10yr
+                        - permanent
+              required:
+                - folder_name
+      responses:
+        "201":
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  folder_id:
+                    type: string
+                    description: Folder identifier
+                    format: uuid
+                    example: "fld-1a2b3c4d-e5f6-7890-abcd-123456789012"
+                  folder_name:
+                    type: string
+                    description: Folder display name
+                    example: "Q1 2025 Loan Documents"
+                  parent_folder_id:
+                    type: string
+                    description: Parent folder (null for root)
+                    format: uuid
+                    example: "fld-root-0000"
+                  document_count:
+                    type: integer
+                    description: Number of documents in this folder
+                    example: 24
+                  created_by:
+                    type: string
+                    description: Folder creator
+                    example: "user-manager-5"
+                  created_at:
+                    type: string
+                    description: Creation timestamp
+                    format: date-time
+                    example: "2025-01-15T09:30:00Z"
+                required:
+                  - folder_id
+                  - folder_name
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

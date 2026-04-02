@@ -1,0 +1,1035 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Customer Communications API
+  description: >-
+    Omni-channel communication orchestration for Acme Finance. Manages outbound messaging across email, SMS, push
+    notifications, and in-app channels. Handles template rendering, delivery tracking, channel preferences, and
+    regulatory opt-in/opt-out compliance under CAN-SPAM, TCPA, and GDPR Article 21.
+  version: 2.4.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-customer-communications
+  x-acme-domain: customer
+servers:
+  - url: https://af-customer-communications.api.acmefin.com/v1
+    description: Production
+  - url: https://af-customer-communications.staging.acmefin.com/v1
+    description: Staging
+security:
+  - BearerAuth: []
+tags:
+  - name: Messaging
+    description: Send and track customer communications across channels
+  - name: Preferences
+    description: Channel preference and opt-out management
+  - name: Templates
+    description: Communication template management and rendering
+paths:
+  /communications/send:
+    post:
+      operationId: sendCommunication
+      summary: Send customer communication
+      description: >-
+        Sends a communication to a customer via their preferred channel. Automatically checks opt-out status
+        and channel preferences before delivery. Supports template rendering with customer-specific merge
+        fields.
+      tags:
+        - Messaging
+      requestBody:
+        required: true
+        description: Send customer communication request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    customer_id:
+                      type: string
+                      description: Target customer CIF
+                      example: "CIF-10042389"
+                    channel:
+                      type: string
+                      description: Delivery channel
+                      enum:
+                        - email
+                        - sms
+                        - push
+                        - in_app
+                    template_id:
+                      type: string
+                      description: Communication template ID
+                      example: "TPL-payment-reminder"
+                    merge_fields:
+                      type: object
+                      description: Template variable substitutions
+                      properties:
+                        customer_name:
+                          type: string
+                          example: "Margaret"
+                        amount_due:
+                          type: string
+                          example: "$1,250.00"
+                    priority:
+                      type: string
+                      description: Delivery priority
+                      enum:
+                        - low
+                        - normal
+                        - high
+                        - urgent
+                      default: "normal"
+                    scheduled_at:
+                      type: string
+                      description: Optional scheduled delivery time
+                      format: date-time
+              required:
+                - customer_id
+                - channel
+                - template_id
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message_id:
+                    type: string
+                    description: Generated message tracking ID
+                    example: "MSG-20250610-44821"
+                  status:
+                    type: string
+                    description: Initial delivery status
+                    enum:
+                      - queued
+                      - sent
+                      - failed
+                  channel:
+                    type: string
+                    description: Channel used for delivery
+                  estimated_delivery:
+                    type: string
+                    description: Estimated delivery time
+                    format: date-time
+                required:
+                  - message_id
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /communications/bulk-send:
+    post:
+      operationId: bulkSendCommunications
+      summary: Bulk send communications
+      description: >-
+        Sends a communication to multiple customers. Validates opt-out status for each recipient. Returns a
+        batch ID for tracking. Maximum 10,000 recipients per request.
+      tags:
+        - Messaging
+      requestBody:
+        required: true
+        description: Bulk send communications request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    template_id:
+                      type: string
+                      description: Template ID
+                      example: "TPL-quarterly-statement"
+                    channel:
+                      type: string
+                      description: Delivery channel
+                      enum:
+                        - email
+                        - sms
+                        - push
+                    recipient_ids:
+                      type: array
+                      description: List of customer CIF numbers
+                      items:
+                        type: string
+                    scheduled_at:
+                      type: string
+                      description: Scheduled send time
+                      format: date-time
+              required:
+                - template_id
+                - channel
+                - recipient_ids
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    description: Batch tracking ID
+                    example: "BATCH-20250610-003"
+                  total_recipients:
+                    type: integer
+                    description: Total recipients submitted
+                    example: 4250
+                  opted_out_count:
+                    type: integer
+                    description: Recipients excluded due to opt-out
+                    example: 38
+                  status:
+                    type: string
+                    description: Batch status
+                    example: "processing"
+                required:
+                  - batch_id
+                  - total_recipients
+                  - status
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /customers/{customer_id}/communications:
+    get:
+      operationId: listCommunicationHistory
+      summary: List communication history
+      description: >-
+        Returns all communications sent to a customer with delivery status, open/click tracking, and bounce
+        information. Supports date filtering for audit and compliance.
+      tags:
+        - Messaging
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: channel
+          in: query
+          required: false
+          description: Filter by channel
+          schema:
+            type: "string"
+        - name: status
+          in: query
+          required: false
+          description: Filter by delivery status
+          schema:
+            type: "string"
+        - name: from_date
+          in: query
+          required: false
+          description: Start date
+          schema:
+            type: "string"
+            format: "date"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message_id:
+                          type: string
+                          description: Message tracking ID
+                        channel:
+                          type: string
+                          description: Delivery channel
+                          enum:
+                            - email
+                            - sms
+                            - push
+                            - in_app
+                        template_id:
+                          type: string
+                          description: Template used
+                        subject:
+                          type: string
+                          description: Message subject or title
+                          example: "Your Monthly Statement is Ready"
+                        status:
+                          type: string
+                          description: Delivery status
+                          enum:
+                            - queued
+                            - sent
+                            - delivered
+                            - opened
+                            - clicked
+                            - bounced
+                            - failed
+                        sent_at:
+                          type: string
+                          description: Timestamp when sent
+                          format: date-time
+                        opened_at:
+                          type: string
+                          description: Timestamp when opened
+                          format: date-time
+                          nullable: true
+                      required:
+                        - message_id
+                        - channel
+                        - status
+                        - sent_at
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /customers/{customer_id}/channel-preferences:
+    get:
+      operationId: getChannelPreferences
+      summary: Get channel preferences
+      description: >-
+        Returns the customer's communication channel preferences including preferred contact times, do-not-
+        disturb windows, and channel-specific opt-in status.
+      tags:
+        - Preferences
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          description: Unique customer id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  preferred_channel:
+                    type: string
+                    description: Primary preferred channel
+                    enum:
+                      - email
+                      - sms
+                      - push
+                      - in_app
+                      - mail
+                  email_opt_in:
+                    type: boolean
+                    description: Email communications opted in
+                    example: true
+                  sms_opt_in:
+                    type: boolean
+                    description: SMS communications opted in
+                    example: true
+                  push_opt_in:
+                    type: boolean
+                    description: Push notifications opted in
+                    example: false
+                  quiet_hours_start:
+                    type: string
+                    description: Do-not-disturb start (HH:MM)
+                    example: "21:00"
+                  quiet_hours_end:
+                    type: string
+                    description: Do-not-disturb end (HH:MM)
+                    example: "08:00"
+                  timezone:
+                    type: string
+                    description: Customer timezone
+                    example: "America/New_York"
+                required:
+                  - customer_id
+                  - preferred_channel
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+    patch:
+      operationId: updateChannelPreferences
+      summary: Update channel preferences
+      description: >-
+        Updates channel preferences for a customer. Changes are audited for TCPA and CAN-SPAM compliance.
+        Opt-out requests are processed immediately.
+      tags:
+        - Preferences
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          description: Unique customer id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Update channel preferences request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    preferred_channel:
+                      type: string
+                      description: Primary preferred channel
+                      enum:
+                        - email
+                        - sms
+                        - push
+                        - in_app
+                        - mail
+                    email_opt_in:
+                      type: boolean
+                      description: Email opt-in status
+                    sms_opt_in:
+                      type: boolean
+                      description: SMS opt-in status
+                    push_opt_in:
+                      type: boolean
+                      description: Push opt-in status
+                    quiet_hours_start:
+                      type: string
+                      description: DND start time
+                    quiet_hours_end:
+                      type: string
+                      description: DND end time
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  preferred_channel:
+                    type: string
+                    description: Updated preferred channel
+                  updated_at:
+                    type: string
+                    description: Update timestamp
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /customers/{customer_id}/opt-out:
+    post:
+      operationId: optOutCustomer
+      summary: Opt out of communications
+      description: >-
+        Immediately opts the customer out of the specified communication channel. Required under CAN-SPAM
+        and TCPA. Opt-out takes effect within 10 business days for postal mail and immediately for
+        electronic channels.
+      tags:
+        - Preferences
+      parameters:
+        - name: customer_id
+          in: path
+          required: true
+          description: Unique customer id
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        description: Opt out of communications request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                    channel:
+                      type: string
+                      description: Channel to opt out of
+                      enum:
+                        - email
+                        - sms
+                        - push
+                        - all
+                    reason:
+                      type: string
+                      description: Optional opt-out reason
+                      example: "Too many emails"
+              required:
+                - channel
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    description: CIF number
+                  opted_out_channels:
+                    type: array
+                    description: Channels now opted out
+                    items:
+                      type: string
+                  effective_at:
+                    type: string
+                    description: When opt-out takes effect
+                    format: date-time
+                required:
+                  - customer_id
+                  - opted_out_channels
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+        "422":
+          $ref: "#/components/responses/422"
+  /communications/templates:
+    get:
+      operationId: listCommunicationTemplates
+      summary: List communication templates
+      description: >-
+        Returns available communication templates with metadata including supported channels, required merge
+        fields, and approval status.
+      tags:
+        - Templates
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number for pagination
+          schema:
+            type: "integer"
+            default: 1
+            minimum: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Number of results per page (max 100)
+          schema:
+            type: "integer"
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Field to sort results by
+          schema:
+            type: "string"
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction
+          schema:
+            type: "string"
+            enum:
+              - asc
+              - desc
+            default: "desc"
+        - name: category
+          in: query
+          required: false
+          description: Filter by category
+          schema:
+            type: "string"
+        - name: channel
+          in: query
+          required: false
+          description: Filter by supported channel
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        template_id:
+                          type: string
+                          description: Template identifier
+                          example: "TPL-payment-reminder"
+                        name:
+                          type: string
+                          description: Template name
+                          example: "Payment Reminder"
+                        channels:
+                          type: array
+                          description: Supported channels
+                          items:
+                            type: string
+                        category:
+                          type: string
+                          description: Template category
+                          enum:
+                            - transactional
+                            - marketing
+                            - regulatory
+                            - service
+                        status:
+                          type: string
+                          description: Approval status
+                          enum:
+                            - draft
+                            - approved
+                            - retired
+                        last_used:
+                          type: string
+                          description: Last usage timestamp
+                          format: date-time
+                      required:
+                        - template_id
+                        - name
+                        - status
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+                required:
+                  - data
+                  - pagination
+        "401":
+          $ref: "#/components/responses/401"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+  /communications/{message_id}/status:
+    get:
+      operationId: getDeliveryStatus
+      summary: Get message delivery status
+      description: >-
+        Returns detailed delivery status for a specific message including carrier responses, bounce codes,
+        open tracking, and click-through data.
+      tags:
+        - Messaging
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          description: Unique message id
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message_id:
+                    type: string
+                    description: Message tracking ID
+                  status:
+                    type: string
+                    description: Current delivery status
+                    enum:
+                      - queued
+                      - sent
+                      - delivered
+                      - opened
+                      - clicked
+                      - bounced
+                      - failed
+                  channel:
+                    type: string
+                    description: Delivery channel
+                  sent_at:
+                    type: string
+                    description: Send timestamp
+                    format: date-time
+                  delivered_at:
+                    type: string
+                    description: Delivery confirmation timestamp
+                    format: date-time
+                    nullable: true
+                  bounce_reason:
+                    type: string
+                    description: Bounce or failure reason if applicable
+                    nullable: true
+                  open_count:
+                    type: integer
+                    description: Number of times opened
+                    example: 2
+                  click_count:
+                    type: integer
+                    description: Number of link clicks
+                    example: 1
+                required:
+                  - message_id
+                  - status
+                  - channel
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "403":
+          $ref: "#/components/responses/403"
+        "429":
+          $ref: "#/components/responses/429"
+        "500":
+          $ref: "#/components/responses/500"
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.00
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+        - amount
+        - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: "10001"
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+        - line1
+        - city
+        - state
+        - postal_code
+        - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+        - page
+        - per_page
+        - total_items
+        - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+            - code
+            - message
+            - request_id
+      required:
+        - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: "2025-01-15T09:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: "2025-03-20T14:45:00Z"
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+        - created_at
+        - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    "400":
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+                - field: amount
+                  reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    "401":
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    "403":
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    "404":
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    "409":
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    "422":
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    "429":
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    "500":
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345

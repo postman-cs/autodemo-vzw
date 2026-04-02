@@ -1,0 +1,1649 @@
+openapi: 3.0.3
+info:
+  title: Acme Finance Portfolio API
+  description: Comprehensive portfolio management services providing real-time holdings, asset allocation, sector exposure
+    (GICS), geographic diversification, concentration risk analytics, and what-if trade scenario analysis. Supports multi-account
+    portfolio aggregation, drill-down by asset class, and comparison against model portfolio targets with drift monitoring.
+  version: 4.3.0
+  contact:
+    name: Acme Finance API Team
+    email: api-support@acmefin.com
+    url: https://developer.acmefin.com
+  license:
+    name: Proprietary
+    url: https://acmefin.com/terms
+  x-acme-catalog-id: af-invest-portfolio
+  x-acme-domain: invest
+servers:
+- url: https://af-invest-portfolio.api.acmefin.com/v1
+  description: Production
+- url: https://af-invest-portfolio.staging.acmefin.com/v1
+  description: Staging
+security:
+- BearerAuth: []
+tags:
+- name: Holdings
+  description: Individual security positions with cost basis, market value, and daily change
+- name: Allocation
+  description: Asset allocation, sector exposure, and geographic diversification analysis
+- name: Analytics
+  description: What-if scenario analysis, concentration risk, and income projection
+- name: Summary
+  description: Portfolio summary, cash balances, and buying power
+paths:
+  /portfolios/{account_id}/holdings:
+    get:
+      operationId: listHoldings
+      summary: List portfolio holdings
+      description: Retrieve all current holdings in a portfolio with market value, cost basis, unrealized gain/loss, portfolio
+        weight, and daily change for each position. Supports filtering by asset class and sorting by any metric.
+      tags:
+      - Holdings
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: asset_class
+        in: query
+        required: false
+        description: Filter by asset class
+        schema:
+          type: string
+          enum:
+          - equity
+          - fixed_income
+          - cash
+          - alternatives
+          - etf
+      - name: min_weight
+        in: query
+        required: false
+        description: Minimum portfolio weight percentage
+        schema:
+          type: number
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        holding_id:
+                          type: string
+                          description: Holding identifier
+                          format: uuid
+                          example: hld-a1b2c3d4
+                        account_id:
+                          type: string
+                          description: Brokerage account identifier
+                          format: uuid
+                          example: acct-a1b2c3d4
+                        ticker:
+                          type: string
+                          description: Ticker symbol
+                          example: AAPL
+                        cusip:
+                          type: string
+                          description: CUSIP identifier
+                          example: 037833100
+                        security_name:
+                          type: string
+                          description: Security name
+                          example: Apple Inc.
+                        asset_class:
+                          type: string
+                          description: Asset class
+                          enum:
+                          - equity
+                          - fixed_income
+                          - cash
+                          - alternatives
+                          - etf
+                          - mutual_fund
+                        quantity:
+                          type: number
+                          description: Shares/units held
+                          format: double
+                          example: 150
+                        market_price:
+                          type: number
+                          description: Current market price per share
+                          format: double
+                          example: 178.5
+                        market_value:
+                          type: object
+                          description: Current market value
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 26775.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        cost_basis:
+                          type: object
+                          description: Total cost basis
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 22500.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        unrealized_gain:
+                          type: object
+                          description: Unrealized gain/loss
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 4275.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        unrealized_gain_pct:
+                          type: number
+                          description: Unrealized gain/loss percentage
+                          format: double
+                          example: 19.0
+                        weight_pct:
+                          type: number
+                          description: Portfolio weight percentage
+                          format: double
+                          example: 6.3
+                        day_change:
+                          type: object
+                          description: Today's value change
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 225.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        day_change_pct:
+                          type: number
+                          description: Today's percentage change
+                          format: double
+                          example: 0.85
+                      required:
+                      - holding_id
+                      - ticker
+                      - market_value
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/holdings/{holding_id}:
+    get:
+      operationId: getHolding
+      summary: Get holding details
+      description: Retrieve detailed information for a specific portfolio holding including lot-level cost basis, purchase
+        dates, and unrealized gain/loss breakdown.
+      tags:
+      - Holdings
+      parameters:
+      - name: holding_id
+        in: path
+        required: true
+        description: Unique holding id
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holding_id:
+                    type: string
+                    description: Holding identifier
+                    format: uuid
+                    example: hld-a1b2c3d4
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  ticker:
+                    type: string
+                    description: Ticker symbol
+                    example: AAPL
+                  cusip:
+                    type: string
+                    description: CUSIP identifier
+                    example: 037833100
+                  security_name:
+                    type: string
+                    description: Security name
+                    example: Apple Inc.
+                  asset_class:
+                    type: string
+                    description: Asset class
+                    enum:
+                    - equity
+                    - fixed_income
+                    - cash
+                    - alternatives
+                    - etf
+                    - mutual_fund
+                  quantity:
+                    type: number
+                    description: Shares/units held
+                    format: double
+                    example: 150
+                  market_price:
+                    type: number
+                    description: Current market price per share
+                    format: double
+                    example: 178.5
+                  market_value:
+                    type: object
+                    description: Current market value
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 26775.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  cost_basis:
+                    type: object
+                    description: Total cost basis
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 22500.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  unrealized_gain:
+                    type: object
+                    description: Unrealized gain/loss
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 4275.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  unrealized_gain_pct:
+                    type: number
+                    description: Unrealized gain/loss percentage
+                    format: double
+                    example: 19.0
+                  weight_pct:
+                    type: number
+                    description: Portfolio weight percentage
+                    format: double
+                    example: 6.3
+                  day_change:
+                    type: object
+                    description: Today's value change
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 225.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  day_change_pct:
+                    type: number
+                    description: Today's percentage change
+                    format: double
+                    example: 0.85
+                required:
+                - holding_id
+                - ticker
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/summary:
+    get:
+      operationId: getPortfolioSummary
+      summary: Get portfolio summary
+      description: Retrieve high-level portfolio summary including total market value, cost basis, cash balance, margin balance,
+        buying power, position count, and aggregate gain/loss.
+      tags:
+      - Summary
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  total_market_value:
+                    type: object
+                    description: Total portfolio market value
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 425000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_cost_basis:
+                    type: object
+                    description: Aggregate cost basis
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 380000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  cash_balance:
+                    type: object
+                    description: Cash and money market balance
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 15000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  margin_balance:
+                    type: object
+                    description: Margin debit balance
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 0.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  buying_power:
+                    type: object
+                    description: Available buying power
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 45000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_positions:
+                    type: integer
+                    description: Number of distinct positions
+                    example: 32
+                  total_gain_loss:
+                    type: object
+                    description: Total unrealized gain/loss
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 45000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  day_change:
+                    type: object
+                    description: Today's portfolio value change
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 1250.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                required:
+                - account_id
+                - total_market_value
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/allocation:
+    get:
+      operationId: getAssetAllocation
+      summary: Get asset allocation
+      description: Retrieve current asset allocation breakdown by asset class with comparison against model portfolio target
+        allocation and drift analysis.
+      tags:
+      - Allocation
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: model_id
+        in: query
+        required: false
+        description: Model portfolio for target comparison
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  total_value:
+                    type: object
+                    description: Total portfolio market value
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 425000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  asset_allocation:
+                    type: array
+                    description: Allocation by asset class (equity, fixed income, cash, alternatives)
+                    items:
+                      type: object
+                  target_allocation:
+                    type: array
+                    description: Target allocation from model portfolio
+                    items:
+                      type: object
+                  drift:
+                    type: array
+                    description: Drift from target allocation by asset class
+                    items:
+                      type: object
+                required:
+                - account_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/sectors:
+    get:
+      operationId: getSectorExposure
+      summary: Get sector exposure
+      description: Analyze portfolio exposure by GICS sector with benchmark comparison and concentration risk metrics including
+        Herfindahl-Hirschman Index.
+      tags:
+      - Allocation
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: benchmark
+        in: query
+        required: false
+        description: Benchmark for sector comparison
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  sectors:
+                    type: array
+                    description: Sector exposure breakdown (GICS classification)
+                    items:
+                      type: object
+                  benchmark_sectors:
+                    type: array
+                    description: Benchmark sector weights for comparison
+                    items:
+                      type: object
+                  concentration_risk:
+                    type: object
+                    description: Sector concentration risk indicators
+                    properties:
+                      herfindahl_index:
+                        type: number
+                        description: Herfindahl-Hirschman Index (sector concentration)
+                        format: double
+                        example: 0.12
+                      top_sector_pct:
+                        type: number
+                        description: Largest sector weight
+                        format: double
+                        example: 28.5
+                      top_sector:
+                        type: string
+                        description: Largest sector
+                        example: Information Technology
+                required:
+                - account_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/geography:
+    get:
+      operationId: getGeographicExposure
+      summary: Get geographic exposure
+      description: Analyze portfolio geographic diversification by region and country, with domestic vs. international and
+        developed vs. emerging markets breakdowns.
+      tags:
+      - Allocation
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  regions:
+                    type: array
+                    description: Geographic exposure by region
+                    items:
+                      type: object
+                  countries:
+                    type: array
+                    description: Country-level exposure breakdown
+                    items:
+                      type: object
+                  domestic_pct:
+                    type: number
+                    description: Domestic (US) exposure percentage
+                    format: double
+                    example: 72.5
+                  international_pct:
+                    type: number
+                    description: International exposure percentage
+                    format: double
+                    example: 27.5
+                  emerging_markets_pct:
+                    type: number
+                    description: Emerging markets exposure percentage
+                    format: double
+                    example: 8.2
+                required:
+                - account_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/what-if:
+    post:
+      operationId: runWhatIfAnalysis
+      summary: Run what-if analysis
+      description: Simulate the impact of proposed trades on portfolio allocation, risk metrics (beta, volatility), estimated
+        transaction costs, and tax consequences without actually executing the trades.
+      tags:
+      - Analytics
+      requestBody:
+        required: true
+        description: Run what-if analysis request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_id:
+                  type: string
+                  description: Brokerage account identifier
+                  format: uuid
+                  example: acct-a1b2c3d4
+                proposed_trades:
+                  type: array
+                  description: List of proposed trades to simulate
+                  items:
+                    type: object
+              required:
+              - proposed_trades
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  proposed_trades:
+                    type: array
+                    description: Proposed trade list used for analysis
+                    items:
+                      type: object
+                  current_allocation:
+                    type: array
+                    description: Current asset allocation before trades
+                    items:
+                      type: object
+                  projected_allocation:
+                    type: array
+                    description: Projected allocation after proposed trades
+                    items:
+                      type: object
+                  risk_impact:
+                    type: object
+                    description: Projected risk metric changes
+                    properties:
+                      current_beta:
+                        type: number
+                        description: Current portfolio beta
+                        format: double
+                        example: 0.95
+                      projected_beta:
+                        type: number
+                        description: Projected beta after trades
+                        format: double
+                        example: 1.02
+                      current_volatility:
+                        type: number
+                        description: Current annualized volatility
+                        format: double
+                        example: 14.5
+                      projected_volatility:
+                        type: number
+                        description: Projected volatility after trades
+                        format: double
+                        example: 15.8
+                  estimated_cost:
+                    type: object
+                    description: Estimated transaction cost for proposed trades
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 12.5
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  tax_impact:
+                    type: object
+                    description: Estimated tax impact from realized gains
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 1250.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                required:
+                - account_id
+                - projected_allocation
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /portfolios/{account_id}/income-projection:
+    get:
+      operationId: getIncomeProjection
+      summary: Get income projection
+      description: Project expected dividend and interest income over the next 12 months based on current holdings, declared
+        dividends, and coupon schedules.
+      tags:
+      - Analytics
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  projection_months:
+                    type: integer
+                    description: Projection period in months
+                    example: 12
+                  projected_dividend_income:
+                    type: object
+                    description: Projected dividend income
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 4500.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  projected_interest_income:
+                    type: object
+                    description: Projected interest/coupon income
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 6200.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_projected_income:
+                    type: object
+                    description: Total projected income
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 10700.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  current_yield_pct:
+                    type: number
+                    description: Current portfolio yield
+                    format: double
+                    example: 2.52
+                  monthly_breakdown:
+                    type: array
+                    description: Month-by-month income projection
+                    items:
+                      type: object
+                required:
+                - account_id
+                - total_projected_income
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/top-movers:
+    get:
+      operationId: getTopMovers
+      summary: Get top movers
+      description: Identify the top gaining and losing positions in the portfolio for the current trading session, ranked
+        by absolute dollar change and percentage change.
+      tags:
+      - Holdings
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: count
+        in: query
+        required: false
+        description: Number of movers per category (default 5)
+        schema:
+          type: integer
+          default: 5
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  gainers:
+                    type: array
+                    description: Top gaining positions
+                    items:
+                      type: object
+                  losers:
+                    type: array
+                    description: Top losing positions
+                    items:
+                      type: object
+                required:
+                - account_id
+                - gainers
+                - losers
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/concentration:
+    get:
+      operationId: getConcentrationAnalysis
+      summary: Get concentration analysis
+      description: Analyze portfolio concentration risk across individual positions, sectors, and asset classes. Flags positions
+        exceeding configurable concentration thresholds.
+      tags:
+      - Analytics
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      - name: threshold_pct
+        in: query
+        required: false
+        description: Concentration warning threshold (%)
+        schema:
+          type: number
+          default: 10.0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  position_concentration:
+                    type: array
+                    description: Positions exceeding concentration threshold
+                    items:
+                      type: object
+                  sector_concentration:
+                    type: array
+                    description: Sectors exceeding concentration threshold
+                    items:
+                      type: object
+                  hhi:
+                    type: number
+                    description: Portfolio Herfindahl-Hirschman Index
+                    format: double
+                    example: 0.08
+                  effective_positions:
+                    type: number
+                    description: Effective number of positions (1/HHI)
+                    format: double
+                    example: 12.5
+                required:
+                - account_id
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/aggregate:
+    post:
+      operationId: aggregatePortfolios
+      summary: Aggregate portfolios
+      description: Aggregate multiple brokerage accounts into a single consolidated portfolio view with combined holdings,
+        allocation, and performance metrics.
+      tags:
+      - Summary
+      requestBody:
+        required: true
+        description: Aggregate portfolios request payload
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_ids:
+                  type: array
+                  description: Account identifiers to aggregate
+                  items:
+                    type: string
+              required:
+              - account_ids
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_market_value:
+                    type: object
+                    description: Combined market value
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 850000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  total_cost_basis:
+                    type: object
+                    description: Combined cost basis
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 720000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                  combined_holdings:
+                    type: array
+                    description: Merged holdings across accounts
+                    items:
+                      type: object
+                  combined_allocation:
+                    type: array
+                    description: Aggregate asset allocation
+                    items:
+                      type: object
+                required:
+                - total_market_value
+                - combined_holdings
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+        '422':
+          $ref: '#/components/responses/422'
+  /portfolios/{account_id}/style-box:
+    get:
+      operationId: getStyleBoxAnalysis
+      summary: Get style box analysis
+      description: Map portfolio equity holdings onto a Morningstar-style 3x3 style box (value/blend/growth vs. large/mid/small)
+        for style exposure visualization.
+      tags:
+      - Analytics
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        description: Brokerage account identifier
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account_id:
+                    type: string
+                    description: Brokerage account identifier
+                    format: uuid
+                    example: acct-a1b2c3d4
+                  style_box:
+                    type: object
+                    description: 3x3 style box weights
+                    properties:
+                      large_value:
+                        type: number
+                        description: Large Value weight %
+                        format: double
+                        example: 15.2
+                      large_blend:
+                        type: number
+                        description: Large Blend weight %
+                        format: double
+                        example: 22.1
+                      large_growth:
+                        type: number
+                        description: Large Growth weight %
+                        format: double
+                        example: 28.5
+                      mid_value:
+                        type: number
+                        description: Mid Value weight %
+                        format: double
+                        example: 5.1
+                      mid_blend:
+                        type: number
+                        description: Mid Blend weight %
+                        format: double
+                        example: 8.3
+                      mid_growth:
+                        type: number
+                        description: Mid Growth weight %
+                        format: double
+                        example: 10.2
+                      small_value:
+                        type: number
+                        description: Small Value weight %
+                        format: double
+                        example: 2.8
+                      small_blend:
+                        type: number
+                        description: Small Blend weight %
+                        format: double
+                        example: 4.5
+                      small_growth:
+                        type: number
+                        description: Small Growth weight %
+                        format: double
+                        example: 3.3
+                  dominant_style:
+                    type: string
+                    description: Dominant portfolio style
+                    example: Large Growth
+                  avg_market_cap:
+                    type: object
+                    description: Weighted average market cap
+                    properties:
+                      amount:
+                        type: number
+                        description: Monetary amount
+                        format: double
+                        example: 245000000000.0
+                      currency:
+                        type: string
+                        description: ISO 4217 currency code
+                        example: USD
+                required:
+                - account_id
+                - style_box
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+  /portfolios/{account_id}/history:
+    get:
+      operationId: getPortfolioHistory
+      summary: Get portfolio value history
+      description: Retrieve historical daily portfolio market values for charting portfolio growth over time. Includes contributions
+        and withdrawals for TWR calculation context.
+      tags:
+      - Summary
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Page number for pagination
+        schema:
+          type: integer
+          default: 1
+          minimum: 1
+      - name: per_page
+        in: query
+        required: false
+        description: Number of results per page (max 100)
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      - name: sort_by
+        in: query
+        required: false
+        description: Field to sort results by
+        schema:
+          type: string
+      - name: sort_order
+        in: query
+        required: false
+        description: Sort direction
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - name: from
+        in: query
+        required: false
+        description: Start date
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        description: End date
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          description: Date
+                          format: date
+                          example: '2025-06-15'
+                        market_value:
+                          type: object
+                          description: End-of-day portfolio market value
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 425000.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        net_contributions:
+                          type: object
+                          description: Net contributions/withdrawals on date
+                          properties:
+                            amount:
+                              type: number
+                              description: Monetary amount
+                              format: double
+                              example: 0.0
+                            currency:
+                              type: string
+                              description: ISO 4217 currency code
+                              example: USD
+                        daily_return_pct:
+                          type: number
+                          description: Daily return percentage
+                          format: double
+                          example: 0.29
+                      required:
+                      - date
+                      - market_value
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - pagination
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '403':
+          $ref: '#/components/responses/403'
+        '429':
+          $ref: '#/components/responses/429'
+        '500':
+          $ref: '#/components/responses/500'
+components:
+  schemas:
+    Money:
+      type: object
+      description: Monetary amount with currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: The monetary amount
+          example: 1250.0
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+          minLength: 3
+          maxLength: 3
+      required:
+      - amount
+      - currency
+    Address:
+      type: object
+      description: Physical mailing address
+      properties:
+        line1:
+          type: string
+          description: Street address line 1
+          example: 123 Main Street
+        line2:
+          type: string
+          description: Street address line 2
+          example: Suite 400
+        city:
+          type: string
+          description: City name
+          example: New York
+        state:
+          type: string
+          description: State or province code
+          example: NY
+        postal_code:
+          type: string
+          description: ZIP or postal code
+          example: '10001'
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: US
+          minLength: 2
+          maxLength: 2
+      required:
+      - line1
+      - city
+      - state
+      - postal_code
+      - country
+    PaginationMeta:
+      type: object
+      description: Pagination metadata for list responses
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_items:
+          type: integer
+          description: Total number of items across all pages
+          example: 142
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+      required:
+      - page
+      - per_page
+      - total_items
+      - total_pages
+    Error:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: The request body contains invalid fields.
+            details:
+              type: array
+              description: Detailed error information
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: The field that caused the error
+                    example: email
+                  reason:
+                    type: string
+                    description: Description of the validation failure
+                    example: Must be a valid email address
+            request_id:
+              type: string
+              format: uuid
+              description: Unique identifier for this request, useful for support
+              example: req-550e8400-e29b-41d4-a716-446655440000
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    AuditInfo:
+      type: object
+      description: Audit trail metadata
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was created
+          example: '2025-01-15T09:30:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the resource was last updated
+          example: '2025-03-20T14:45:00Z'
+        created_by:
+          type: string
+          description: User or system that created the resource
+          example: user-789012
+        updated_by:
+          type: string
+          description: User or system that last updated the resource
+          example: user-789012
+      required:
+      - created_at
+      - updated_at
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token obtained from the Acme Finance Identity service
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization for Acme Finance APIs
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+        authorizationCode:
+          authorizationUrl: https://auth.acmefin.com/oauth2/authorize
+          tokenUrl: https://auth.acmefin.com/oauth2/token
+          scopes:
+            read: Read access to resources
+            write: Write access to resources
+            admin: Administrative access
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service communication
+  responses:
+    '400':
+      description: Bad Request — The request was malformed or contains invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: The request body contains invalid fields.
+              details:
+              - field: amount
+                reason: Must be a positive number
+              request_id: req-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    '401':
+      description: Unauthorized — Authentication credentials are missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired authentication token.
+              request_id: req-b2c3d4e5-f6a7-8901-bcde-f12345678901
+    '403':
+      description: Forbidden — You do not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: You do not have the required permissions for this action.
+              request_id: req-c3d4e5f6-a7b8-9012-cdef-123456789012
+    '404':
+      description: Not Found — The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found.
+              request_id: req-d4e5f6a7-b8c9-0123-defa-234567890123
+    '409':
+      description: Conflict — The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: CONFLICT
+              message: The resource has been modified by another request.
+              request_id: req-a1b2c3d4-e5f6-0123-abcd-ef1234560000
+    '422':
+      description: Unprocessable Entity — The request was well-formed but contains semantic errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: The request could not be processed due to business rule violations.
+              request_id: req-b2c3d4e5-f6a7-0123-bcde-f12345670000
+    '429':
+      description: Too Many Requests — Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: You have exceeded the rate limit. Please retry after 30 seconds.
+              request_id: req-e5f6a7b8-c9d0-1234-efab-345678901234
+    '500':
+      description: Internal Server Error — An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred. Please try again later.
+              request_id: req-f6a7b8c9-d0e1-2345-fabc-456789012345
