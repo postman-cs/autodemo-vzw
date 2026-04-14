@@ -32,7 +32,7 @@ export default {
     }
 
     // Redirect user-facing routes to Fern docs site
-    const fernBase = "https://vzw-demo.docs.buildwithfern.com";
+    const fernBase = "https://verizon-demo.docs.buildwithfern.com";
     return Response.redirect(fernBase, 302);
   },
 };
