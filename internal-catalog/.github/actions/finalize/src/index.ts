@@ -35,7 +35,7 @@ function buildResourcesManifest(workspaceId: string, collectionMap: Record<strin
 }
 
 export function buildFernDocsUrl(): string {
-    return 'https://verizon-demo.docs.buildwithfern.com';
+    return 'https://vzw-demo.docs.buildwithfern.com';
 }
 
 export async function run() {

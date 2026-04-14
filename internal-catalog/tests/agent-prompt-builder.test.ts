@@ -9,7 +9,7 @@ const baseCtx: AgentPromptContext = {
   endpointCount: 7,
   dependsOn: ["vzw-incident-intake-gateway-api", "vzw-geospatial-hazard-intel-api"],
   consumesApis: ["vzw-identity-federation-api"],
-  fernDocsUrl: "https://verizon-demo.docs.buildwithfern.com/emergency-dispatch/vzw-network-operations-api",
+  fernDocsUrl: "https://vzw-demo.docs.buildwithfern.com/emergency-dispatch/vzw-network-operations-api",
   runtime: "lambda",
 };
 

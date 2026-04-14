@@ -50,7 +50,7 @@ describe('api', () => {
     it('getFernDocsUrl returns correct url', () => {
       expect(getFernDocsUrl({ service_id: 's1', fern_docs_url: 'https://custom.docs' })).toBe('https://custom.docs');
       expect(getFernDocsUrl({ service_id: 's1', fernDocsUrl: 'https://custom.docs2' })).toBe('https://custom.docs2');
-      expect(getFernDocsUrl({ service_id: 's1' })).toBe('https://verizon-demo.docs.buildwithfern.com');
+      expect(getFernDocsUrl({ service_id: 's1' })).toBe('https://vzw-demo.docs.buildwithfern.com');
     });
 
     it('getRunInPostmanUrl returns correct url', () => {

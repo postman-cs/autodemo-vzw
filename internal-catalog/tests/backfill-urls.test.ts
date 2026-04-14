@@ -10,7 +10,7 @@ describe("backfill-urls", () => {
         status: "active",
         workspace_team_id: "ws-123",
         github_repo_name: "af-vzw-city-dispatch-api",
-        fern_docs_url: "https://verizon-demo.docs.buildwithfern.com/emergency-dispatch/vzw-city-dispatch-api",
+        fern_docs_url: "https://vzw-demo.docs.buildwithfern.com/emergency-dispatch/vzw-city-dispatch-api",
         postman_workspace_url: "https://verizon-partner-demo.postman.co/workspace/ws-123",
       },
     ]);

@@ -72,7 +72,7 @@ jobs:
       - name: Fern Docs Status
         run: |
           echo "Per-repo Fern publish is DISABLED to prevent overwriting the unified docs site."
-          echo "The unified site at verizon-demo.docs.buildwithfern.com is published centrally."
+          echo "The unified site at vzw-demo.docs.buildwithfern.com is published centrally."
           echo "Deep link: \${{ vars.FERN_DOCS_URL }}"
 `;
 

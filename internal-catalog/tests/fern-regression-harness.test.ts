@@ -7,7 +7,7 @@ import { invalidateResolvedDeploymentsCache } from "../src/lib/deployment-state"
 
 const WORKFLOW_PATH = new URL("../../.github/workflows/unified-fern-publish.yml", import.meta.url);
 const TEST_WORKER_URL = "https://example.com";
-const DOCS_URL_PATTERN = /^https:\/\/verizon-demo\.docs\.buildwithfern\.com\/[a-z0-9-]+\/[a-z0-9-]+$/;
+const DOCS_URL_PATTERN = /^https:\/\/vzw-demo\.docs\.buildwithfern\.com\/[a-z0-9-]+\/[a-z0-9-]+$/;
 const POSTMAN_URL_PATTERN = /^https:\/\/verizon-partner-demo\.postman\.co\/workspace\/[A-Za-z0-9-]+$/;
 
 afterEach(() => {
@@ -75,7 +75,7 @@ function makeDeploymentRecord(specId: string, workspaceId: string, runtimeMode =
 function maybeInjectBadFernUrl(url: string): string {
   if (process.env.FERN_HARNESS_INJECT_BAD_URL === "1") {
     const leaf = url.split("/").pop() || "unknown-service";
-    return `https://verizon-demo.docs.buildwithfern.com/docs/api-reference/${leaf}`;
+    return `https://vzw-demo.docs.buildwithfern.com/docs/api-reference/${leaf}`;
   }
 
   return url;

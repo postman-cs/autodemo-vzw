@@ -9,7 +9,7 @@ This runbook covers the centralized Fern integration that starts after a provisi
 
 - `internal-catalog` maintainers own canonical metadata derivation in `internal-catalog/src/lib/docs-manifest.ts` and the Worker endpoints in `internal-catalog/src/index.ts`.
 - Main repo maintainers own unified docs artifact generation in `fern/scripts/generate-unified-docs-artifacts.mjs` and publishing in `.github/workflows/unified-fern-publish.yml`.
-- Provisioned repo maintainers do not own shared-site publishing. Per-repo Fern config may exist for local preview, but it must not publish `verizon-demo.docs.buildwithfern.com`.
+- Provisioned repo maintainers do not own shared-site publishing. Per-repo Fern config may exist for local preview, but it must not publish `vzw-demo.docs.buildwithfern.com`.
 - On-call recovery for publish failures belongs to the main repo maintainers because the shared workflow and shared Fern token live in this repository.
 
 ## What changed
@@ -35,7 +35,7 @@ This runbook covers the centralized Fern integration that starts after a provisi
 ## Canonical contract
 
 - `buildCanonicalManifest()` is the only source that derives Fern tab slugs, Fern deep links, Postman workspace links, and the route-to-service map.
-- Canonical Fern URLs must use `https://verizon-demo.docs.buildwithfern.com/<tab-slug>/<api-slug>`.
+- Canonical Fern URLs must use `https://vzw-demo.docs.buildwithfern.com/<tab-slug>/<api-slug>`.
 - Canonical Postman URLs must use `https://verizon-partner-demo.postman.co/workspace/<workspace-id>`.
 - `partner-catalog.ts` reuses the same manifest builder, so partner catalog data and Fern runtime routing stay aligned.
 

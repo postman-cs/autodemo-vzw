@@ -50740,7 +50740,7 @@ function buildResourcesManifest(workspaceId, collectionMap) {
     return (0,dist/* stringify */.As)(manifest);
 }
 function buildFernDocsUrl() {
-    return 'https://verizon-demo.docs.buildwithfern.com';
+    return 'https://vzw-demo.docs.buildwithfern.com';
 }
 async function run() {
     try {

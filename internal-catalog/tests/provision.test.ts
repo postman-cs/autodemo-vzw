@@ -2893,7 +2893,7 @@ describe("buildFinalData", () => {
       RUNTIME_BASE_URL: "",
       LINT_WARNINGS: "21",
       LINT_ERRORS: "0",
-      FERN_DOCS_URL: "https://verizon-demo.docs.buildwithfern.com",
+      FERN_DOCS_URL: "https://vzw-demo.docs.buildwithfern.com",
     };
 
     // listRepoVariables bulk mock
@@ -2922,7 +2922,7 @@ describe("buildFinalData", () => {
     expect((result.aws as any).api_gateway_id).toBe("abc123");
     expect((result.aws as any).function_name).toBe("test-dev");
     expect((result.runtime as any).mode).toBe("lambda");
-    expect((result.fern as any).docs_url).toBe("https://verizon-demo.docs.buildwithfern.com");
+    expect((result.fern as any).docs_url).toBe("https://vzw-demo.docs.buildwithfern.com");
     expect((result.environment_deployments as any[])).toHaveLength(2);
     expect((result.environment_deployments as any[])[0]).toMatchObject({
       environment: "prod",

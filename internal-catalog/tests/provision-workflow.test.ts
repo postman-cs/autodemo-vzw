@@ -72,7 +72,7 @@ describe("generateProvisionWorkflow", () => {
     const fernConfig = generateFernConfig("test-api");
     expect(fernConfig.docsYml).toContain("title: test-api | Verizon Partner APIs");
     expect(fernConfig.docsYml).not.toContain("instances:");
-    expect(fernConfig.docsYml).not.toContain("verizon-demo.docs.buildwithfern.com");
+    expect(fernConfig.docsYml).not.toContain("vzw-demo.docs.buildwithfern.com");
   });
 
   it("aws_deploy job includes setup-python with pip cache for lambda mode", () => {

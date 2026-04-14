@@ -153,7 +153,7 @@ describe('finalize action logic', () => {
         await mod.run();
         await vi.advanceTimersByTimeAsync(0);
 
-        expect(mockSetVar).toHaveBeenCalledWith('FERN_DOCS_URL', 'https://verizon-demo.docs.buildwithfern.com');
+        expect(mockSetVar).toHaveBeenCalledWith('FERN_DOCS_URL', 'https://vzw-demo.docs.buildwithfern.com');
     });
 
     it('should create environments and store repo variables for lambda runtime', async () => {

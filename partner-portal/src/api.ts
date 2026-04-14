@@ -1,7 +1,7 @@
 import type { GraphsResponse, LinkFields, ServiceDetailResponse, ServiceSummary } from "./types";
 
 const API_BASE = "/api/partner";
-const FERN_BASE = "https://verizon-demo.docs.buildwithfern.com";
+const FERN_BASE = "https://vzw-demo.docs.buildwithfern.com";
 const POSTMAN_BASE = "https://app.getpostman.com/workspace";
 
 async function requestJson<T>(path: string): Promise<T> {

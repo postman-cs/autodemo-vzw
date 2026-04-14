@@ -53,7 +53,7 @@ export interface WorkflowDefinition {
 
 export function generateFernConfig(projectName: string, specPath = "index.yaml"): FernConfig {
   const configJson = JSON.stringify({
-    organization: "verizon-demo",
+    organization: "vzw-demo",
     version: "0.x.x",
   }, null, 2);
 

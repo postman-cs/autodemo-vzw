@@ -106,7 +106,7 @@ export function buildCanonicalManifest(deployments: DeploymentRecord[]): Canonic
           workspaceId,
           postmanWorkspaceUrl: `https://verizon-partner-demo.postman.co/workspace/${workspaceId}`,
           apiSlug,
-          fernDocsUrl: `https://verizon-demo.docs.buildwithfern.com/${graph.slug}/${apiSlug}`,
+          fernDocsUrl: `https://vzw-demo.docs.buildwithfern.com/${graph.slug}/${apiSlug}`,
           dependsOn: getDependsOn(serviceId),
           consumesApis: getConsumes(serviceId),
         };
@@ -147,7 +147,7 @@ export function buildCanonicalManifest(deployments: DeploymentRecord[]): Canonic
         workspaceId,
         postmanWorkspaceUrl: `https://verizon-partner-demo.postman.co/workspace/${workspaceId}`,
         apiSlug,
-        fernDocsUrl: `https://verizon-demo.docs.buildwithfern.com/platform-services/${apiSlug}`,
+        fernDocsUrl: `https://vzw-demo.docs.buildwithfern.com/platform-services/${apiSlug}`,
         dependsOn: getDependsOn(serviceId),
         consumesApis: getConsumes(serviceId),
       };
@@ -169,7 +169,7 @@ export function buildCanonicalManifest(deployments: DeploymentRecord[]): Canonic
 
   return {
     manifestVersion: "canonical-manifest.v1",
-    docsSiteUrl: "https://verizon-demo.docs.buildwithfern.com",
+    docsSiteUrl: "https://vzw-demo.docs.buildwithfern.com",
     postmanWorkspaceBaseUrl: "https://verizon-partner-demo.postman.co/workspace",
     serviceCount: totalServices,
     tabCount: tabs.length,
