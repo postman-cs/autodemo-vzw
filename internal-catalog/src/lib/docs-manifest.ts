@@ -55,6 +55,21 @@ function getConsumes(serviceId: string): string[] {
   return unique(DEPENDENCIES[serviceId]?.consumesApis ?? []);
 }
 
+function trimApiDisplayTitle(title: string): string {
+  return String(title ?? "")
+    .replace(/^VZW\s+/, "")
+    .replace(/\s+API$/, "")
+    .trim();
+}
+
+function fernSlugify(title: string): string {
+  const display = trimApiDisplayTitle(title);
+  return display
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function collectDependsOnClosure(leafServiceId: string): Set<string> {
   const visited = new Set<string>();
   const stack = [leafServiceId];
@@ -97,16 +112,17 @@ export function buildCanonicalManifest(deployments: DeploymentRecord[]): Canonic
         const workspaceId = deployment?.workspace_id || deployment?.workspace_team_id || "";
         const apiSlug = serviceId;
         const routeKey = `${graph.slug}/${apiSlug}`;
+        const title = registryEntry?.title ?? serviceId;
 
         return {
           id: serviceId,
-          title: registryEntry?.title ?? serviceId,
+          title,
           runtime: registryEntry?.runtime ?? "unknown",
           sourceSpec: registryEntry?.filename ?? `repos/${serviceId}/openapi.yaml`,
           workspaceId,
           postmanWorkspaceUrl: `https://verizon-partner-demo.postman.co/workspace/${workspaceId}`,
           apiSlug,
-          fernDocsUrl: `https://vzw-demo.docs.buildwithfern.com/${graph.slug}/${apiSlug}`,
+          fernDocsUrl: `https://vzw-demo.docs.buildwithfern.com/${graph.slug}/${fernSlugify(title)}`,
           dependsOn: getDependsOn(serviceId),
           consumesApis: getConsumes(serviceId),
         };
@@ -138,16 +154,17 @@ export function buildCanonicalManifest(deployments: DeploymentRecord[]): Canonic
       const workspaceId = deployment?.workspace_id || deployment?.workspace_team_id || "";
       const apiSlug = serviceId;
       const routeKey = `platform-services/${apiSlug}`;
+      const title = registryEntry?.title ?? serviceId;
 
       return {
         id: serviceId,
-        title: registryEntry?.title ?? serviceId,
+        title,
         runtime: registryEntry?.runtime ?? "unknown",
         sourceSpec: registryEntry?.filename ?? `repos/${serviceId}/openapi.yaml`,
         workspaceId,
         postmanWorkspaceUrl: `https://verizon-partner-demo.postman.co/workspace/${workspaceId}`,
         apiSlug,
-        fernDocsUrl: `https://vzw-demo.docs.buildwithfern.com/platform-services/${apiSlug}`,
+        fernDocsUrl: `https://vzw-demo.docs.buildwithfern.com/platform-services/${fernSlugify(title)}`,
         dependsOn: getDependsOn(serviceId),
         consumesApis: getConsumes(serviceId),
       };
