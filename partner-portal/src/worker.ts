@@ -31,8 +31,13 @@ export default {
       return response;
     }
 
-    // Redirect user-facing routes to Fern docs site
-    const fernBase = "https://vzw-demo.docs.buildwithfern.com";
-    return Response.redirect(fernBase, 302);
+    // Redirect /docs to Fern docs site
+    if (url.pathname.startsWith("/docs")) {
+      const fernBase = "https://vzw-demo.docs.buildwithfern.com";
+      return Response.redirect(fernBase, 302);
+    }
+
+    // Serve the partner portal SPA for all other routes
+    return env.ASSETS.fetch(request);
   },
 };
