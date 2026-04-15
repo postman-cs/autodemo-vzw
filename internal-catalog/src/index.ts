@@ -333,7 +333,8 @@ function mergeDemoDeployments(existing: DeploymentRecord[]): Array<Record<string
   }
   for (const deployment of buildDemoDeployments()) {
     const specId = String(deployment.spec_id || "");
-    if (!bySpecId.has(specId)) {
+    const existingRecord = bySpecId.get(specId);
+    if (!existingRecord || existingRecord.status !== "active") {
       bySpecId.set(specId, deployment);
     }
   }
@@ -780,9 +781,10 @@ export default {
               if (invalid) return invalid;
 
               const targetEnvironment = (url.searchParams.get("env") || "prod").trim() || "prod";
-              const deployments = isAirtableConfigured(env)
+              const rawDeployments = isAirtableConfigured(env)
                 ? await listDeployments(env)
                 : [];
+              const deployments = mergeDemoDeployments(rawDeployments) as typeof rawDeployments;
               const scopedDeployments = resolveDeploymentsForEnvironment(deployments, targetEnvironment);
               return json(getPartnerGraphsFeed(scopedDeployments));
             }
@@ -1434,9 +1436,10 @@ export default {
                 if (!serviceId) return json({ error: "service_id is required" }, 400);
 
                 const targetEnvironment = (url.searchParams.get("env") || "prod").trim() || "prod";
-                const deployments = isAirtableConfigured(env)
+                const rawDeployments = isAirtableConfigured(env)
                   ? await listDeployments(env)
                   : [];
+                const deployments = mergeDemoDeployments(rawDeployments) as typeof rawDeployments;
                 const scopedDeployments = resolveDeploymentsForEnvironment(deployments, targetEnvironment);
                 const detail = getPartnerServiceDetail(serviceId, scopedDeployments);
                 if (!detail) return json({ error: "Service not found" }, 404);
@@ -1460,9 +1463,10 @@ export default {
                 if (!serviceId) return json({ error: "service_id is required" }, 400);
 
                 const targetEnvironment = (url.searchParams.get("env") || "prod").trim() || "prod";
-                const deployments = isAirtableConfigured(env)
+                const rawDeployments = isAirtableConfigured(env)
                   ? await listDeployments(env)
                   : [];
+                const deployments = mergeDemoDeployments(rawDeployments) as typeof rawDeployments;
                 const scopedDeployments = resolveDeploymentsForEnvironment(deployments, targetEnvironment);
                 const detail = getPartnerServiceDetail(serviceId, scopedDeployments);
                 if (!detail) return json({ error: "Service not found" }, 404);
